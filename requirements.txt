@@ -1,0 +1,2 @@
+pyside6-essentials>=6.7
+pyodbc>=5.1
