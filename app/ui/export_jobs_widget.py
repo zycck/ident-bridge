@@ -173,17 +173,27 @@ class ExportJobCard(QWidget):
         hdr.addWidget(self._name_edit, stretch=1)
 
         self._run_btn = QPushButton()
-        self._run_btn.setIcon(lucide("play", color=Theme.gray_900, size=12))
+        self._run_btn.setIcon(lucide("play", color=Theme.gray_900, size=14))
         self._run_btn.setObjectName("primaryBtn")
-        self._run_btn.setFixedSize(28, 24)
+        self._run_btn.setFixedSize(28, 28)
         self._run_btn.setToolTip("Запустить выгрузку вручную")
         self._run_btn.clicked.connect(self.start_export)
         hdr.addWidget(self._run_btn)
 
         del_btn = QPushButton()
-        del_btn.setIcon(lucide("trash-2", color=Theme.error, size=12))
-        del_btn.setFixedSize(24, 24)
-        del_btn.setFlat(True)
+        del_btn.setIcon(lucide("trash-2", color=Theme.gray_500, size=14))
+        del_btn.setFixedSize(28, 28)
+        del_btn.setStyleSheet(
+            "QPushButton {"
+            "  border: 1px solid transparent;"
+            "  background: transparent;"
+            "  border-radius: 5px;"
+            "}"
+            f"QPushButton:hover {{"
+            f"  background-color: {Theme.error_bg};"
+            f"  border-color: {Theme.error};"
+            f"}}"
+        )
         del_btn.setToolTip("Удалить выгрузку")
         del_btn.clicked.connect(self._on_delete)
         hdr.addWidget(del_btn)
@@ -258,18 +268,18 @@ class ExportJobCard(QWidget):
         self._sched_check = QCheckBox("Авто")
         self._sched_check.setToolTip("Включить автоматическую выгрузку по расписанию")
         self._sched_check.toggled.connect(self._on_sched_changed)
-        sched_row.addWidget(self._sched_check)
+        sched_row.addWidget(self._sched_check, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self._mode_combo = QComboBox()
         self._mode_combo.addItems(["Ежедневно", "Каждые N часов"])
         self._mode_combo.currentIndexChanged.connect(self._on_sched_changed)
-        sched_row.addWidget(self._mode_combo)
+        sched_row.addWidget(self._mode_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self._sched_value_edit = QLineEdit()
         self._sched_value_edit.setFixedWidth(SCHED_VALUE_INPUT_W)
         self._sched_value_edit.setPlaceholderText("ЧЧ:ММ")
         self._sched_value_edit.editingFinished.connect(self._on_sched_changed)
-        sched_row.addWidget(self._sched_value_edit)
+        sched_row.addWidget(self._sched_value_edit, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         sched_row.addStretch(1)
 

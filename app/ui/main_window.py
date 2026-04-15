@@ -114,36 +114,22 @@ class MainWindow(QMainWindow):
         debug_btn.clicked.connect(self._toggle_debug_window)
         nav_layout.addWidget(debug_btn)
 
-        # ── Footer: version + developer Telegram link ─────────────────────
-        footer = QWidget()
-        footer.setStyleSheet("background: transparent;")
-        footer_layout = QVBoxLayout(footer)
-        footer_layout.setContentsMargins(8, 4, 8, 8)
-        footer_layout.setSpacing(2)
-
-        version_lbl = QLabel(f"v{self._current_version}")
-        version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        version_lbl.setStyleSheet(
-            f"color: {Theme.gray_400}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent;"
-        )
-        footer_layout.addWidget(version_lbl)
-
-        dev_lbl = QLabel(
+        # ── Footer: version + developer Telegram link (single line) ──────
+        footer_lbl = QLabel(
+            f'<span style="color: {Theme.gray_400};">v{self._current_version}</span>'
+            f'  ·  '
             f'<a href="https://t.me/zycck" '
             f'style="color: {Theme.primary_700}; text-decoration: none;">@zycck</a>'
         )
-        dev_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        dev_lbl.setOpenExternalLinks(True)
-        dev_lbl.setStyleSheet(
+        footer_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        footer_lbl.setOpenExternalLinks(True)
+        footer_lbl.setStyleSheet(
             f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent;"
+            f"background: transparent; "
+            f"padding: 8px 4px;"
         )
-        dev_lbl.setToolTip("Связаться с разработчиком в Telegram")
-        footer_layout.addWidget(dev_lbl)
-
-        nav_layout.addWidget(footer)
+        footer_lbl.setToolTip("Связаться с разработчиком в Telegram")
+        nav_layout.addWidget(footer_lbl)
 
         # Stacked pages
         self._stack = QStackedWidget()

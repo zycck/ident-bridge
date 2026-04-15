@@ -45,9 +45,9 @@ class Theme:
 
     # ── Surfaces (white with lime hint) ───────────────────────────────
     surface        = "#FFFFFF"
-    surface_tinted = "#FCFEF6"   # page bg, ~1% lime mix
-    surface_subtle = "#F8FBE8"   # input focus bg, ~3% lime
-    sidebar_bg     = "#F4F8E1"   # subtle lime sidebar
+    surface_tinted = "#FAFAFA"   # near-white neutral
+    surface_subtle = "#F8FBE8"   # input focus bg, ~3% lime (kept for back-compat)
+    sidebar_bg     = "#F4F4F5"   # warm neutral gray (Tailwind zinc-100)
 
     # ── Borders ───────────────────────────────────────────────────────
     border        = "#E2E8F0"

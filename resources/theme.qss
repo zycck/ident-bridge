@@ -63,6 +63,12 @@ QPushButton#navBtnActive {
     font-weight: ${font_weight_semi};
 }
 
+QPushButton#navBtn:focus,
+QPushButton#navBtnActive:focus {
+    outline: none;
+    border-color: transparent;
+}
+
 /* ── Sections (GroupBox) ──────────────────────────────────────────────────── */
 QGroupBox {
     background-color: ${surface};
@@ -106,10 +112,8 @@ QLabel {
 /* ── Section Header Label (HeaderLabel widget) ────────────────────────────── */
 QLabel#sectionHeader {
     color: ${gray_600};
-    font-size: ${font_size_sm}pt;
+    font-size: ${font_size_xs}pt;
     font-weight: ${font_weight_semi};
-    letter-spacing: 0.3px;
-    text-transform: uppercase;
     background: transparent;
     border: none;
     padding: 2px 0;
@@ -149,8 +153,8 @@ QTextEdit {
 QLineEdit:focus,
 QPlainTextEdit:focus,
 QTextEdit:focus {
-    border: 2px solid ${border_focus};
-    background-color: ${surface_subtle};
+    border: 1px solid ${border_focus};
+    background-color: ${surface};
 }
 
 QLineEdit:disabled,
@@ -180,8 +184,8 @@ QComboBox {
 
 QComboBox:focus,
 QComboBox:on {
-    border: 2px solid ${border_focus};
-    background-color: ${surface_subtle};
+    border: 1px solid ${border_focus};
+    background-color: ${surface};
 }
 
 QComboBox:disabled {
@@ -250,8 +254,7 @@ QPushButton:disabled {
 }
 
 QPushButton:focus {
-    outline: 2px solid ${primary_500};
-    outline-offset: 2px;
+    border-color: ${border_focus};
 }
 
 /* ── Primary button (lime brand, WCAG-safe dark text) ─────────────────────── */
@@ -283,10 +286,12 @@ QPushButton#primaryBtn:disabled {
 
 /* ── CheckBox (18×18 with glyph) ──────────────────────────────────────────── */
 QCheckBox {
-    color: ${gray_700};
+    color: ${gray_800};
     spacing: 8px;
+    min-height: 28px;
     font-family: ${font_family};
     font-size: ${font_size_base}pt;
+    background: transparent;
 }
 
 QCheckBox::indicator {
