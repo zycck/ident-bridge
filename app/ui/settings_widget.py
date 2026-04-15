@@ -657,9 +657,22 @@ class SettingsWidget(QWidget):
         self._db_combo.setEnabled(True)
         _set_status(self._conn_status, False, f"Список БД: {message}")
 
-        # Instance changed while the failed fetch was running — try the new one
         if pending is not None:
+            # User switched instance while we were fetching — honour their choice
             self._fetch_databases(pending)
+        else:
+            # Auto-advance: try the next instance in the list so that, for example,
+            # a dead MSSQLSERVER doesn't block discovery of a working SQLEXPRESS.
+            cur = self._instance_combo.currentIndex()
+            nxt = cur + 1
+            if nxt < self._instance_combo.count():
+                next_inst = self._instance_combo.itemData(nxt)
+                if next_inst is not None:
+                    _log.debug("Auto-advancing to next instance: %s", next_inst.display)
+                    self._instance_combo.blockSignals(True)
+                    self._instance_combo.setCurrentIndex(nxt)
+                    self._instance_combo.blockSignals(False)
+                    self._fetch_databases(next_inst)
 
     # ------------------------------------------------------------------
     # SQL Server — test connection

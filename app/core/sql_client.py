@@ -20,6 +20,11 @@ class SqlClient:
         self._conn: pyodbc.Connection | None = None
 
     def connect(self) -> None:
+        instance = self._cfg.get("sql_instance") or ""
+        database = self._cfg.get("sql_database") or ""
+        if not instance:
+            raise ConnectionError("SQL Server instance not configured")
+
         last_exc: Exception | None = None
         delay = _BASE_DELAY
 
@@ -36,8 +41,8 @@ class SqlClient:
                 auth = f"UID={user};PWD={password};" if user else "Trusted_Connection=yes;"
                 conn_str = (
                     f"Driver={{{driver}}};"
-                    f"Server={self._cfg['sql_instance']};"
-                    f"Database={self._cfg['sql_database']};"
+                    f"Server={instance};"
+                    + (f"Database={database};" if database else "")
                     + auth +
                     "APP=iDentBridge;"
                     "TrustServerCertificate=yes;"
