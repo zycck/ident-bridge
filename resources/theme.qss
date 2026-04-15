@@ -17,6 +17,8 @@ QWidget {
     color: ${gray_900};
     font-family: ${font_family};
     font-size: ${font_size_base}pt;
+    selection-background-color: ${primary_200};
+    selection-color: ${primary_900};
 }
 
 /* ── Sidebar ──────────────────────────────────────────────────────────────── */
@@ -320,14 +322,26 @@ QTableWidget {
     color: ${gray_900};
     gridline-color: ${border};
     border: 1px solid ${border};
-    border-radius: ${radius}px;
+    border-radius: ${radius_md}px;
     font-family: ${font_family};
     font-size: ${font_size_base}pt;
+    selection-background-color: ${primary_200};
+    selection-color: ${primary_900};
+    alternate-background-color: ${gray_50};
 }
 
 QTableWidget::item:selected {
-    background-color: ${primary_100};
+    background-color: ${primary_200};
     color: ${primary_900};
+}
+
+QTableWidget::item:hover {
+    background-color: ${primary_50};
+}
+
+QListView, QTreeView, QListWidget {
+    selection-background-color: ${primary_200};
+    selection-color: ${primary_900};
 }
 
 QHeaderView::section {
@@ -345,45 +359,73 @@ QHeaderView::section {
 
 /* ── Scrollbars ───────────────────────────────────────────────────────────── */
 QScrollBar:vertical {
-    background-color: transparent;
-    width: 5px;
+    background-color: ${gray_100};
+    width: 10px;
     border: none;
+    border-radius: 5px;
+    margin: 0;
 }
 
 QScrollBar::handle:vertical {
-    background-color: ${gray_300};
-    border-radius: 3px;
-    min-height: 28px;
+    background-color: ${gray_400};
+    border-radius: 5px;
+    min-height: 30px;
+    margin: 1px;
 }
 
 QScrollBar::handle:vertical:hover {
     background-color: ${primary_500};
 }
 
-QScrollBar::add-line:vertical,
-QScrollBar::sub-line:vertical {
-    height: 0px;
+QScrollBar::handle:vertical:pressed {
+    background-color: ${primary_600};
 }
 
-QScrollBar:horizontal {
-    background-color: transparent;
-    height: 5px;
+QScrollBar::add-line:vertical,
+QScrollBar::sub-line:vertical {
+    height: 0;
+    background: none;
     border: none;
 }
 
+QScrollBar::add-page:vertical,
+QScrollBar::sub-page:vertical {
+    background: none;
+}
+
+QScrollBar:horizontal {
+    background-color: ${gray_100};
+    height: 10px;
+    border: none;
+    border-radius: 5px;
+    margin: 0;
+}
+
 QScrollBar::handle:horizontal {
-    background-color: ${gray_300};
-    border-radius: 3px;
-    min-width: 28px;
+    background-color: ${gray_400};
+    border-radius: 5px;
+    min-width: 30px;
+    margin: 1px;
 }
 
 QScrollBar::handle:horizontal:hover {
     background-color: ${primary_500};
 }
 
+QScrollBar::handle:horizontal:pressed {
+    background-color: ${primary_600};
+}
+
 QScrollBar::add-line:horizontal,
 QScrollBar::sub-line:horizontal {
-    width: 0px;
+    width: 0;
+    background: none;
+    border: none;
+}
+
+QScrollBar::add-page:horizontal,
+QScrollBar::sub-page:horizontal {
+    background: none;
 }
 
 /* ── Progress Bar ─────────────────────────────────────────────────────────── */

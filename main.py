@@ -22,15 +22,40 @@ APP_VERSION = "0.0.1"
 
 
 def _load_fonts() -> None:
-    """Register bundled fonts with Qt so the QSS font-family resolves them."""
-    from PySide6.QtGui import QFontDatabase
+    """Register bundled fonts with Qt and set Inter Variable as the app default."""
+    from PySide6.QtGui import QFont, QFontDatabase
+
     if getattr(sys, "frozen", False):
         base = Path(sys._MEIPASS) / "resources" / "fonts"  # type: ignore[attr-defined]
     else:
         base = Path(__file__).parent / "resources" / "fonts"
+
     inter_path = base / "InterVariable.ttf"
-    if inter_path.exists():
-        QFontDatabase.addApplicationFont(str(inter_path))
+    if not inter_path.exists():
+        return
+
+    font_id = QFontDatabase.addApplicationFont(str(inter_path))
+    if font_id < 0:
+        return
+
+    families = QFontDatabase.applicationFontFamilies(font_id)
+    if not families:
+        return
+    family = families[0]
+
+    # Set as application-wide default — every widget that doesn't
+    # explicitly override its font will pick this up. This is the
+    # ONLY reliable way to make inline setStyleSheet font-size labels
+    # also use Inter (QSS font-family inheritance is unreliable when
+    # children set their own font-size via setStyleSheet).
+    default_font = QFont(family, 9)
+    default_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+    default_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+
+    from PySide6.QtWidgets import QApplication
+    qapp = QApplication.instance()
+    if qapp is not None:
+        qapp.setFont(default_font)
 
 
 def _load_theme() -> str:
