@@ -7,6 +7,8 @@ import uuid
 from datetime import datetime
 
 import qtawesome as qta
+import sqlglot
+from sqlglot.errors import ParseError, TokenError
 from PySide6.QtCore import QThread, QTimer, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -48,62 +50,59 @@ def _h_sep() -> QFrame:
 
 
 # ---------------------------------------------------------------------------
-# SQL Syntax Validator
+# SQL Syntax Validator (sqlglot-backed, T-SQL dialect)
 # ---------------------------------------------------------------------------
-
-_VALID_START_KW: frozenset[str] = frozenset({
-    "SELECT", "INSERT", "UPDATE", "DELETE", "WITH",
-    "EXEC", "EXECUTE", "DECLARE", "CREATE", "DROP",
-    "ALTER", "TRUNCATE", "MERGE", "SET", "BEGIN",
-})
-
 
 def _validate_sql(sql: str) -> tuple[bool, str]:
     """
-    Pure-Python T-SQL surface validator.
-    Checks: non-empty, valid start keyword, balanced parentheses
-    (string literals skipped). Returns (ok, message).
+    Full T-SQL syntax check via sqlglot. Parses the entire query
+    (statements separated by ;) using the T-SQL dialect grammar.
+    Returns (ok, short_message_in_russian).
     """
     sql = sql.strip()
     if not sql:
         return False, "Запрос пуст"
 
-    m = re.match(r"[A-Za-z_]\w*", sql)
-    if not m:
-        return False, "Нет ключевого слова"
-    kw = m.group(0).upper()
-    if kw not in _VALID_START_KW:
-        return False, f"Недопустимое начало: {kw}"
+    try:
+        statements = sqlglot.parse(
+            sql,
+            dialect="tsql",
+            error_level=sqlglot.ErrorLevel.IMMEDIATE,
+        )
+    except (ParseError, TokenError) as exc:
+        return False, _format_sqlglot_error(exc)
+    except Exception as exc:  # pragma: no cover — defensive
+        return False, f"Ошибка парсера: {exc}"
 
-    # Balanced parentheses — skip content inside string literals
-    depth = 0
-    in_str = False
-    i, n = 0, len(sql)
-    while i < n:
-        c = sql[i]
-        if in_str:
-            if c == "'":
-                if i + 1 < n and sql[i + 1] == "'":  # escaped ''
-                    i += 2
-                    continue
-                in_str = False
-        else:
-            if c == "'":
-                in_str = True
-            elif c == "(":
-                depth += 1
-            elif c == ")":
-                depth -= 1
-                if depth < 0:
-                    return False, "Лишняя закрывающая скобка"
-        i += 1
-
-    if in_str:
-        return False, "Незакрытая строка"
-    if depth > 0:
-        return False, f"Незакрыто скобок: {depth}"
+    # sqlglot returns [None] for trailing/empty statements; require at least one real one
+    if not any(stmt is not None for stmt in statements):
+        return False, "Пустое выражение"
 
     return True, "SQL корректен"
+
+
+def _format_sqlglot_error(exc: Exception) -> str:
+    """Take the first sqlglot error and make it short + Russian-friendly."""
+    errors = getattr(exc, "errors", None)
+    if errors:
+        first = errors[0]
+        desc = first.get("description") or ""
+        line = first.get("line")
+        col  = first.get("col")
+        # Translate a few common sqlglot phrases to Russian
+        ru = (desc
+              .replace("Expecting", "Ожидается")
+              .replace("Expected", "Ожидается")
+              .replace("Invalid expression", "Недопустимое выражение")
+              .replace("Unexpected token", "неожиданный токен")
+              .replace("but got", "—"))
+        # Strip noisy <Token …> blob if present
+        ru = re.sub(r"<Token[^>]*text:\s*([^,]+),[^>]*>", r"«\1»", ru)
+        ru = re.sub(r"\s+", " ", ru).strip()
+        if line and col:
+            return f"стр {line}:{col} · {ru[:80]}"
+        return ru[:100] or "Синтаксическая ошибка"
+    return str(exc)[:100] or "Синтаксическая ошибка"
 
 
 # ---------------------------------------------------------------------------
