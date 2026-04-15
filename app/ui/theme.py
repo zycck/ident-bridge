@@ -64,7 +64,7 @@ class Theme:
     control_pad_h  = "10"
 
     # ── Typography ────────────────────────────────────────────────────
-    font_family        = "Inter Variable, Inter, Segoe UI Variable, Segoe UI, sans-serif"
+    font_family        = "Manrope, Segoe UI Variable, Segoe UI, sans-serif"
     font_mono          = "Cascadia Code, Consolas, Courier New, monospace"
     font_size_xs       = "8"
     font_size_sm       = "8.5"

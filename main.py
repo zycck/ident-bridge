@@ -22,7 +22,18 @@ APP_VERSION = "0.0.1"
 
 
 def _load_fonts() -> None:
-    """Register bundled fonts with Qt and set Inter Variable as the app default."""
+    """
+    Register bundled fonts and set Manrope as the application-wide default.
+
+    Manrope is chosen for its excellent Cyrillic glyphs (designed by Russian
+    designer Mikhail Sharanda) — Inter's Cyrillic component has known stroke-
+    width and metrics issues that look ugly at small UI sizes.
+
+    PreferNoHinting + PreferAntialias produces noticeably smoother rendering
+    for non-Latin scripts at small sizes than the default PreferFullHinting,
+    which forces grid-aligned pixel alignment that mangles thin Cyrillic
+    strokes.
+    """
     from PySide6.QtGui import QFont, QFontDatabase
 
     if getattr(sys, "frozen", False):
@@ -30,26 +41,24 @@ def _load_fonts() -> None:
     else:
         base = Path(__file__).parent / "resources" / "fonts"
 
-    inter_path = base / "InterVariable.ttf"
-    if not inter_path.exists():
-        return
+    font_path = base / "Manrope.ttf"
+    if not font_path.exists():
+        # No bundled font — fall through to system Segoe UI Variable (still
+        # apply the hinting fix to whatever the system gives us).
+        family = "Segoe UI Variable"
+    else:
+        font_id = QFontDatabase.addApplicationFont(str(font_path))
+        if font_id < 0:
+            family = "Segoe UI Variable"
+        else:
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            family = families[0] if families else "Segoe UI Variable"
 
-    font_id = QFontDatabase.addApplicationFont(str(inter_path))
-    if font_id < 0:
-        return
-
-    families = QFontDatabase.applicationFontFamilies(font_id)
-    if not families:
-        return
-    family = families[0]
-
-    # Set as application-wide default — every widget that doesn't
-    # explicitly override its font will pick this up. This is the
-    # ONLY reliable way to make inline setStyleSheet font-size labels
-    # also use Inter (QSS font-family inheritance is unreliable when
-    # children set their own font-size via setStyleSheet).
     default_font = QFont(family, 9)
-    default_font.setHintingPreference(QFont.HintingPreference.PreferFullHinting)
+    # PreferNoHinting: let DirectWrite do subpixel positioning instead of
+    # forcing pixel-grid alignment. Smoother for thin strokes and Cyrillic.
+    default_font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
+    # PreferAntialias: explicit AA even at small sizes.
     default_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
 
     from PySide6.QtWidgets import QApplication
