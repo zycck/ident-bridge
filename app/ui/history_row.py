@@ -89,8 +89,15 @@ class HistoryRow(QWidget):
         # ── Timestamp ─────────────────────────────────────────────────
         ts_lbl = QLabel(self._format_ts(entry.get("ts", "")))
         ts_lbl.setStyleSheet(f"color: {Theme.gray_500}; background: transparent;")
-        ts_lbl.setFont(_make_small_font(8.5))
-        ts_lbl.setFixedWidth(80)
+        small_font = _make_small_font(8.5)
+        ts_lbl.setFont(small_font)
+        # Width must fit "Сегодня HH:MM" rendered in the actual font we're
+        # using (Manrope at 8.5pt is wider than Inter/Segoe). Measure with
+        # QFontMetrics on the explicit font, not on the label's pre-show
+        # font which may still be the Qt default.
+        from PySide6.QtGui import QFontMetrics
+        fm = QFontMetrics(small_font)
+        ts_lbl.setFixedWidth(fm.horizontalAdvance("Сегодня 00:00") + 12)
         layout.addWidget(ts_lbl)
 
         # ── Job name (only when shown in aggregated view) ─────────────
