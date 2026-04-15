@@ -5,6 +5,14 @@ from typing import Literal
 from PySide6.QtCore import QObject, QTimer, Signal
 
 
+# Daily-mode scheduling uses datetime.now().astimezone() to be DST-aware.
+# When the local timezone observes DST transitions, "daily at 14:30" stays
+# anchored to the wall-clock hour rather than drifting by an hour twice a year.
+def _local_now() -> datetime:
+    """Return the current local time as a timezone-aware datetime."""
+    return datetime.now().astimezone()
+
+
 class SyncScheduler(QObject):
     trigger = Signal()
     next_run_changed = Signal(object)  # datetime | None
@@ -38,7 +46,7 @@ class SyncScheduler(QObject):
         if self._mode is None or self._value is None:
             return  # configure() не был вызван до start()
 
-        now = datetime.now()
+        now = _local_now()
 
         if self._mode == "daily":
             parts = self._value.split(":")

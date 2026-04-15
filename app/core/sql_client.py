@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pyodbc
 
 from app.config import AppConfig, QueryResult
+from app.core.connection import build_sql_connection_string
 from app.core.odbc_utils import best_driver
 
 _MAX_ATTEMPTS = 3
@@ -38,15 +39,14 @@ class SqlClient:
                 driver = best_driver()
                 user = self._cfg.get("sql_user", "") or ""
                 password = self._cfg.get("sql_password", "") or ""
-                auth = f"UID={user};PWD={password};" if user else "Trusted_Connection=yes;"
-                conn_str = (
-                    f"Driver={{{driver}}};"
-                    f"Server={instance};"
-                    + (f"Database={database};" if database else "")
-                    + auth +
-                    "APP=iDentBridge;"
-                    "TrustServerCertificate=yes;"
-                    "Connect Timeout=5;"
+                conn_str = build_sql_connection_string(
+                    driver=driver,
+                    server=instance,
+                    database=database,
+                    user=user,
+                    password=password,
+                    trust_cert=self._cfg.get("sql_trust_cert", True),
+                    timeout=5,
                 )
                 self._conn = pyodbc.connect(conn_str, autocommit=True, timeout=5)
                 # Python strings are immutable; we cannot truly zero conn_str in memory.
@@ -82,8 +82,10 @@ class SqlClient:
             return False
 
     def query(self, sql: str, params: tuple = ()) -> QueryResult:
+        if self._conn is None:
+            raise RuntimeError("Not connected")
         start = datetime.now(timezone.utc)
-        with self._conn.cursor() as cursor:  # type: ignore[union-attr]
+        with self._conn.cursor() as cursor:
             cursor.execute(sql, params)
             columns = [d[0] for d in cursor.description]
             rows = list(cursor.fetchall())

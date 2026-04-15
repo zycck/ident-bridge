@@ -5,6 +5,7 @@ import subprocess
 import pyodbc
 
 from app.config import SqlInstance
+from app.core.connection import build_sql_connection_string
 from app.core.odbc_utils import best_driver
 
 _INSTANCES_KEY = r"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
@@ -87,15 +88,14 @@ def scan_all() -> list[SqlInstance]:
 
 def list_databases(instance: SqlInstance, user: str, password: str) -> list[str]:
     driver = best_driver()
-    auth = f"UID={user};PWD={password};" if user else "Trusted_Connection=yes;"
-    conn_str = (
-        f"Driver={{{driver}}};"
-        f"Server={instance.display};"
-        "Database=master;"
-        + auth +
-        "APP=iDentBridge;"
-        "TrustServerCertificate=yes;"
-        "Connect Timeout=3;"
+    conn_str = build_sql_connection_string(
+        driver=driver,
+        server=instance.display,
+        database="master",
+        user=user,
+        password=password,
+        trust_cert=True,
+        timeout=3,
     )
     conn: pyodbc.Connection | None = None
     try:
