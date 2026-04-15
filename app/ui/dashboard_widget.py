@@ -21,7 +21,7 @@ _log = get_logger(__name__)
 
 
 class _PingWorker(QObject):
-    result = Signal(bool)
+    result = Signal(object)  # bool | None; None = instance not configured
 
     def __init__(self, config: ConfigManager) -> None:
         super().__init__()
@@ -30,6 +30,10 @@ class _PingWorker(QObject):
     @Slot()
     def run(self) -> None:
         cfg = self._config.load()
+        if not cfg.get("sql_instance"):
+            _log.debug("DB ping skipped: instance not configured")
+            self.result.emit(None)
+            return
         client = SqlClient(cfg)
         try:
             client.connect()
@@ -178,9 +182,13 @@ class DashboardWidget(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
-    def set_connected(self, ok: bool) -> None:
-        color = "#34D399" if ok else "#F87171"
-        label = "Подключено" if ok else "Нет связи"
+    def set_connected(self, ok: bool | None) -> None:
+        if ok is None:
+            color, label = "#9CA3AF", "Не настроено"
+        elif ok:
+            color, label = "#34D399", "Подключено"
+        else:
+            color, label = "#F87171", "Нет связи"
         self._status_dot.setStyleSheet(f"color: {color}; font-size: 20px;")
         self._status_text.setText(label)
         self._status_text.setStyleSheet(f"color: {color}; font-size: 9.5pt;")
@@ -230,8 +238,8 @@ class DashboardWidget(QWidget):
 
         thread.start()
 
-    @Slot(bool)
-    def _on_ping_result(self, alive: bool) -> None:
+    @Slot(object)
+    def _on_ping_result(self, alive) -> None:
         self._ping_running = False
         self.set_connected(alive)
 

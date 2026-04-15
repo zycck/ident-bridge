@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import qtawesome as qta
 from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -27,6 +28,7 @@ from app.core.instance_scanner import list_databases, scan_all
 from app.core.sql_client import SqlClient
 from app.core.telegram import TelegramNotifier
 from app.core.updater import GITHUB_REPO
+from app.ui.test_run_dialog import TestRunDialog
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
@@ -235,8 +237,9 @@ class SettingsWidget(QWidget):
         self._instance_combo.setEditable(True)
         self._instance_combo.currentIndexChanged.connect(self._on_instance_changed)
 
-        scan_btn = QPushButton("Сканировать")
-        scan_btn.setFixedWidth(110)
+        scan_btn = QPushButton("  Сканировать")
+        scan_btn.setIcon(qta.icon('fa5s.search', color='#374151'))
+        scan_btn.setFixedWidth(130)
         scan_btn.clicked.connect(self._scan_instances)
 
         inst_row = QHBoxLayout()
@@ -255,8 +258,9 @@ class SettingsWidget(QWidget):
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
 
-        refresh_db_btn = QPushButton("↻")
-        refresh_db_btn.setFixedWidth(34)
+        refresh_db_btn = QPushButton()
+        refresh_db_btn.setIcon(qta.icon('fa5s.sync-alt', color='#374151'))
+        refresh_db_btn.setFixedWidth(36)
         refresh_db_btn.setToolTip("Обновить список баз данных")
         refresh_db_btn.clicked.connect(self._refresh_databases)
 
@@ -279,8 +283,9 @@ class SettingsWidget(QWidget):
         self._password_edit.setPlaceholderText("••••••")
         sql_lay.addLayout(_make_row("Пароль", self._password_edit))
 
-        test_conn_btn = QPushButton("Тест подключения")
+        test_conn_btn = QPushButton("  Тест подключения")
         test_conn_btn.setObjectName("primaryBtn")
+        test_conn_btn.setIcon(qta.icon('fa5s.plug', color='#FFFFFF'))
         test_conn_btn.clicked.connect(self._test_connection)
         sql_lay.addWidget(test_conn_btn)
 
@@ -291,6 +296,11 @@ class SettingsWidget(QWidget):
         self._query_edit.setPlaceholderText("SELECT … FROM …")
         self._query_edit.setFixedHeight(76)
         sql_lay.addLayout(_make_row("SQL запрос", self._query_edit))
+
+        test_query_btn = QPushButton("  Тестовый запрос")
+        test_query_btn.setIcon(qta.icon('fa5s.terminal', color='#374151'))
+        test_query_btn.clicked.connect(self._open_test_dialog)
+        sql_lay.addWidget(test_query_btn)
 
         layout.addWidget(sql_box)
 
@@ -342,7 +352,8 @@ class SettingsWidget(QWidget):
         self._tg_chat_id_edit.setPlaceholderText("-100...")
         tg_lay.addLayout(_make_row("Chat ID", self._tg_chat_id_edit))
 
-        test_tg_btn = QPushButton("Тест Telegram")
+        test_tg_btn = QPushButton("  Тест Telegram")
+        test_tg_btn.setIcon(qta.icon('fa5s.paper-plane', color='#374151'))
         test_tg_btn.clicked.connect(self._test_telegram)
         tg_lay.addWidget(test_tg_btn)
 
@@ -365,7 +376,8 @@ class SettingsWidget(QWidget):
         version_lbl.setStyleSheet("color: #3F3F46; font-size: 9pt;")
         app_lay.addWidget(version_lbl)
 
-        check_update_btn = QPushButton("Проверить обновление")
+        check_update_btn = QPushButton("  Проверить обновление")
+        check_update_btn.setIcon(qta.icon('fa5s.cloud-download-alt', color='#374151'))
         check_update_btn.clicked.connect(self._check_update)
         app_lay.addWidget(check_update_btn)
 
@@ -376,12 +388,14 @@ class SettingsWidget(QWidget):
         btn_row.setSpacing(8)
         btn_row.addStretch()
 
-        reset_btn = QPushButton("Сбросить")
+        reset_btn = QPushButton("  Сбросить")
+        reset_btn.setIcon(qta.icon('fa5s.undo-alt', color='#374151'))
         reset_btn.clicked.connect(self._reset)
         btn_row.addWidget(reset_btn)
 
-        save_btn = QPushButton("Сохранить")
+        save_btn = QPushButton("  Сохранить")
         save_btn.setObjectName("primaryBtn")
+        save_btn.setIcon(qta.icon('fa5s.save', color='#FFFFFF'))
         save_btn.clicked.connect(self._save)
         btn_row.addWidget(save_btn)
 
@@ -719,6 +733,20 @@ class SettingsWidget(QWidget):
             self._refresh_databases()
         else:
             _set_status(self._conn_status, False, message or "Ошибка подключения")
+
+    # ------------------------------------------------------------------
+    # SQL Server — тестовый запрос
+    # ------------------------------------------------------------------
+
+    def _open_test_dialog(self) -> None:
+        cfg: AppConfig = {
+            "sql_instance": self._instance_combo.currentText().strip(),
+            "sql_database": self._db_combo.currentText().strip(),
+            "sql_user": self._login_edit.text().strip(),
+            "sql_password": self._password_edit.text(),
+        }
+        sql = self._query_edit.toPlainText().strip()
+        TestRunDialog(cfg, initial_sql=sql, parent=self).exec()
 
     # ------------------------------------------------------------------
     # Telegram

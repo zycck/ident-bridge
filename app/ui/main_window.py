@@ -2,6 +2,7 @@
 """MainWindow — top-level application shell for iDentBridge."""
 from __future__ import annotations
 
+import qtawesome as qta
 from PySide6.QtCore import QThread, Slot
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -33,6 +34,7 @@ _log = get_logger(__name__)
 
 
 _NAV_LABELS = ("Статус", "Выгрузка", "Настройки")
+_NAV_FA_ICONS = ("fa5s.chart-bar", "fa5s.upload", "fa5s.cog")
 
 
 class MainWindow(QMainWindow):
@@ -101,16 +103,25 @@ class MainWindow(QMainWindow):
         nav_layout.setSpacing(4)
 
         self._nav_btns: list[QPushButton] = []
-        for i, label in enumerate(_NAV_LABELS):
-            btn = QPushButton(label)
+        self._nav_icons_normal: list[QIcon] = []
+        self._nav_icons_active: list[QIcon] = []
+
+        for i, (label, fa) in enumerate(zip(_NAV_LABELS, _NAV_FA_ICONS)):
+            icon_n = qta.icon(fa, color='#6B7280')
+            icon_a = qta.icon(fa, color='#2563EB')
+            self._nav_icons_normal.append(icon_n)
+            self._nav_icons_active.append(icon_a)
+            btn = QPushButton(f"  {label}")
             btn.setObjectName("navBtn")
+            btn.setIcon(icon_n)
             btn.clicked.connect(lambda checked=False, idx=i: self.navigate(idx))
             nav_layout.addWidget(btn)
             self._nav_btns.append(btn)
         nav_layout.addStretch()
 
-        debug_btn = QPushButton("Debug")
+        debug_btn = QPushButton("  Debug")
         debug_btn.setObjectName("navBtn")
+        debug_btn.setIcon(qta.icon('fa5s.bug', color='#6B7280'))
         debug_btn.setToolTip("Панель отладки (Ctrl+D)")
         debug_btn.clicked.connect(self._toggle_debug_window)
         nav_layout.addWidget(debug_btn)
@@ -187,8 +198,9 @@ class MainWindow(QMainWindow):
     def navigate(self, index: int) -> None:
         self._stack.setCurrentIndex(index)
         for i, btn in enumerate(self._nav_btns):
-            btn.setObjectName("navBtnActive" if i == index else "navBtn")
-            # Force QSS re-evaluation after objectName change
+            active = (i == index)
+            btn.setObjectName("navBtnActive" if active else "navBtn")
+            btn.setIcon(self._nav_icons_active[i] if active else self._nav_icons_normal[i])
             btn.style().unpolish(btn)
             btn.style().polish(btn)
 
