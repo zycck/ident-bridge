@@ -1,0 +1,113 @@
+# Manual verification checklist
+
+This document covers the manual end-to-end verification steps for
+iDentBridge that the automated test suite cannot fully exercise.
+Run through it before any release.
+
+## Prerequisites
+- Windows 10 or 11
+- Python 3.13 with PySide6 installed
+- Optional: a reachable MS SQL Server instance for end-to-end export tests
+
+## 1. Cold start + tray icon
+1. Run `python main.py`
+2. **Verify:** main window opens with the lime brand
+3. **Verify:** tray icon appears in the Windows notification area
+4. **Verify:** the tray icon is the app icon (database cylinder), not the default Python feather
+
+## 2. Close-to-tray
+1. With the app running, click the X button in the title bar
+2. **Verify:** main window disappears
+3. **Verify:** tray icon stays in the notification area
+4. Double-click the tray icon
+5. **Verify:** main window reappears
+6. Right-click the tray icon → "Выход"
+7. **Verify:** the app fully exits (process gone, tray icon removed)
+
+## 3. Background scheduler with FAST_TRIGGER
+This verifies that scheduled exports run in the background while the
+window is closed-to-tray.
+
+1. Set the dev env var:
+   ```cmd
+   set IDENTBRIDGE_FAST_TRIGGER_SECONDS=10
+   ```
+2. Run `python main.py`
+3. Go to **Выгрузки**, click **Добавить**
+4. Fill in:
+   - Name: `Test Background`
+   - SQL: `SELECT 1 as x`
+   - Webhook URL: leave blank
+5. Toggle **Запускать автоматически** → on
+6. Go back to the tile list (← Назад)
+7. Wait ~10 seconds
+8. **Verify:** open the tile and check **История** — first entry appears with **scheduled** trigger (clock icon, lime accent)
+9. Close the window (X) — it goes to tray
+10. Wait ~20 more seconds
+11. Restore from tray (double-click tray icon)
+12. **Verify:** 2-3 more history entries have appeared while the window was hidden
+13. **Verify:** **Статус** tab shows the same entries in the global activity feed
+14. Stop the app
+
+## 4. Windows autostart
+1. Run `python main.py`
+2. Go to **Настройки** → toggle **Запускать с Windows** → on
+3. Verify the registry key:
+   ```cmd
+   reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v iDentBridge
+   ```
+4. **Verify:** the value points to your iDentBridge exe / python script
+5. Reboot Windows
+6. **Verify:** after login, the app starts automatically (tray icon appears)
+7. Open the app → **Настройки** → toggle off
+8. Re-verify the registry key is gone
+
+## 5. Update check
+1. **Настройки** → click **Проверить обновление**
+2. **Verify:** no errors in the debug log (Ctrl+D)
+3. **Verify:** if a new version is available, the update banner appears on Status
+
+## 6. Test query (manual + dialog)
+1. **Выгрузки** → tile → click into the editor
+2. Click **Тест** below the SQL editor
+3. **Verify:** test dialog opens, query auto-runs, results table populated
+4. Close the dialog
+5. **Verify:** history gains a new entry with the **test** trigger (flask icon, gray accent)
+
+## 7. SQL editor full-screen
+1. In the editor, click the **↗ expand** icon in the top-right of the SQL field
+2. **Verify:** SqlEditorDialog opens at 1100×720, light theme, syntax highlighting visible
+3. Edit the SQL
+4. Click **Сохранить**
+5. **Verify:** the inline editor reflects the changes
+
+## 8. History clear
+1. Click **Очистить** in the editor's history section
+2. **Verify:** confirm dialog appears, all entries gone after Yes
+3. Go to **Статус** → **Очистить всё** in the activity card
+4. **Verify:** all jobs' history is cleared globally
+
+## 9. Debug console (Ctrl+D)
+1. Press Ctrl+D
+2. **Verify:** debug window opens with colored log levels:
+   - DEBUG = muted gray
+   - INFO = cyan
+   - WARNING = amber
+   - ERROR = red
+   - CRITICAL = bold red
+3. Trigger any action that logs — verify it appears live
+
+## 10. Settings persistence
+1. Change the SQL instance to something
+2. Close + reopen the app
+3. **Verify:** the instance is remembered
+
+---
+
+## Cleanup after verification
+
+```cmd
+set IDENTBRIDGE_FAST_TRIGGER_SECONDS=
+```
+
+Unset the env var so production behavior is restored.
