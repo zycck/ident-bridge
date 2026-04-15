@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication
 
 from app.config import ConfigManager
 from app.core import app_logger
+from app.ui import icons_rc  # noqa: F401  — registers :/icons/check.svg for QSS
 from app.ui.main_window import MainWindow
 from app.ui.theme import Theme
 from app.core.updater import cleanup_old_exe
