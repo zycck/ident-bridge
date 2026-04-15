@@ -225,7 +225,7 @@ class MainWindow(QMainWindow):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_update_worker', None))
+        thread.finished.connect(lambda w=worker: setattr(self, '_update_worker', None) if self._update_worker is w else None)
 
         thread.start()
 

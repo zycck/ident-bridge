@@ -189,6 +189,10 @@ class SettingsWidget(QWidget):
         self._test_tg_running = False
         self._update_running = False
 
+        # If instance changes while a db-list fetch is in-flight, store the new
+        # target here and re-fetch as soon as the current fetch finishes/errors.
+        self._dblist_pending: SqlInstance | None = None
+
         # Strong Python references — prevents GC from deleting workers while
         # the underlying QThread is still running (PySide6 doesn't keep them alive)
         self._scan_worker: _InstanceScanWorker | None = None
@@ -412,7 +416,10 @@ class SettingsWidget(QWidget):
                 target_idx = max(idx, 0)
             finally:
                 self._instance_combo.blockSignals(False)
-            self._instance_combo.setCurrentIndex(target_idx)  # fires exactly once
+            self._instance_combo.setCurrentIndex(target_idx)
+            # Qt sets currentIndex=0 during addItem even with signals blocked,
+            # so setCurrentIndex(0) emits nothing. Always trigger fetch explicitly.
+            self._on_instance_changed(target_idx)
 
         saved_db = cfg.get("sql_database", "")
         if saved_db:
@@ -515,7 +522,7 @@ class SettingsWidget(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_scan_worker', None))
+        thread.finished.connect(lambda w=worker: setattr(self, '_scan_worker', None) if self._scan_worker is w else None)
         thread.start()
 
     @Slot(list)
@@ -546,7 +553,10 @@ class SettingsWidget(QWidget):
         finally:
             self._instance_combo.blockSignals(False)
 
-        self._instance_combo.setCurrentIndex(target_idx)  # fires exactly once
+        self._instance_combo.setCurrentIndex(target_idx)
+        # Qt sets currentIndex=0 during addItem even with signals blocked,
+        # so setCurrentIndex(0) emits nothing. Always trigger fetch explicitly.
+        self._on_instance_changed(target_idx)
 
     @Slot(str)
     def _on_scan_error(self, message: str) -> None:
@@ -583,7 +593,10 @@ class SettingsWidget(QWidget):
 
     def _fetch_databases(self, inst: SqlInstance) -> None:
         if self._dblist_running:
+            # A fetch is already in-flight; queue this instance for after it finishes
+            self._dblist_pending = inst
             return
+        self._dblist_pending = None
         self._dblist_running = True
 
         self._db_combo.clear()
@@ -604,12 +617,15 @@ class SettingsWidget(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_dblist_worker', None))
+        thread.finished.connect(lambda w=worker: setattr(self, '_dblist_worker', None) if self._dblist_worker is w else None)
         thread.start()
 
     @Slot(list)
     def _on_dblist_finished(self, databases: list[str]) -> None:
         self._dblist_running = False
+        pending = self._dblist_pending
+        self._dblist_pending = None
+
         cfg = self._config.load()
         saved_db = cfg.get("sql_database", "")
 
@@ -619,22 +635,31 @@ class SettingsWidget(QWidget):
         if not databases:
             if saved_db:
                 self._db_combo.addItem(saved_db)
-            return
+        else:
+            for db in databases:
+                self._db_combo.addItem(db)
+            if saved_db:
+                idx = self._db_combo.findText(saved_db)
+                if idx >= 0:
+                    self._db_combo.setCurrentIndex(idx)
 
-        for db in databases:
-            self._db_combo.addItem(db)
-
-        if saved_db:
-            idx = self._db_combo.findText(saved_db)
-            if idx >= 0:
-                self._db_combo.setCurrentIndex(idx)
+        # Instance changed while we were fetching — fetch the new one now
+        if pending is not None:
+            self._fetch_databases(pending)
 
     @Slot(str)
     def _on_dblist_error(self, message: str) -> None:
         self._dblist_running = False
+        pending = self._dblist_pending
+        self._dblist_pending = None
+
         self._db_combo.clear()
         self._db_combo.setEnabled(True)
         _set_status(self._conn_status, False, f"Список БД: {message}")
+
+        # Instance changed while the failed fetch was running — try the new one
+        if pending is not None:
+            self._fetch_databases(pending)
 
     # ------------------------------------------------------------------
     # SQL Server — test connection
@@ -662,7 +687,7 @@ class SettingsWidget(QWidget):
         worker.finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_test_conn_worker', None))
+        thread.finished.connect(lambda w=worker: setattr(self, '_test_conn_worker', None) if self._test_conn_worker is w else None)
         thread.start()
 
     @Slot(bool, str)
@@ -701,7 +726,7 @@ class SettingsWidget(QWidget):
         worker.finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_test_tg_worker', None))
+        thread.finished.connect(lambda w=worker: setattr(self, '_test_tg_worker', None) if self._test_tg_worker is w else None)
         thread.start()
 
     @Slot(bool, str)
@@ -754,7 +779,7 @@ class SettingsWidget(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_update_worker', None))
+        thread.finished.connect(lambda w=worker: setattr(self, '_update_worker', None) if self._update_worker is w else None)
         thread.start()
 
     @Slot(str, str)

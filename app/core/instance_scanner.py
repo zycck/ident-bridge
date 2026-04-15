@@ -95,11 +95,11 @@ def list_databases(instance: SqlInstance, user: str, password: str) -> list[str]
         + auth +
         "APP=iDentBridge;"
         "TrustServerCertificate=yes;"
-        "Connect Timeout=5;"
+        "Connect Timeout=3;"
     )
     conn: pyodbc.Connection | None = None
     try:
-        conn = pyodbc.connect(conn_str, autocommit=True, timeout=5)
+        conn = pyodbc.connect(conn_str, autocommit=True, timeout=3)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name"

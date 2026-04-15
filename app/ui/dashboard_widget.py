@@ -226,7 +226,7 @@ class DashboardWidget(QWidget):
         thread.started.connect(worker.run)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda: setattr(self, '_ping_worker', None))
+        thread.finished.connect(lambda w=worker: setattr(self, '_ping_worker', None) if self._ping_worker is w else None)
 
         thread.start()
 
