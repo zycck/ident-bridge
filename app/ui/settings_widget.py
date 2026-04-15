@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -19,16 +18,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-import logging
-
 from app.config import AppConfig, ConfigManager, SqlInstance
 from app.core import startup as StartupManager
 from app.core.app_logger import get_logger
 from app.core.instance_scanner import list_databases, scan_all
 from app.core.sql_client import SqlClient
-from app.core.telegram import TelegramNotifier
 from app.core.updater import GITHUB_REPO
-from app.ui.test_run_dialog import TestRunDialog
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
@@ -149,26 +144,6 @@ class _TestConnWorker(QObject):
         self.finished.emit(ok, msg or "")
 
 
-class _TestTgWorker(QObject):
-    finished: Signal = Signal(bool, str)
-
-    def __init__(self, token: str, chat_id: str) -> None:
-        super().__init__()
-        self._token = token
-        self._chat_id = chat_id
-
-    @Slot()
-    def run(self) -> None:
-        _log.debug("Testing Telegram notification")
-        notifier = TelegramNotifier(self._token, self._chat_id)
-        ok, msg = notifier.test()
-        if ok:
-            _log.info("Telegram test passed")
-        else:
-            _log.warning("Telegram test failed: %s", msg)
-        self.finished.emit(ok, msg)
-
-
 # ---------------------------------------------------------------------------
 # SettingsWidget
 # ---------------------------------------------------------------------------
@@ -188,7 +163,6 @@ class SettingsWidget(QWidget):
         self._scan_running = False
         self._dblist_running = False
         self._test_conn_running = False
-        self._test_tg_running = False
         self._update_running = False
 
         # If instance changes while a db-list fetch is in-flight, store the new
@@ -200,14 +174,14 @@ class SettingsWidget(QWidget):
         self._scan_worker: _InstanceScanWorker | None = None
         self._dblist_worker: _DbListWorker | None = None
         self._test_conn_worker: _TestConnWorker | None = None
-        self._test_tg_worker: _TestTgWorker | None = None
         self._update_worker: object | None = None
 
         # Запоминает выбор БД в памяти — не зависит от того, сохранён ли конфиг на диск
         self._selected_db: str = ""
         # Флаг: идёт начальная загрузка полей → не триггерить автосохранение
         self._loading: bool = False
-        # Дебаунс-таймер для автосохранения при вводе текста
+        # Дебаунс-таймер для автосохранения при вводе текста (не используется здесь,
+        # но оставлен для совместимости со структурой)
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(800)
@@ -303,77 +277,9 @@ class SettingsWidget(QWidget):
         self._conn_status = _status_label()
         sql_lay.addWidget(self._conn_status)
 
-        self._query_edit = QPlainTextEdit()
-        self._query_edit.setPlaceholderText("SELECT … FROM …")
-        self._query_edit.setFixedHeight(76)
-        sql_lay.addLayout(_make_row("SQL запрос", self._query_edit))
-
-        test_query_btn = QPushButton("  Тестовый запрос")
-        test_query_btn.setIcon(qta.icon('fa5s.terminal', color='#374151'))
-        test_query_btn.clicked.connect(self._open_test_dialog)
-        sql_lay.addWidget(test_query_btn)
-
         layout.addWidget(sql_box)
 
-        # ── Section 2: Расписание ─────────────────────────────────────
-        sched_box, sched_lay = _make_section("Расписание")
-
-        self._sched_enabled = QCheckBox("Включить расписание")
-        sched_lay.addWidget(self._sched_enabled)
-
-        self._sched_mode_combo = QComboBox()
-        self._sched_mode_combo.addItems([
-            "daily — по времени",
-            "hourly — каждые N часов",
-        ])
-        self._sched_mode_combo.currentIndexChanged.connect(self._on_sched_mode_changed)
-        sched_lay.addLayout(_make_row("Режим", self._sched_mode_combo))
-
-        self._sched_value_edit = QLineEdit()
-        self._sched_value_edit.setPlaceholderText("ЧЧ:ММ")
-        sched_lay.addLayout(_make_row("Значение", self._sched_value_edit))
-
-        self._next_run_label = QLabel("Следующий запуск: —")
-        self._next_run_label.setStyleSheet("color: #52525B; font-size: 9pt;")
-        sched_lay.addWidget(self._next_run_label)
-
-        layout.addWidget(sched_box)
-
-        # ── Section 3: Экспорт ────────────────────────────────────────
-        export_box, export_lay = _make_section("Экспорт")
-
-        self._webhook_edit = QLineEdit()
-        self._webhook_edit.setPlaceholderText("https://...")
-        export_lay.addLayout(_make_row("Webhook URL", self._webhook_edit))
-
-        sheets_stub = QLabel("Google Sheets webhook (скоро)")
-        sheets_stub.setStyleSheet("color: #3F3F46; font-style: italic; font-size: 9pt;")
-        export_lay.addWidget(sheets_stub)
-
-        layout.addWidget(export_box)
-
-        # ── Section 4: Telegram ───────────────────────────────────────
-        tg_box, tg_lay = _make_section("Telegram")
-
-        self._tg_token_edit = QLineEdit()
-        self._tg_token_edit.setPlaceholderText("123456:ABC-DEF...")
-        tg_lay.addLayout(_make_row("Bot Token", self._tg_token_edit))
-
-        self._tg_chat_id_edit = QLineEdit()
-        self._tg_chat_id_edit.setPlaceholderText("-100...")
-        tg_lay.addLayout(_make_row("Chat ID", self._tg_chat_id_edit))
-
-        test_tg_btn = QPushButton("  Тест Telegram")
-        test_tg_btn.setIcon(qta.icon('fa5s.paper-plane', color='#374151'))
-        test_tg_btn.clicked.connect(self._test_telegram)
-        tg_lay.addWidget(test_tg_btn)
-
-        self._tg_status = _status_label()
-        tg_lay.addWidget(self._tg_status)
-
-        layout.addWidget(tg_box)
-
-        # ── Section 5: Приложение ─────────────────────────────────────
+        # ── Section 2: Приложение ─────────────────────────────────────
         app_box, app_lay = _make_section("Приложение")
 
         self._startup_check = QCheckBox("Запускать с Windows")
@@ -419,24 +325,12 @@ class SettingsWidget(QWidget):
 
     def _connect_auto_save(self) -> None:
         """Connect widget signals → auto-save after every user interaction."""
-        # DB combo — updates _selected_db and saves
         self._db_combo.currentIndexChanged.connect(self._on_db_changed)
-        # Line edits — save on blur (editingFinished)
         self._login_edit.editingFinished.connect(self._auto_save)
         self._password_edit.editingFinished.connect(self._auto_save)
-        self._sched_value_edit.editingFinished.connect(self._auto_save)
-        self._webhook_edit.editingFinished.connect(self._auto_save)
-        self._tg_token_edit.editingFinished.connect(self._auto_save)
-        self._tg_chat_id_edit.editingFinished.connect(self._auto_save)
-        # Editable instance combo — save when user confirms manual entry
         if self._instance_combo.lineEdit() is not None:
             self._instance_combo.lineEdit().editingFinished.connect(self._auto_save)
-        # Checkboxes / mode combos — save immediately on change
-        self._sched_enabled.toggled.connect(self._auto_save)
-        self._sched_mode_combo.currentIndexChanged.connect(self._auto_save)
         self._auto_update_check.toggled.connect(self._auto_save)
-        # QPlainTextEdit — debounce 800 ms to avoid per-keystroke saves
-        self._query_edit.textChanged.connect(self._save_timer.start)
 
     # ------------------------------------------------------------------
     # Load / Save / Reset
@@ -479,29 +373,7 @@ class SettingsWidget(QWidget):
             finally:
                 self._instance_combo.blockSignals(False)
             self._instance_combo.setCurrentIndex(target_idx)
-            # Qt sets currentIndex=0 during addItem even with signals blocked,
-            # so setCurrentIndex(0) emits nothing. Always trigger fetch explicitly.
             self._on_instance_changed(target_idx)
-        query = cfg.get("sql_query", "") or ""
-        if not query:
-            query = (
-                "SELECT TABLE_SCHEMA, TABLE_NAME\n"
-                "FROM INFORMATION_SCHEMA.TABLES\n"
-                "WHERE TABLE_TYPE = 'BASE TABLE'\n"
-                "ORDER BY TABLE_SCHEMA, TABLE_NAME"
-            )
-        self._query_edit.setPlainText(query)  # type: ignore[arg-type]
-
-        self._sched_enabled.setChecked(bool(cfg.get("schedule_enabled", False)))
-        mode = cfg.get("schedule_mode", "daily") or "daily"
-        mode_index = 1 if mode == "hourly" else 0
-        self._sched_mode_combo.setCurrentIndex(mode_index)
-        self._sched_value_edit.setText(cfg.get("schedule_value", "") or "")
-        self._on_sched_mode_changed(mode_index)
-
-        self._webhook_edit.setText(cfg.get("webhook_url", "") or "")
-        self._tg_token_edit.setText(cfg.get("tg_token", "") or "")
-        self._tg_chat_id_edit.setText(cfg.get("tg_chat_id", "") or "")
 
         self._startup_check.blockSignals(True)
         self._startup_check.setChecked(StartupManager.is_registered())
@@ -509,37 +381,18 @@ class SettingsWidget(QWidget):
         self._auto_update_check.setChecked(bool(cfg.get("auto_update_check", True)))
 
     def _save(self) -> None:
-        mode_index = self._sched_mode_combo.currentIndex()
-        schedule_mode = "hourly" if mode_index == 1 else "daily"
-        schedule_value = self._sched_value_edit.text().strip()
-
-        if self._sched_enabled.isChecked():
-            if schedule_mode == "daily":
-                import re
-                if not re.fullmatch(r"\d{1,2}:\d{2}", schedule_value):
-                    QMessageBox.warning(self, "Ошибка", "Формат времени: ЧЧ:ММ (например, 09:30)")
-                    return
-            else:
-                if not schedule_value.isdigit() or int(schedule_value) < 1:
-                    QMessageBox.warning(self, "Ошибка", "Введите целое число часов (≥ 1)")
-                    return
-
-        cfg: AppConfig = {
+        # Merge with existing config to preserve export_jobs and other fields
+        cfg = self._config.load()
+        db = self._selected_db or self._db_combo.currentText().strip()
+        cfg.update({  # type: ignore[typeddict-item]
             "sql_instance": self._instance_combo.currentText().strip(),
-            "sql_database": self._db_combo.currentText().strip(),
+            "sql_database": db,
             "sql_user": self._login_edit.text().strip(),
             "sql_password": self._password_edit.text(),
-            "sql_query": self._query_edit.toPlainText().strip(),  # type: ignore[typeddict-unknown-key]
-            "webhook_url": self._webhook_edit.text().strip(),
-            "tg_token": self._tg_token_edit.text().strip(),
-            "tg_chat_id": self._tg_chat_id_edit.text().strip(),
-            "schedule_enabled": self._sched_enabled.isChecked(),
-            "schedule_mode": schedule_mode,
-            "schedule_value": schedule_value,
             "auto_update_check": self._auto_update_check.isChecked(),
             "run_on_startup": self._startup_check.isChecked(),
             "github_repo": GITHUB_REPO,
-        }
+        })
         self._config.save(cfg)
         QMessageBox.information(self, "Сохранено", "Настройки сохранены.")
 
@@ -563,47 +416,25 @@ class SettingsWidget(QWidget):
         if self._loading:
             return
 
-        # Prefer in-memory _selected_db — avoids saving "Загрузка…" placeholder
         db = self._selected_db
         if not db:
             combo_text = self._db_combo.currentText().strip()
             if combo_text and combo_text not in ("Загрузка…", "Нет баз данных"):
                 db = combo_text
 
-        mode_index = self._sched_mode_combo.currentIndex()
-        schedule_mode = "hourly" if mode_index == 1 else "daily"
-
-        cfg: AppConfig = {
+        # Merge with existing config to preserve export_jobs and other fields
+        cfg = self._config.load()
+        cfg.update({  # type: ignore[typeddict-item]
             "sql_instance": self._instance_combo.currentText().strip(),
             "sql_database": db,
             "sql_user": self._login_edit.text().strip(),
             "sql_password": self._password_edit.text(),
-            "sql_query": self._query_edit.toPlainText().strip(),  # type: ignore[typeddict-unknown-key]
-            "webhook_url": self._webhook_edit.text().strip(),
-            "tg_token": self._tg_token_edit.text().strip(),
-            "tg_chat_id": self._tg_chat_id_edit.text().strip(),
-            "schedule_enabled": self._sched_enabled.isChecked(),
-            "schedule_mode": schedule_mode,
-            "schedule_value": self._sched_value_edit.text().strip(),
             "auto_update_check": self._auto_update_check.isChecked(),
             "run_on_startup": self._startup_check.isChecked(),
             "github_repo": GITHUB_REPO,
-        }
+        })
         self._config.save(cfg)
         _log.debug("Auto-saved settings")
-
-    # ------------------------------------------------------------------
-    # Schedule
-    # ------------------------------------------------------------------
-
-    def _on_sched_mode_changed(self, index: int) -> None:
-        if index == 1:
-            self._sched_value_edit.setPlaceholderText("N (часов)")
-        else:
-            self._sched_value_edit.setPlaceholderText("ЧЧ:ММ")
-
-    def set_next_run_text(self, text: str) -> None:
-        self._next_run_label.setText(f"Следующий запуск: {text}")
 
     # ------------------------------------------------------------------
     # SQL Server — instance scan
@@ -619,7 +450,7 @@ class SettingsWidget(QWidget):
         self._instance_combo.setEnabled(False)
 
         worker = _InstanceScanWorker()
-        self._scan_worker = worker  # keep alive — GC would delete it otherwise
+        self._scan_worker = worker
         thread = QThread(self)
         worker.moveToThread(thread)
         worker.finished.connect(self._on_scan_finished)
@@ -629,13 +460,16 @@ class SettingsWidget(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda w=worker: setattr(self, '_scan_worker', None) if self._scan_worker is w else None)
+        thread.finished.connect(
+            lambda w=worker: setattr(self, '_scan_worker', None)
+            if self._scan_worker is w else None
+        )
         thread.start()
 
     @Slot(list)
     def _on_scan_finished(self, instances: list[SqlInstance]) -> None:
         self._scan_running = False
-        self._dblist_running = False  # reset any in-flight fetch from before scan
+        self._dblist_running = False
 
         target_idx = 0
         try:
@@ -645,7 +479,7 @@ class SettingsWidget(QWidget):
 
             if not instances:
                 self._instance_combo.addItem("Нет экземпляров")
-                return  # finally unblocks signals, then function returns
+                return
 
             cfg = self._config.load()
             saved = cfg.get("sql_instance", "")
@@ -661,8 +495,6 @@ class SettingsWidget(QWidget):
             self._instance_combo.blockSignals(False)
 
         self._instance_combo.setCurrentIndex(target_idx)
-        # Qt sets currentIndex=0 during addItem even with signals blocked,
-        # so setCurrentIndex(0) emits nothing. Always trigger fetch explicitly.
         self._on_instance_changed(target_idx)
 
     @Slot(str)
@@ -679,14 +511,11 @@ class SettingsWidget(QWidget):
 
     def _on_instance_changed(self, idx: int) -> None:
         inst = self._instance_combo.itemData(idx)
-
         if inst is None:
-            # Construct SqlInstance from display text (e.g. loaded from config)
             inst = _instance_from_text(self._instance_combo.itemText(idx))
             if inst is None:
                 return
             self._instance_combo.setItemData(idx, inst)
-
         self._fetch_databases(inst)
 
     def _refresh_databases(self) -> None:
@@ -700,7 +529,6 @@ class SettingsWidget(QWidget):
 
     def _fetch_databases(self, inst: SqlInstance) -> None:
         if self._dblist_running:
-            # A fetch is already in-flight; queue this instance for after it finishes
             self._dblist_pending = inst
             return
         self._dblist_pending = None
@@ -714,7 +542,7 @@ class SettingsWidget(QWidget):
         password = self._password_edit.text()
 
         worker = _DbListWorker(inst, user, password)
-        self._dblist_worker = worker  # keep alive — GC would delete it otherwise
+        self._dblist_worker = worker
         thread = QThread(self)
         worker.moveToThread(thread)
         worker.finished.connect(self._on_dblist_finished)
@@ -724,7 +552,10 @@ class SettingsWidget(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda w=worker: setattr(self, '_dblist_worker', None) if self._dblist_worker is w else None)
+        thread.finished.connect(
+            lambda w=worker: setattr(self, '_dblist_worker', None)
+            if self._dblist_worker is w else None
+        )
         thread.start()
 
     @Slot(list)
@@ -733,10 +564,8 @@ class SettingsWidget(QWidget):
         pending = self._dblist_pending
         self._dblist_pending = None
 
-        # Приоритет восстановления: память (_selected_db) > диск (sql_database)
         restore = self._selected_db or self._config.load().get("sql_database", "") or ""
 
-        # Block signals while populating — prevents multiple _on_db_changed firings
         self._db_combo.blockSignals(True)
         self._db_combo.clear()
         self._db_combo.setEnabled(True)
@@ -750,8 +579,6 @@ class SettingsWidget(QWidget):
 
         self._db_combo.blockSignals(False)
 
-        # Restore selection — explicitly trigger _on_db_changed so _selected_db
-        # is always updated regardless of whether the index actually changed.
         final_idx = 0
         if restore:
             idx = self._db_combo.findText(restore)
@@ -760,11 +587,10 @@ class SettingsWidget(QWidget):
 
         if self._db_combo.count() > 0:
             if self._db_combo.currentIndex() != final_idx:
-                self._db_combo.setCurrentIndex(final_idx)  # emits currentIndexChanged
+                self._db_combo.setCurrentIndex(final_idx)
             else:
-                self._on_db_changed(final_idx)  # index unchanged — call directly
+                self._on_db_changed(final_idx)
 
-        # Instance changed while we were fetching — fetch the new one now
         if pending is not None:
             self._fetch_databases(pending)
 
@@ -779,11 +605,8 @@ class SettingsWidget(QWidget):
         _set_status(self._conn_status, False, f"Список БД: {message}")
 
         if pending is not None:
-            # User switched instance while we were fetching — honour their choice
             self._fetch_databases(pending)
         else:
-            # Auto-advance: try the next instance in the list so that, for example,
-            # a dead MSSQLSERVER doesn't block discovery of a working SQLEXPRESS.
             cur = self._instance_combo.currentIndex()
             nxt = cur + 1
             if nxt < self._instance_combo.count():
@@ -813,7 +636,7 @@ class SettingsWidget(QWidget):
         _set_status(self._conn_status, None, "Проверка подключения…")
 
         worker = _TestConnWorker(cfg)
-        self._test_conn_worker = worker  # keep alive — GC would delete it otherwise
+        self._test_conn_worker = worker
         thread = QThread(self)
         worker.moveToThread(thread)
         worker.finished.connect(self._on_test_conn_finished)
@@ -821,7 +644,10 @@ class SettingsWidget(QWidget):
         worker.finished.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda w=worker: setattr(self, '_test_conn_worker', None) if self._test_conn_worker is w else None)
+        thread.finished.connect(
+            lambda w=worker: setattr(self, '_test_conn_worker', None)
+            if self._test_conn_worker is w else None
+        )
         thread.start()
 
     @Slot(bool, str)
@@ -831,58 +657,6 @@ class SettingsWidget(QWidget):
             _set_status(self._conn_status, True, message or "Подключение успешно")
         else:
             _set_status(self._conn_status, False, message or "Ошибка подключения")
-
-    # ------------------------------------------------------------------
-    # SQL Server — тестовый запрос
-    # ------------------------------------------------------------------
-
-    def _open_test_dialog(self) -> None:
-        cfg: AppConfig = {
-            "sql_instance": self._instance_combo.currentText().strip(),
-            "sql_database": self._db_combo.currentText().strip(),
-            "sql_user": self._login_edit.text().strip(),
-            "sql_password": self._password_edit.text(),
-        }
-        sql = self._query_edit.toPlainText().strip()
-        TestRunDialog(cfg, initial_sql=sql, parent=self).exec()
-
-    # ------------------------------------------------------------------
-    # Telegram
-    # ------------------------------------------------------------------
-
-    def _test_telegram(self) -> None:
-        token = self._tg_token_edit.text().strip()
-        chat_id = self._tg_chat_id_edit.text().strip()
-
-        if not token or not chat_id:
-            _set_status(self._tg_status, False, "Заполните Token и Chat ID")
-            return
-
-        if self._test_tg_running:
-            return
-        self._test_tg_running = True
-
-        _set_status(self._tg_status, None, "Отправка…")
-
-        worker = _TestTgWorker(token, chat_id)
-        self._test_tg_worker = worker  # keep alive — GC would delete it otherwise
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        worker.finished.connect(self._on_test_tg_finished)
-        thread.started.connect(worker.run)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda w=worker: setattr(self, '_test_tg_worker', None) if self._test_tg_worker is w else None)
-        thread.start()
-
-    @Slot(bool, str)
-    def _on_test_tg_finished(self, ok: bool, message: str) -> None:
-        self._test_tg_running = False
-        if ok:
-            _set_status(self._tg_status, True, "Telegram: сообщение отправлено")
-        else:
-            _set_status(self._tg_status, False, message or "Ошибка Telegram")
 
     # ------------------------------------------------------------------
     # App settings
@@ -912,7 +686,7 @@ class SettingsWidget(QWidget):
             current_version=self._current_version,
             repo=GITHUB_REPO,
         )
-        self._update_worker = worker  # keep alive — GC would delete it otherwise
+        self._update_worker = worker
         thread = QThread(self)
         worker.moveToThread(thread)
 
@@ -926,7 +700,10 @@ class SettingsWidget(QWidget):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda w=worker: setattr(self, '_update_worker', None) if self._update_worker is w else None)
+        thread.finished.connect(
+            lambda w=worker: setattr(self, '_update_worker', None)
+            if self._update_worker is w else None
+        )
         thread.start()
 
     @Slot(str, str)

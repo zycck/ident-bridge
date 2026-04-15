@@ -38,8 +38,9 @@ class DebugWindow(QDialog):
         self.setWindowTitle("Debug — iDentBridge")
         self.resize(1000, 560)
         self.setWindowFlag(Qt.WindowType.Window, True)
-        self._build_ui()
         self._connected = False
+        self._history_loaded = False
+        self._build_ui()
         self._connect_log()
 
     # ------------------------------------------------------------------
@@ -48,7 +49,6 @@ class DebugWindow(QDialog):
         root.setSpacing(6)
         root.setContentsMargins(10, 10, 10, 10)
 
-        # Log view (created first so toolbar buttons can reference it)
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
         self._log.setMaximumBlockCount(self._MAX_BLOCKS)
@@ -57,7 +57,6 @@ class DebugWindow(QDialog):
         font.setStyleHint(QFont.StyleHint.Monospace)
         self._log.setFont(font)
 
-        # Toolbar
         hdr = QHBoxLayout()
         lbl = QLabel("Debug log")
         lbl.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: 600;")
@@ -81,7 +80,13 @@ class DebugWindow(QDialog):
     # ------------------------------------------------------------------
     def _connect_log(self) -> None:
         if not self._connected:
-            get_handler().message.connect(self._on_message)
+            handler = get_handler()
+            if not self._history_loaded:
+                # Replay buffered history before connecting live feed
+                for line in handler.history:
+                    self._on_message(line)
+                self._history_loaded = True
+            handler.message.connect(self._on_message)
             self._connected = True
 
     def _disconnect_log(self) -> None:
@@ -100,7 +105,6 @@ class DebugWindow(QDialog):
     # ------------------------------------------------------------------
     @Slot(str)
     def _on_message(self, text: str) -> None:
-        # Colour-code by level
         if "[ERROR  ]" in text or "[CRITICAL]" in text:
             text = f'<span style="color:#F87171">{_esc(text)}</span>'
             self._log.appendHtml(text)

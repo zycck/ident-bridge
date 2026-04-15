@@ -1,11 +1,14 @@
 """Thread-safe logging bridge: Python logging → Qt signal → UI."""
 from __future__ import annotations
 
+import collections
 import logging
+
 from PySide6.QtCore import QObject, Signal
 
 _FMT  = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
 _DFMT = "%H:%M:%S"
+_BUFFER_SIZE = 500
 
 
 class _Bridge(QObject):
@@ -19,15 +22,23 @@ class QtLogHandler(logging.Handler):
     def __init__(self) -> None:
         super().__init__()
         self._bridge = _Bridge()
+        self._buffer: collections.deque[str] = collections.deque(maxlen=_BUFFER_SIZE)
         self.setFormatter(logging.Formatter(_FMT, _DFMT))
 
     @property
     def message(self) -> Signal:
         return self._bridge.message  # type: ignore[return-value]
 
+    @property
+    def history(self) -> list[str]:
+        """Snapshot of buffered log lines, oldest first."""
+        return list(self._buffer)
+
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            self._bridge.message.emit(self.format(record))
+            text = self.format(record)
+            self._buffer.append(text)
+            self._bridge.message.emit(text)
         except Exception:
             self.handleError(record)
 
@@ -48,7 +59,6 @@ def setup() -> QtLogHandler:
         root.setLevel(logging.DEBUG)
         root.addHandler(_handler)
 
-        # Mirror all logs to stderr — visible in terminal when running python main.py
         stderr_handler = logging.StreamHandler()
         stderr_handler.setFormatter(fmt)
         root.addHandler(stderr_handler)

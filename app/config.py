@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Protocol, TypedDict
+from typing import Protocol, TypedDict
 
 from app.core import dpapi
 
@@ -15,9 +15,9 @@ from app.core import dpapi
 
 @dataclass(slots=True)
 class SqlInstance:
-    name: str      # e.g. "PZSQLSERVER"
-    host: str      # e.g. "localhost"
-    display: str   # e.g. "localhost\\PZSQLSERVER"
+    name: str
+    host: str
+    display: str
 
 
 @dataclass(slots=True)
@@ -36,20 +36,26 @@ class SyncResult:
     timestamp:   datetime
 
 
+class ExportJob(TypedDict, total=False):
+    """Configuration for a single named export job."""
+    id:               str
+    name:             str
+    sql_query:        str
+    webhook_url:      str
+    schedule_enabled: bool
+    schedule_mode:    str   # "daily" | "hourly"
+    schedule_value:   str   # "14:30" | "4"
+
+
 class AppConfig(TypedDict, total=False):
     sql_instance:      str
     sql_database:      str
     sql_user:          str   # stored DPAPI-encrypted as base64
     sql_password:      str   # stored DPAPI-encrypted as base64
-    webhook_url:       str
-    tg_token:          str   # stored DPAPI-encrypted as base64
-    tg_chat_id:        str
-    schedule_enabled:  bool
-    schedule_mode:     Literal["daily", "hourly", "cron"]
-    schedule_value:    str   # "14:30" | "4" | "0 14 * * *"
-    github_repo:       str   # "zycck/ident-bridge"
+    github_repo:       str
     auto_update_check: bool
     run_on_startup:    bool
+    export_jobs:       list  # list[ExportJob]
 
 
 class IExporter(Protocol):
@@ -66,7 +72,7 @@ class INotifier(Protocol):
 
 CONFIG_DIR  = Path(os.environ["APPDATA"]) / "iDentSync"
 CONFIG_PATH = CONFIG_DIR / "config.json"
-ENCRYPTED_KEYS: frozenset[str] = frozenset({"sql_user", "sql_password", "tg_token"})
+ENCRYPTED_KEYS: frozenset[str] = frozenset({"sql_user", "sql_password"})
 
 
 class ConfigManager:
@@ -83,7 +89,6 @@ class ConfigManager:
             with CONFIG_PATH.open("r", encoding="utf-8") as fh:
                 data: dict = json.load(fh)
         except json.JSONDecodeError:
-            # Повреждённый config.json — возвращаем последний известный конфиг
             import logging
             logging.getLogger(__name__).warning(
                 "config.json повреждён, используются последние известные настройки"
@@ -96,29 +101,26 @@ class ConfigManager:
                     encrypted_bytes = base64.b64decode(data[key])
                     data[key] = dpapi.decrypt(encrypted_bytes)
                 except Exception:
-                    # Ошибка расшифровки (смена профиля/миграция) — поле сбрасывается
                     import logging
                     logging.getLogger(__name__).warning(
                         "Не удалось расшифровать поле '%s' — требуется повторный ввод", key
                     )
                     data[key] = ""
 
-        self._cfg = AppConfig(**{k: v for k, v in data.items() if k in AppConfig.__optional_keys__})  # type: ignore[attr-defined]
+        valid_keys = AppConfig.__optional_keys__  # type: ignore[attr-defined]
+        self._cfg = AppConfig(**{k: v for k, v in data.items() if k in valid_keys})  # type: ignore[typeddict-item]
         return self._cfg
 
     def save(self, cfg: AppConfig) -> None:
-        # Work on a shallow copy so the caller's dict is untouched
         out: dict = dict(cfg)
-
         for key in ENCRYPTED_KEYS:
-            if key in out:
+            if key in out and out[key]:
                 encrypted_bytes = dpapi.encrypt(out[key])
                 out[key] = base64.b64encode(encrypted_bytes).decode("ascii")
 
         with CONFIG_PATH.open("w", encoding="utf-8") as fh:
-            json.dump(out, fh, indent=2)
+            json.dump(out, fh, indent=2, ensure_ascii=False)
 
-        # Restrict file permissions (best-effort on Windows; meaningful on POSIX)
         os.chmod(CONFIG_PATH, 0o600)
 
     def get(self, key: str) -> str | None:
@@ -126,4 +128,3 @@ class ConfigManager:
 
     def set(self, key: str, value: str) -> None:
         self._cfg[key] = value  # type: ignore[literal-required]
-        # Caller must invoke save() explicitly

@@ -17,23 +17,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import ConfigManager, IExporter, INotifier
+from app.config import ConfigManager
 from app.core.app_logger import get_logger
-from app.core.scheduler import SyncScheduler
-from app.core.telegram import TelegramNotifier
 from app.core.updater import GITHUB_REPO, download_and_apply
-from app.core.webhook import SheetsWebhook
 from app.ui.dashboard_widget import DashboardWidget
 from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import install_global_handler
-from app.ui.export_widget import ExportWidget
+from app.ui.export_jobs_widget import ExportJobsWidget
 from app.ui.settings_widget import SettingsWidget
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
 
 
-_NAV_LABELS = ("Статус", "Выгрузка", "Настройки")
+_NAV_LABELS   = ("Статус", "Выгрузки", "Настройки")
 _NAV_FA_ICONS = ("fa5s.chart-bar", "fa5s.upload", "fa5s.cog")
 
 
@@ -48,27 +45,14 @@ class MainWindow(QMainWindow):
         self._config = config
         self._current_version = current_version
 
-        # Notifier / exporter
-        tg_token = config.get("tg_token")
-        tg_chat = config.get("tg_chat_id")
-        self._notifier: INotifier | None = (
-            TelegramNotifier(tg_token, tg_chat)
-            if tg_token and tg_chat
-            else None
-        )
-        self._exporter: IExporter = SheetsWebhook()
-
-        # Scheduler (created before widgets so dashboard can connect)
-        self._scheduler = SyncScheduler(self)
-
-        # Debug window — created lazily on first Ctrl+D press
-        self._debug_window: DebugWindow | None = None
         # Strong ref to update worker — GC kills workers without explicit Python reference
         self._update_worker: object | None = None
 
+        # Debug window — created lazily on first Ctrl+D press
+        self._debug_window: DebugWindow | None = None
+
         self._build_ui()
         self._build_tray()
-        self._setup_scheduler()
         self._install_exception_hook()
         self._setup_shortcuts()
 
@@ -128,22 +112,23 @@ class MainWindow(QMainWindow):
 
         # Stacked pages
         self._stack = QStackedWidget()
-        self._dashboard = DashboardWidget(self._scheduler, self._config, self)
-        self._export_widget = ExportWidget(
-            self._config, self._exporter, self._notifier, self
-        )
+        self._dashboard = DashboardWidget(self._config, self)
+        self._export_jobs = ExportJobsWidget(self._config, self)
         self._settings_widget = SettingsWidget(
             self._config, self._current_version, self
         )
-        self._stack.addWidget(self._dashboard)       # index 0
-        self._stack.addWidget(self._export_widget)   # index 1
-        self._stack.addWidget(self._settings_widget) # index 2
+        self._stack.addWidget(self._dashboard)        # index 0
+        self._stack.addWidget(self._export_jobs)      # index 1
+        self._stack.addWidget(self._settings_widget)  # index 2
 
         root.addWidget(sidebar)
         root.addWidget(self._stack, stretch=1)
 
         # Wire update_requested signal from dashboard
         self._dashboard.update_requested.connect(self._on_update_requested)
+
+        # Wire sync results from export jobs → dashboard last sync card
+        self._export_jobs.sync_completed.connect(self._dashboard.update_last_sync)
 
         self.navigate(0)
 
@@ -177,7 +162,6 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         menu.addAction("Открыть", self._show_window)
         menu.addSeparator()
-        menu.addAction("Выгрузить сейчас", self._export_widget.start_export)
         menu.addAction("Проверить обновление", self._run_update_check_silently)
         menu.addSeparator()
         menu.addAction("Выход", self._quit)
@@ -205,19 +189,6 @@ class MainWindow(QMainWindow):
             btn.style().polish(btn)
 
     # ------------------------------------------------------------------
-    # Scheduler
-    # ------------------------------------------------------------------
-
-    def _setup_scheduler(self) -> None:
-        cfg = self._config.load()
-        mode = cfg.get("schedule_mode") or "daily"
-        value = cfg.get("schedule_value") or ""
-        if cfg.get("schedule_enabled") and value:
-            self._scheduler.configure(mode, value)  # type: ignore[arg-type]
-            self._scheduler.start()
-        self._scheduler.trigger.connect(self._export_widget.start_export)
-
-    # ------------------------------------------------------------------
     # Update flow
     # ------------------------------------------------------------------
 
@@ -237,7 +208,10 @@ class MainWindow(QMainWindow):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda w=worker: setattr(self, '_update_worker', None) if self._update_worker is w else None)
+        thread.finished.connect(
+            lambda w=worker: setattr(self, '_update_worker', None)
+            if self._update_worker is w else None
+        )
 
         thread.start()
 
@@ -258,7 +232,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _install_exception_hook(self) -> None:
-        install_global_handler(self._notifier)
+        install_global_handler(None)
 
     # ------------------------------------------------------------------
     # Window / tray events
@@ -283,7 +257,7 @@ class MainWindow(QMainWindow):
     def _cleanup(self) -> None:
         """Called by aboutToQuit — stop background services before exit."""
         _log.info("Shutting down…")
-        self._scheduler.stop()
+        self._export_jobs.stop_all_schedulers()
         if self._debug_window is not None:
             self._debug_window.close()
 

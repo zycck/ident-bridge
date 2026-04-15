@@ -447,3 +447,26 @@ QMessageBox QLabel {
     color: #374151;
     font-size: 10pt;
 }
+
+/* ── Export Job Card ──────────────────────────────────────────────────────── */
+QWidget#exportCard {
+    background-color: #FFFFFF;
+    border: 1px solid #E5E7EB;
+    border-radius: 8px;
+}
+
+QWidget#exportCard QLabel {
+    background-color: transparent;
+}
+
+QWidget#exportCard QLineEdit,
+QWidget#exportCard QPlainTextEdit,
+QWidget#exportCard QComboBox {
+    background-color: #F9FAFB;
+}
+
+/* ── Export Toolbar ───────────────────────────────────────────────────────── */
+QWidget#exportToolbar {
+    background-color: #FFFFFF;
+    border-bottom: 1px solid #E5E7EB;
+}

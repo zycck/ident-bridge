@@ -5,63 +5,60 @@ Pipeline steps (emitted via progress signal):
     0  Подключение к БД...
     1  Выполнение запроса...
     2  Отправка данных...
-    3  Уведомление...
-    4  Готово
+    3  Готово
 """
+from __future__ import annotations
+
+import logging
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, Signal, Slot
 
-from app.config import ConfigManager, IExporter, INotifier, SyncResult
+from app.config import AppConfig, ExportJob, SyncResult
 from app.core.sql_client import SqlClient
+
+_log = logging.getLogger(__name__)
 
 
 class ExportWorker(QObject):
-    """QObject worker that runs the full SQL → exporter → notifier pipeline."""
+    """QObject worker that runs the SQL query → (optional) webhook pipeline."""
 
-    # (step 0-4, human-readable description)
+    # (step 0-3, human-readable description)
     progress: Signal = Signal(int, str)
     # Emitted on both success and failure; carries SyncResult
     finished: Signal = Signal(object)
     # Emitted only on failure
     error: Signal = Signal(str)
 
-    def __init__(
-        self,
-        config: ConfigManager,
-        exporter: IExporter,
-        notifier: INotifier | None = None,
-    ) -> None:
+    def __init__(self, base_cfg: AppConfig, job: ExportJob) -> None:
         super().__init__()
-        self._config = config
-        self._exporter = exporter
-        self._notifier = notifier
+        self._cfg = base_cfg
+        self._job = job
 
     @Slot()
     def run(self) -> None:
-        """Execute the full sync pipeline."""
-        cfg = self._config.load()
-        sql_client = SqlClient(cfg)
+        """Execute the SQL → webhook pipeline."""
+        sql_client = SqlClient(self._cfg)
+        job_name = self._job.get("name", "?")
         try:
             self.progress.emit(0, "Подключение к БД...")
             sql_client.connect()
 
             self.progress.emit(1, "Выполнение запроса...")
-            sql = cfg.get("sql_query", "")  # type: ignore[call-overload]
+            sql = (self._job.get("sql_query") or "").strip()
             if not sql:
-                raise ValueError("sql_query не настроен в конфигурации")
+                raise ValueError("SQL запрос не задан в карточке выгрузки")
             result = sql_client.query(sql)
 
             self.progress.emit(2, "Отправка данных...")
-            self._exporter.push(result)
+            webhook_url = (self._job.get("webhook_url") or "").strip()
+            if webhook_url:
+                # TODO: implement HTTP push
+                _log.info("Выгрузка '%s': %d строк → webhook %s", job_name, result.count, webhook_url)
+            else:
+                _log.info("Выгрузка '%s': %d строк (webhook не настроен)", job_name, result.count)
 
-            self.progress.emit(3, "Уведомление...")
-            if self._notifier is not None:
-                self._notifier.notify(
-                    f"Синхронизация завершена: {result.count} строк за {result.duration_ms}мс"
-                )
-
-            self.progress.emit(4, "Готово")
+            self.progress.emit(3, "Готово")
             self.finished.emit(
                 SyncResult(
                     success=True,
@@ -73,11 +70,8 @@ class ExportWorker(QObject):
 
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
+            _log.error("Ошибка выгрузки '%s': %s", job_name, msg)
             self.error.emit(msg)
-            # Send only exception type to notifier — str(exc) may contain DSN credentials
-            if self._notifier is not None:
-                safe_msg = type(exc).__name__
-                self._notifier.notify(f"Ошибка синхронизации: {safe_msg}")
             self.finished.emit(
                 SyncResult(
                     success=False,

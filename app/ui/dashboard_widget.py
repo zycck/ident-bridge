@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
 
 from app.config import ConfigManager, SyncResult
 from app.core.app_logger import get_logger
-from app.core.scheduler import SyncScheduler
 from app.core.sql_client import SqlClient
 
 _log = get_logger(__name__)
@@ -52,7 +51,6 @@ class DashboardWidget(QWidget):
 
     def __init__(
         self,
-        scheduler: SyncScheduler,
         config: ConfigManager,
         parent: QWidget | None = None,
     ) -> None:
@@ -63,7 +61,6 @@ class DashboardWidget(QWidget):
         self._ping_worker: _PingWorker | None = None  # strong ref to prevent GC
 
         self._build_ui()
-        self._connect_signals(scheduler)
         self._start_ping_timer()
 
     # ------------------------------------------------------------------
@@ -114,21 +111,8 @@ class DashboardWidget(QWidget):
         c2_layout.addWidget(c2_title)
         c2_layout.addWidget(self._last_sync_label)
 
-        card3 = self._make_card()
-        c3_layout = QVBoxLayout(card3)
-        c3_layout.setSpacing(6)
-        c3_title = QLabel("Следующий запуск")
-        c3_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        c3_title.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: 600;")
-        self._next_run_label = QLabel("Не запланировано")
-        self._next_run_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._next_run_label.setStyleSheet("color: #374151; font-size: 10pt;")
-        c3_layout.addWidget(c3_title)
-        c3_layout.addWidget(self._next_run_label)
-
         row.addWidget(card1)
         row.addWidget(card2)
-        row.addWidget(card3)
         return row
 
     def _make_card(self) -> QFrame:
@@ -164,11 +148,8 @@ class DashboardWidget(QWidget):
         return self._log
 
     # ------------------------------------------------------------------
-    # Signal wiring & timer
+    # Timer
     # ------------------------------------------------------------------
-
-    def _connect_signals(self, scheduler: SyncScheduler) -> None:
-        scheduler.next_run_changed.connect(self.update_next_run)
 
     def _start_ping_timer(self) -> None:
         self._ping_timer = QTimer(self)
@@ -199,12 +180,6 @@ class DashboardWidget(QWidget):
         self._log.verticalScrollBar().setValue(
             self._log.verticalScrollBar().maximum()
         )
-
-    def update_next_run(self, dt: datetime | None) -> None:
-        if dt is None:
-            self._next_run_label.setText("Не запланировано")
-        else:
-            self._next_run_label.setText(dt.strftime("%H:%M  %d.%m"))
 
     def update_last_sync(self, result: SyncResult) -> None:
         ts = result.timestamp.strftime("%H:%M  %d.%m")
