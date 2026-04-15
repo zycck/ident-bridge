@@ -67,6 +67,18 @@ def _load_fonts() -> None:
         qapp.setFont(default_font)
 
 
+def _load_app_icon(app: QApplication) -> None:
+    """Set the application icon for taskbar / window decorations."""
+    from PySide6.QtGui import QIcon
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS) / "resources"  # type: ignore[attr-defined]
+    else:
+        base = Path(__file__).parent / "resources"
+    icon_path = base / "icon.ico"
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
+
+
 def _load_theme() -> str:
     """Return QSS with design tokens substituted, resolving for dev/frozen modes."""
     if getattr(sys, "frozen", False):
@@ -94,6 +106,8 @@ def main() -> None:
     app.setApplicationVersion(APP_VERSION)
     # Don't quit when the main window is closed (tray icon keeps app alive)
     app.setQuitOnLastWindowClosed(False)
+
+    _load_app_icon(app)   # taskbar / window icon
 
     # Install Qt→Python logging bridge before any UI is created
     app_logger.setup()
