@@ -1,16 +1,21 @@
+# -*- coding: utf-8 -*-
+"""Central configuration + shared dataclasses + TypedDicts for iDentBridge."""
+from __future__ import annotations
+
 import base64
 import json
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
-from typing import Protocol, TypedDict
+from typing import TypedDict
 
 from app.core import dpapi
 
 
 # ---------------------------------------------------------------------------
-# Shared types
+# Shared dataclasses
 # ---------------------------------------------------------------------------
 
 @dataclass(slots=True)
@@ -36,13 +41,24 @@ class SyncResult:
     timestamp:   datetime
 
 
+# ---------------------------------------------------------------------------
+# TypedDicts
+# ---------------------------------------------------------------------------
+
 class ExportHistoryEntry(TypedDict, total=False):
     """Single run record stored inside ExportJob.history."""
     ts:      str   # "YYYY-MM-DD HH:MM"
     rows:    int
-    trigger: str   # "manual" | "auto"
+    trigger: str   # "manual" | "scheduled" | "test"
     ok:      bool
     err:     str
+
+
+class TriggerType(str, Enum):
+    """How an export run was initiated."""
+    MANUAL    = "manual"
+    SCHEDULED = "scheduled"   # was "auto" in older configs — migrated on read
+    TEST      = "test"        # dry-run via TestRunDialog
 
 
 class ExportJob(TypedDict, total=False):
@@ -54,7 +70,7 @@ class ExportJob(TypedDict, total=False):
     schedule_enabled: bool
     schedule_mode:    str   # "daily" | "hourly"
     schedule_value:   str   # "14:30" | "4"
-    history:          list  # list[ExportHistoryEntry]
+    history:          list[ExportHistoryEntry]
 
 
 class AppConfig(TypedDict, total=False):
@@ -62,18 +78,11 @@ class AppConfig(TypedDict, total=False):
     sql_database:      str
     sql_user:          str   # stored DPAPI-encrypted as base64
     sql_password:      str   # stored DPAPI-encrypted as base64
+    sql_trust_cert:    bool  # accept self-signed server certs
     github_repo:       str
     auto_update_check: bool
     run_on_startup:    bool
-    export_jobs:       list  # list[ExportJob]
-
-
-class IExporter(Protocol):
-    def push(self, data: QueryResult) -> None: ...
-
-
-class INotifier(Protocol):
-    def notify(self, message: str) -> None: ...
+    export_jobs:       list[ExportJob]
 
 
 # ---------------------------------------------------------------------------
@@ -117,7 +126,13 @@ class ConfigManager:
                     )
                     data[key] = ""
 
-        valid_keys = AppConfig.__optional_keys__  # type: ignore[attr-defined]
+        # Backward-compat migration: trigger "auto" → "scheduled"
+        for job in data.get("export_jobs") or []:
+            for entry in job.get("history") or []:
+                if entry.get("trigger") == "auto":
+                    entry["trigger"] = "scheduled"
+
+        valid_keys = AppConfig.__annotations__.keys()
         self._cfg = AppConfig(**{k: v for k, v in data.items() if k in valid_keys})  # type: ignore[typeddict-item]
         return self._cfg
 
@@ -132,6 +147,12 @@ class ConfigManager:
             json.dump(out, fh, indent=2, ensure_ascii=False)
 
         os.chmod(CONFIG_PATH, 0o600)
+
+    def update(self, **changes: object) -> None:
+        """Atomic load → merge → save. Preserves keys not in changes."""
+        cfg = self.load()
+        cfg.update(changes)  # type: ignore[typeddict-item]
+        self.save(cfg)
 
     def get(self, key: str) -> str | None:
         return self._cfg.get(key)  # type: ignore[return-value]
