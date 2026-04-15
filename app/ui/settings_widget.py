@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import qtawesome as qta
 from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -24,6 +23,8 @@ from app.core.constants import SETTINGS_SAVE_DEBOUNCE_MS
 from app.core.instance_scanner import list_databases, scan_all
 from app.core.sql_client import SqlClient
 from app.core.updater import GITHUB_REPO
+from app.ui.lucide_icons import lucide
+from app.ui.theme import Theme
 from app.ui.threading import run_worker
 from app.ui.widgets import labeled_row, section, set_status, status_label
 from app.workers.update_worker import UpdateWorker
@@ -181,7 +182,7 @@ class SettingsWidget(QWidget):
         self._instance_combo.currentIndexChanged.connect(self._on_instance_changed)
 
         scan_btn = QPushButton("  Сканировать")
-        scan_btn.setIcon(qta.icon('fa5s.search', color='#374151'))
+        scan_btn.setIcon(lucide('search', color=Theme.gray_700))
         scan_btn.setFixedWidth(130)
         scan_btn.clicked.connect(self._scan_instances)
 
@@ -202,7 +203,7 @@ class SettingsWidget(QWidget):
         )
 
         refresh_db_btn = QPushButton()
-        refresh_db_btn.setIcon(qta.icon('fa5s.sync-alt', color='#374151'))
+        refresh_db_btn.setIcon(lucide('refresh-cw', color=Theme.gray_700))
         refresh_db_btn.setFixedWidth(36)
         refresh_db_btn.setToolTip("Обновить список баз данных")
         refresh_db_btn.clicked.connect(self._refresh_databases)
@@ -228,7 +229,7 @@ class SettingsWidget(QWidget):
 
         test_conn_btn = QPushButton("  Тест подключения")
         test_conn_btn.setObjectName("primaryBtn")
-        test_conn_btn.setIcon(qta.icon('fa5s.plug', color='#FFFFFF'))
+        test_conn_btn.setIcon(lucide('zap', color=Theme.gray_900))
         test_conn_btn.clicked.connect(self._test_connection)
         sql_lay.addWidget(test_conn_btn)
 
@@ -252,7 +253,7 @@ class SettingsWidget(QWidget):
         app_lay.addWidget(version_lbl)
 
         check_update_btn = QPushButton("  Проверить обновление")
-        check_update_btn.setIcon(qta.icon('fa5s.cloud-download-alt', color='#374151'))
+        check_update_btn.setIcon(lucide('download-cloud', color=Theme.gray_700))
         check_update_btn.clicked.connect(self._check_update)
         app_lay.addWidget(check_update_btn)
 
@@ -264,13 +265,13 @@ class SettingsWidget(QWidget):
         btn_row.addStretch()
 
         reset_btn = QPushButton("  Сбросить")
-        reset_btn.setIcon(qta.icon('fa5s.undo-alt', color='#374151'))
+        reset_btn.setIcon(lucide('rotate-ccw', color=Theme.gray_700))
         reset_btn.clicked.connect(self._reset)
         btn_row.addWidget(reset_btn)
 
         save_btn = QPushButton("  Сохранить")
         save_btn.setObjectName("primaryBtn")
-        save_btn.setIcon(qta.icon('fa5s.save', color='#FFFFFF'))
+        save_btn.setIcon(lucide('save', color=Theme.gray_900))
         save_btn.clicked.connect(self._save)
         btn_row.addWidget(save_btn)
 

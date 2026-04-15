@@ -6,7 +6,6 @@ import re
 import uuid
 from datetime import datetime
 
-import qtawesome as qta
 import sqlglot
 from sqlglot.errors import ParseError, TokenError
 from PySide6.QtCore import QTimer, Qt, Signal, Slot
@@ -18,7 +17,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
-    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -39,14 +37,17 @@ from app.core.constants import (
     DEBOUNCE_SAVE_MS,
     DEBOUNCE_SYNTAX_MS,
     HISTORY_MAX,
-    HISTORY_ROW_HEIGHT,
     HISTORY_SCROLL_MAX_H,
     SCHED_VALUE_INPUT_W,
     SQL_EDITOR_MAX_H,
     SQL_EDITOR_MIN_H,
 )
 from app.core.scheduler import SyncScheduler
+from app.ui.history_row import HistoryRow
+from app.ui.lucide_icons import lucide
+from app.ui.sql_editor import SqlEditor
 from app.ui.test_run_dialog import TestRunDialog
+from app.ui.theme import Theme
 from app.ui.threading import run_worker
 from app.ui.widgets import hsep
 from app.workers.export_worker import ExportWorker
@@ -174,7 +175,7 @@ class ExportJobCard(QWidget):
         hdr.addWidget(self._name_edit, stretch=1)
 
         self._run_btn = QPushButton()
-        self._run_btn.setIcon(qta.icon("fa5s.play", color="#FFFFFF"))
+        self._run_btn.setIcon(lucide("play", color=Theme.gray_900))
         self._run_btn.setObjectName("primaryBtn")
         self._run_btn.setFixedSize(34, 34)
         self._run_btn.setToolTip("Запустить выгрузку вручную")
@@ -182,7 +183,7 @@ class ExportJobCard(QWidget):
         hdr.addWidget(self._run_btn)
 
         del_btn = QPushButton()
-        del_btn.setIcon(qta.icon("fa5s.trash-alt", color="#EF4444"))
+        del_btn.setIcon(lucide("trash-2", color=Theme.error))
         del_btn.setFixedSize(34, 34)
         del_btn.setToolTip("Удалить выгрузку")
         del_btn.clicked.connect(self._on_delete)
@@ -193,10 +194,14 @@ class ExportJobCard(QWidget):
 
         # ── SQL query ─────────────────────────────────────────────────────
         sql_lbl = QLabel("SQL запрос")
-        sql_lbl.setStyleSheet("color: #9CA3AF; font-size: 8.5pt; font-weight: 600;")
+        sql_lbl.setStyleSheet(
+            f"color: {Theme.gray_600}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-weight: {Theme.font_weight_semi};"
+        )
         root.addWidget(sql_lbl)
 
-        self._query_edit = QPlainTextEdit()
+        self._query_edit = SqlEditor()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
         self._query_edit.setMinimumHeight(SQL_EDITOR_MIN_H)
         self._query_edit.setMaximumHeight(SQL_EDITOR_MAX_H)
@@ -207,12 +212,10 @@ class ExportJobCard(QWidget):
         sql_tools = QHBoxLayout()
         sql_tools.setSpacing(8)
 
-        self._syntax_lbl = QLabel("")
-        self._syntax_lbl.setStyleSheet("font-size: 8pt; color: #9CA3AF;")
-        sql_tools.addWidget(self._syntax_lbl, stretch=1)
+        sql_tools.addStretch(1)  # the chip is now inside the editor; just keep spacing
 
         test_btn = QPushButton("  Тестовый запрос")
-        test_btn.setIcon(qta.icon("fa5s.terminal", color="#374151"))
+        test_btn.setIcon(lucide("terminal", color=Theme.gray_700))
         test_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         test_btn.setToolTip("Выполнить SQL запрос в тестовом окне")
         test_btn.clicked.connect(self._open_test_dialog)
@@ -223,7 +226,11 @@ class ExportJobCard(QWidget):
 
         # ── Webhook URL ───────────────────────────────────────────────────
         wh_lbl = QLabel("Webhook URL")
-        wh_lbl.setStyleSheet("color: #9CA3AF; font-size: 8.5pt; font-weight: 600;")
+        wh_lbl.setStyleSheet(
+            f"color: {Theme.gray_600}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-weight: {Theme.font_weight_semi};"
+        )
         root.addWidget(wh_lbl)
 
         self._webhook_edit = QLineEdit()
@@ -255,14 +262,16 @@ class ExportJobCard(QWidget):
         sched_row.addStretch(1)
 
         self._progress_lbl = QLabel()
-        self._progress_lbl.setStyleSheet("color: #6B7280; font-size: 8.5pt;")
+        self._progress_lbl.setStyleSheet(
+            f"color: {Theme.gray_500}; font-size: {Theme.font_size_sm}pt;"
+        )
         sched_row.addWidget(self._progress_lbl)
 
         self._status_lbl = QLabel()
         self._status_lbl.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
-        self._status_lbl.setStyleSheet("font-size: 8.5pt;")
+        self._status_lbl.setStyleSheet(f"font-size: {Theme.font_size_sm}pt;")
         sched_row.addWidget(self._status_lbl)
 
         root.addLayout(sched_row)
@@ -274,7 +283,9 @@ class ExportJobCard(QWidget):
 
         self._history_hdr = QLabel("История")
         self._history_hdr.setStyleSheet(
-            "color: #9CA3AF; font-size: 8.5pt; font-weight: 600;"
+            f"color: {Theme.gray_600}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-weight: {Theme.font_weight_semi};"
         )
         self._history_hdr.setVisible(False)
         root.addWidget(self._history_hdr)
@@ -391,15 +402,10 @@ class ExportJobCard(QWidget):
     def _check_syntax(self) -> None:
         sql = self._query_edit.toPlainText().strip()
         if not sql:
-            self._syntax_lbl.setText("")
+            self._query_edit.set_syntax(None)
             return
         ok, msg = _validate_sql(sql)
-        if ok:
-            self._syntax_lbl.setStyleSheet("font-size: 8pt; color: #34D399;")
-            self._syntax_lbl.setText("✓ SQL корректен")
-        else:
-            self._syntax_lbl.setStyleSheet("font-size: 8pt; color: #EF4444;")
-            self._syntax_lbl.setText(f"✗ {msg}")
+        self._query_edit.set_syntax(ok, msg)
 
     # ------------------------------------------------------------------ Export
 
@@ -454,7 +460,9 @@ class ExportJobCard(QWidget):
         if result.success:
             ts_clock = result.timestamp.strftime("%H:%M:%S")
             ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M")
-            self._status_lbl.setStyleSheet("font-size: 8.5pt; color: #34D399;")
+            self._status_lbl.setStyleSheet(
+                f"font-size: {Theme.font_size_sm}pt; color: {Theme.success};"
+            )
             self._status_lbl.setText(f"✓ {result.rows_synced} строк · {ts_clock}")
             self._add_history_entry(ok=True, rows=result.rows_synced, ts=ts_full)
             self.sync_completed.emit(result)
@@ -464,7 +472,9 @@ class ExportJobCard(QWidget):
         self._running = False
         self._run_btn.setEnabled(True)
         self._progress_lbl.setText("")
-        self._status_lbl.setStyleSheet("font-size: 8.5pt; color: #EF4444;")
+        self._status_lbl.setStyleSheet(
+            f"font-size: {Theme.font_size_sm}pt; color: {Theme.error};"
+        )
         self._status_lbl.setText(f"✗ {msg[:70]}")
         ts_full = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._add_history_entry(ok=False, err=msg, ts=ts_full)
@@ -510,88 +520,34 @@ class ExportJobCard(QWidget):
         if has:
             self._history_hdr.setText(f"История ({len(self._history)})")
             for i, entry in enumerate(self._history):
-                self._history_layout.addWidget(self._make_history_row(entry, i))
-
-    def _make_history_row(self, entry: ExportHistoryEntry, index: int) -> QWidget:
-        row = QWidget()
-        row.setFixedHeight(HISTORY_ROW_HEIGHT)
-
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 4, 0)
-        layout.setSpacing(6)
-
-        # Trigger icon — tolerate legacy "auto" as well as "scheduled"
-        if entry.get("trigger") in ("auto", "scheduled"):
-            icon = qta.icon("fa5s.clock", color="#9CA3AF")
-            tip  = "Авто"
-        else:
-            icon = qta.icon("fa5s.hand-pointer", color="#9CA3AF")
-            tip  = "Вручную"
-
-        ico_lbl = QLabel()
-        ico_lbl.setPixmap(icon.pixmap(11, 11))
-        ico_lbl.setToolTip(tip)
-        ico_lbl.setFixedWidth(14)
-        layout.addWidget(ico_lbl)
-
-        # Timestamp — show HH:MM if today, else DD.MM HH:MM
-        ts = entry.get("ts", "")
-        today = datetime.now().strftime("%Y-%m-%d")
-        if ts.startswith(today):
-            display_ts = ts[11:16]          # "HH:MM"
-        elif len(ts) >= 16:
-            # "YYYY-MM-DD HH:MM" → "DD.MM HH:MM"
-            display_ts = f"{ts[8:10]}.{ts[5:7]} {ts[11:16]}"
-        else:
-            display_ts = ts
-
-        ts_lbl = QLabel(display_ts)
-        ts_lbl.setStyleSheet("color: #9CA3AF; font-size: 8pt;")
-        ts_lbl.setFixedWidth(54)
-        layout.addWidget(ts_lbl)
-
-        # Status
-        if entry.get("ok"):
-            rows = entry.get("rows", 0)
-            st_lbl = QLabel(f"✓  {rows} строк")
-            st_lbl.setStyleSheet("color: #34D399; font-size: 8pt;")
-        else:
-            err_text = entry.get("err", "Ошибка")
-            st_lbl = QLabel(f"✗  {err_text[:55]}")
-            st_lbl.setStyleSheet("color: #EF4444; font-size: 8pt;")
-            st_lbl.setToolTip(err_text)
-
-        layout.addWidget(st_lbl, stretch=1)
-
-        # Delete (×) button
-        del_btn = QPushButton("×")
-        del_btn.setFixedSize(16, 16)
-        del_btn.setStyleSheet(
-            "QPushButton {"
-            "  border: none; background: transparent;"
-            "  color: #D1D5DB; font-size: 11pt; padding: 0;"
-            "}"
-            "QPushButton:hover { color: #EF4444; }"
-        )
-        del_btn.setToolTip("Удалить запись")
-        del_btn.clicked.connect(
-            lambda _checked=False, i=index: self._delete_history(i)
-        )
-        layout.addWidget(del_btn)
-
-        return row
+                row = HistoryRow(entry, i, self)
+                row.delete_requested.connect(self._delete_history)
+                self._history_layout.addWidget(row)
 
     # ------------------------------------------------------------------ Test dialog
 
     def _open_test_dialog(self) -> None:
         sql = self._query_edit.toPlainText().strip()
         cfg = self._config.load()
-        TestRunDialog(
+        dialog = TestRunDialog(
             cfg,
             initial_sql=sql,
             auto_run=bool(sql),   # execute immediately if SQL is present
             parent=self,
-        ).exec()
+        )
+        dialog.test_completed.connect(self._on_test_completed)
+        dialog.exec()
+
+    @Slot(bool, int, str)
+    def _on_test_completed(self, ok: bool, rows: int, err: str) -> None:
+        """Record a TestRunDialog run as a TEST-trigger history entry."""
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
+        saved = self._current_trigger
+        self._current_trigger = TriggerType.TEST
+        try:
+            self._add_history_entry(ok=ok, ts=ts, rows=rows, err=err)
+        finally:
+            self._current_trigger = saved
 
     # ------------------------------------------------------------------ Signals
 
@@ -643,13 +599,17 @@ class ExportJobsWidget(QWidget):
         tb.setContentsMargins(16, 12, 16, 12)
 
         title = QLabel("Выгрузки")
-        title.setStyleSheet("font-size: 13pt; font-weight: 600; color: #111827;")
+        title.setStyleSheet(
+            f"font-size: {Theme.font_size_lg}pt; "
+            f"font-weight: {Theme.font_weight_semi}; "
+            f"color: {Theme.gray_900};"
+        )
         tb.addWidget(title)
         tb.addStretch()
 
         add_btn = QPushButton("  Добавить выгрузку")
         add_btn.setObjectName("primaryBtn")
-        add_btn.setIcon(qta.icon("fa5s.plus", color="#FFFFFF"))
+        add_btn.setIcon(lucide("plus", color=Theme.gray_900))
         add_btn.clicked.connect(self._add_new_job)
         tb.addWidget(add_btn)
 
@@ -676,7 +636,9 @@ class ExportJobsWidget(QWidget):
         )
         self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_lbl.setStyleSheet(
-            "color: #9CA3AF; font-size: 11pt; padding: 48px 0;"
+            f"color: {Theme.gray_400}; "
+            f"font-size: {Theme.font_size_md}pt; "
+            f"padding: 48px 0;"
         )
         self._cards_layout.addWidget(self._empty_lbl)
         self._cards_layout.addStretch()

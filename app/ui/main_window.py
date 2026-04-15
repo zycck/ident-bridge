@@ -2,7 +2,6 @@
 """MainWindow — top-level application shell for iDentBridge."""
 from __future__ import annotations
 
-import qtawesome as qta
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -25,15 +24,17 @@ from app.ui.dashboard_widget import DashboardWidget
 from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import install_global_handler
 from app.ui.export_jobs_widget import ExportJobsWidget
+from app.ui.lucide_icons import lucide
 from app.ui.settings_widget import SettingsWidget
+from app.ui.theme import Theme
 from app.ui.threading import run_worker
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
 
 
-_NAV_LABELS   = ("Статус", "Выгрузки", "Настройки")
-_NAV_FA_ICONS = ("fa5s.chart-bar", "fa5s.upload", "fa5s.cog")
+_NAV_LABELS       = ("Статус", "Выгрузки", "Настройки")
+_NAV_LUCIDE_ICONS = ("bar-chart-3", "upload-cloud", "settings")
 
 
 class MainWindow(QMainWindow):
@@ -92,9 +93,9 @@ class MainWindow(QMainWindow):
         self._nav_icons_normal: list[QIcon] = []
         self._nav_icons_active: list[QIcon] = []
 
-        for i, (label, fa) in enumerate(zip(_NAV_LABELS, _NAV_FA_ICONS)):
-            icon_n = qta.icon(fa, color='#6B7280')
-            icon_a = qta.icon(fa, color='#2563EB')
+        for i, (label, name) in enumerate(zip(_NAV_LABELS, _NAV_LUCIDE_ICONS)):
+            icon_n = lucide(name, color=Theme.gray_500)
+            icon_a = lucide(name, color=Theme.primary_500)
             self._nav_icons_normal.append(icon_n)
             self._nav_icons_active.append(icon_a)
             btn = QPushButton(f"  {label}")
@@ -107,7 +108,7 @@ class MainWindow(QMainWindow):
 
         debug_btn = QPushButton("  Debug")
         debug_btn.setObjectName("navBtn")
-        debug_btn.setIcon(qta.icon('fa5s.bug', color='#6B7280'))
+        debug_btn.setIcon(lucide('bug', color=Theme.gray_500))
         debug_btn.setToolTip("Панель отладки (Ctrl+D)")
         debug_btn.clicked.connect(self._toggle_debug_window)
         nav_layout.addWidget(debug_btn)

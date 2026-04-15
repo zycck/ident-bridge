@@ -2,7 +2,6 @@
 """TestRunDialog — выполняет SQL-запрос и отображает результат в таблице."""
 from __future__ import annotations
 
-import qtawesome as qta
 from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -28,6 +27,8 @@ from app.core.constants import (
     TEST_DIALOG_MIN_W,
 )
 from app.core.sql_client import SqlClient
+from app.ui.lucide_icons import lucide
+from app.ui.theme import Theme
 from app.ui.threading import run_worker
 
 _log = get_logger(__name__)
@@ -80,6 +81,8 @@ class _QueryWorker(QObject):
 class TestRunDialog(QDialog):
     """Диалог тестового SQL-запроса. Принимает AppConfig — сохранять настройки не нужно."""
 
+    test_completed = Signal(bool, int, str)  # (ok, rows, err_message)
+
     def __init__(
         self,
         cfg: AppConfig,
@@ -131,7 +134,7 @@ class TestRunDialog(QDialog):
 
         self._run_btn = QPushButton("  Запустить")
         self._run_btn.setObjectName("primaryBtn")
-        self._run_btn.setIcon(qta.icon('fa5s.play', color='#FFFFFF'))
+        self._run_btn.setIcon(lucide('play', color=Theme.gray_900))
         self._run_btn.clicked.connect(self._run_query)
         btn_row.addWidget(self._run_btn)
 
@@ -184,11 +187,13 @@ class TestRunDialog(QDialog):
         self._populate_table(result)
         self._set_status(f"{result.count} строк · {result.duration_ms} мс", color="")
         self._run_btn.setEnabled(True)
+        self.test_completed.emit(True, result.count, "")
 
     @Slot(str)
     def _on_error(self, msg: str) -> None:
         self._set_status(msg, color="#EF4444")
         self._run_btn.setEnabled(True)
+        self.test_completed.emit(False, 0, msg)
 
     # ------------------------------------------------------------------
     # Helpers
