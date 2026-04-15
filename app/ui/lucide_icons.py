@@ -12,7 +12,7 @@ import sys
 from functools import lru_cache
 from pathlib import Path
 
-from PySide6.QtCore import QByteArray, Qt
+from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
@@ -59,7 +59,7 @@ def lucide(name: str, color: str = Theme.gray_700, size: int = 18) -> QIcon:
 
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    renderer.render(painter)
+    renderer.render(painter, QRectF(0.0, 0.0, float(size), float(size)))
     painter.end()
 
     return QIcon(pixmap)
