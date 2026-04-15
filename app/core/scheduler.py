@@ -1,39 +1,33 @@
-from PySide6.QtCore import QObject, Signal
-from typing import Literal
-from datetime import datetime, timedelta
-import threading
 import random
+from datetime import datetime, timedelta
+from typing import Literal
+
+from PySide6.QtCore import QObject, QTimer, Signal
 
 
 class SyncScheduler(QObject):
     trigger = Signal()
-    next_run_changed = Signal(object)
-
-    _timer: threading.Timer | None
-    _mode: Literal["daily", "hourly", "cron"] | None
-    _value: str | None
-    _next_run: datetime | None
+    next_run_changed = Signal(object)  # datetime | None
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._timer = None
-        self._mode = None
-        self._value = None
-        self._next_run = None
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._fire)
+        self._mode: Literal["daily", "hourly", "cron"] | None = None
+        self._value: str | None = None
+        self._next_run: datetime | None = None
 
     def configure(self, mode: Literal["daily", "hourly", "cron"], value: str) -> None:
         self._mode = mode
         self._value = value
 
     def start(self) -> None:
-        if self._timer is not None:
-            self.stop()
+        self.stop()
         self._schedule_next()
 
     def stop(self) -> None:
-        if self._timer is not None:
-            self._timer.cancel()
-            self._timer = None
+        self._timer.stop()
         self._next_run = None
         self.next_run_changed.emit(None)
 
@@ -66,9 +60,7 @@ class SyncScheduler(QObject):
         self._next_run = now + timedelta(seconds=delay)
         self.next_run_changed.emit(self._next_run)
 
-        self._timer = threading.Timer(delay, self._fire)
-        self._timer.daemon = True
-        self._timer.start()
+        self._timer.start(int(delay * 1000))
 
     def _fire(self) -> None:
         self.trigger.emit()

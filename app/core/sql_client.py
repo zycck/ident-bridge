@@ -97,8 +97,14 @@ class SqlClient:
     def test_connection(self) -> tuple[bool, str]:
         try:
             self.connect()
-            alive = self.is_alive()
-            return (alive, '' if alive else 'Connection established but health-check failed')
+            if not self.is_alive():
+                return (False, 'Connection established but health-check failed')
+            result = self.query(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
+                " WHERE TABLE_TYPE = 'BASE TABLE'"
+            )
+            table_count = result.rows[0][0] if result.rows else 0
+            return (True, f"Подключено · {table_count} таблиц · {result.duration_ms} мс")
         except Exception as exc:
             # Return sanitized message — never expose raw pyodbc error (may contain DSN)
             return (False, str(exc))

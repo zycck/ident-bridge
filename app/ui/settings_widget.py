@@ -429,7 +429,15 @@ class SettingsWidget(QWidget):
             else:
                 self._db_combo.addItem(saved_db)
                 self._db_combo.setCurrentText(saved_db)
-        self._query_edit.setPlainText(cfg.get("sql_query", "") or "")  # type: ignore[arg-type]
+        query = cfg.get("sql_query", "") or ""
+        if not query:
+            query = (
+                "SELECT TABLE_SCHEMA, TABLE_NAME\n"
+                "FROM INFORMATION_SCHEMA.TABLES\n"
+                "WHERE TABLE_TYPE = 'BASE TABLE'\n"
+                "ORDER BY TABLE_SCHEMA, TABLE_NAME"
+            )
+        self._query_edit.setPlainText(query)  # type: ignore[arg-type]
 
         self._sched_enabled.setChecked(bool(cfg.get("schedule_enabled", False)))
         mode = cfg.get("schedule_mode", "daily") or "daily"
@@ -707,7 +715,7 @@ class SettingsWidget(QWidget):
     def _on_test_conn_finished(self, ok: bool, message: str) -> None:
         self._test_conn_running = False
         if ok:
-            _set_status(self._conn_status, True, "Подключение успешно")
+            _set_status(self._conn_status, True, message or "Подключение успешно")
             self._refresh_databases()
         else:
             _set_status(self._conn_status, False, message or "Ошибка подключения")

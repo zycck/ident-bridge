@@ -106,7 +106,7 @@ class DashboardWidget(QWidget):
         c2_title.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: 600;")
         self._last_sync_label = QLabel("Никогда")
         self._last_sync_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._last_sync_label.setStyleSheet("color: #D1D5DB; font-size: 10pt;")
+        self._last_sync_label.setStyleSheet("color: #374151; font-size: 10pt;")
         c2_layout.addWidget(c2_title)
         c2_layout.addWidget(self._last_sync_label)
 
@@ -118,7 +118,7 @@ class DashboardWidget(QWidget):
         c3_title.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: 600;")
         self._next_run_label = QLabel("Не запланировано")
         self._next_run_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._next_run_label.setStyleSheet("color: #D1D5DB; font-size: 10pt;")
+        self._next_run_label.setStyleSheet("color: #374151; font-size: 10pt;")
         c3_layout.addWidget(c3_title)
         c3_layout.addWidget(self._next_run_label)
 

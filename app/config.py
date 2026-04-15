@@ -77,6 +77,8 @@ class ConfigManager:
             self._cfg = self.load()
 
     def load(self) -> AppConfig:
+        if not CONFIG_PATH.exists():
+            return self._cfg
         with CONFIG_PATH.open("r", encoding="utf-8") as fh:
             data: dict = json.load(fh)
 
