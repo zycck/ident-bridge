@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import qtawesome as qta
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
-    QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -21,55 +20,20 @@ from PySide6.QtWidgets import (
 from app.config import AppConfig, ConfigManager, SqlInstance
 from app.core import startup as StartupManager
 from app.core.app_logger import get_logger
+from app.core.constants import SETTINGS_SAVE_DEBOUNCE_MS
 from app.core.instance_scanner import list_databases, scan_all
 from app.core.sql_client import SqlClient
 from app.core.updater import GITHUB_REPO
+from app.ui.threading import run_worker
+from app.ui.widgets import labeled_row, section, set_status, status_label
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Layout helpers
+# Domain-specific helpers
 # ---------------------------------------------------------------------------
-
-def _make_section(title: str) -> tuple[QGroupBox, QVBoxLayout]:
-    box = QGroupBox(title)
-    layout = QVBoxLayout(box)
-    layout.setSpacing(8)
-    layout.setContentsMargins(12, 14, 12, 12)
-    return box, layout
-
-
-def _make_row(label_text: str, widget: QWidget, label_width: int = 120) -> QHBoxLayout:
-    row = QHBoxLayout()
-    row.setSpacing(10)
-    lbl = QLabel(label_text)
-    lbl.setFixedWidth(label_width)
-    lbl.setStyleSheet("color: #9CA3AF;")
-    row.addWidget(lbl)
-    row.addWidget(widget, stretch=1)
-    return row
-
-
-def _status_label() -> QLabel:
-    lbl = QLabel()
-    lbl.setWordWrap(True)
-    lbl.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-    lbl.setStyleSheet("font-size: 9pt; padding: 2px 0;")
-    return lbl
-
-
-def _set_status(lbl: QLabel, ok: bool | None, text: str) -> None:
-    if ok is True:
-        color = "#34D399"
-    elif ok is False:
-        color = "#F87171"
-    else:
-        color = "#9CA3AF"
-    lbl.setStyleSheet(f"color: {color}; font-size: 9pt; padding: 2px 0;")
-    lbl.setText(text)
-
 
 def _instance_from_text(text: str) -> SqlInstance | None:
     text = text.strip()
@@ -180,12 +144,6 @@ class SettingsWidget(QWidget):
         self._selected_db: str = ""
         # Флаг: идёт начальная загрузка полей → не триггерить автосохранение
         self._loading: bool = False
-        # Дебаунс-таймер для автосохранения при вводе текста (не используется здесь,
-        # но оставлен для совместимости со структурой)
-        self._save_timer = QTimer(self)
-        self._save_timer.setSingleShot(True)
-        self._save_timer.setInterval(800)
-        self._save_timer.timeout.connect(self._auto_save)
 
         self._build_ui()
         self._connect_auto_save()
@@ -212,7 +170,7 @@ class SettingsWidget(QWidget):
         layout.setContentsMargins(16, 16, 16, 16)
 
         # ── Section 1: SQL Server ─────────────────────────────────────
-        sql_box, sql_lay = _make_section("SQL Server")
+        sql_box, sql_lay = section("SQL Server")
 
         # Instance row
         self._instance_combo = QComboBox()
@@ -261,12 +219,12 @@ class SettingsWidget(QWidget):
 
         self._login_edit = QLineEdit()
         self._login_edit.setPlaceholderText("sa")
-        sql_lay.addLayout(_make_row("Логин", self._login_edit))
+        sql_lay.addLayout(labeled_row("Логин", self._login_edit))
 
         self._password_edit = QLineEdit()
         self._password_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self._password_edit.setPlaceholderText("••••••")
-        sql_lay.addLayout(_make_row("Пароль", self._password_edit))
+        sql_lay.addLayout(labeled_row("Пароль", self._password_edit))
 
         test_conn_btn = QPushButton("  Тест подключения")
         test_conn_btn.setObjectName("primaryBtn")
@@ -274,13 +232,13 @@ class SettingsWidget(QWidget):
         test_conn_btn.clicked.connect(self._test_connection)
         sql_lay.addWidget(test_conn_btn)
 
-        self._conn_status = _status_label()
+        self._conn_status = status_label()
         sql_lay.addWidget(self._conn_status)
 
         layout.addWidget(sql_box)
 
         # ── Section 2: Приложение ─────────────────────────────────────
-        app_box, app_lay = _make_section("Приложение")
+        app_box, app_lay = section("Приложение")
 
         self._startup_check = QCheckBox("Запускать с Windows")
         self._startup_check.toggled.connect(self._on_startup_toggled)
@@ -422,18 +380,15 @@ class SettingsWidget(QWidget):
             if combo_text and combo_text not in ("Загрузка…", "Нет баз данных"):
                 db = combo_text
 
-        # Merge with existing config to preserve export_jobs and other fields
-        cfg = self._config.load()
-        cfg.update({  # type: ignore[typeddict-item]
-            "sql_instance": self._instance_combo.currentText().strip(),
-            "sql_database": db,
-            "sql_user": self._login_edit.text().strip(),
-            "sql_password": self._password_edit.text(),
-            "auto_update_check": self._auto_update_check.isChecked(),
-            "run_on_startup": self._startup_check.isChecked(),
-            "github_repo": GITHUB_REPO,
-        })
-        self._config.save(cfg)
+        self._config.update(
+            sql_instance=self._instance_combo.currentText().strip(),
+            sql_database=db,
+            sql_user=self._login_edit.text().strip(),
+            sql_password=self._password_edit.text(),
+            auto_update_check=self._auto_update_check.isChecked(),
+            run_on_startup=self._startup_check.isChecked(),
+            github_repo=GITHUB_REPO,
+        )
         _log.debug("Auto-saved settings")
 
     # ------------------------------------------------------------------
@@ -450,21 +405,13 @@ class SettingsWidget(QWidget):
         self._instance_combo.setEnabled(False)
 
         worker = _InstanceScanWorker()
-        self._scan_worker = worker
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        worker.finished.connect(self._on_scan_finished)
-        worker.error.connect(self._on_scan_error)
-        thread.started.connect(worker.run)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda w=worker: setattr(self, '_scan_worker', None)
-            if self._scan_worker is w else None
+        run_worker(
+            self,
+            worker,
+            pin_attr="_scan_worker",
+            on_finished=self._on_scan_finished,
+            on_error=self._on_scan_error,
         )
-        thread.start()
 
     @Slot(list)
     def _on_scan_finished(self, instances: list[SqlInstance]) -> None:
@@ -503,7 +450,7 @@ class SettingsWidget(QWidget):
         self._instance_combo.setEnabled(True)
         self._instance_combo.clear()
         self._instance_combo.addItem("Ошибка сканирования")
-        _set_status(self._conn_status, False, f"Сканирование: {message}")
+        set_status(self._conn_status, "error", f"Сканирование: {message}")
 
     # ------------------------------------------------------------------
     # SQL Server — database list
@@ -542,21 +489,13 @@ class SettingsWidget(QWidget):
         password = self._password_edit.text()
 
         worker = _DbListWorker(inst, user, password)
-        self._dblist_worker = worker
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        worker.finished.connect(self._on_dblist_finished)
-        worker.error.connect(self._on_dblist_error)
-        thread.started.connect(worker.run)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda w=worker: setattr(self, '_dblist_worker', None)
-            if self._dblist_worker is w else None
+        run_worker(
+            self,
+            worker,
+            pin_attr="_dblist_worker",
+            on_finished=self._on_dblist_finished,
+            on_error=self._on_dblist_error,
         )
-        thread.start()
 
     @Slot(list)
     def _on_dblist_finished(self, databases: list[str]) -> None:
@@ -602,7 +541,7 @@ class SettingsWidget(QWidget):
 
         self._db_combo.clear()
         self._db_combo.setEnabled(True)
-        _set_status(self._conn_status, False, f"Список БД: {message}")
+        set_status(self._conn_status, "error", f"Список БД: {message}")
 
         if pending is not None:
             self._fetch_databases(pending)
@@ -633,30 +572,23 @@ class SettingsWidget(QWidget):
             "sql_user": self._login_edit.text().strip(),
             "sql_password": self._password_edit.text(),
         }
-        _set_status(self._conn_status, None, "Проверка подключения…")
+        set_status(self._conn_status, "neutral", "Проверка подключения…")
 
         worker = _TestConnWorker(cfg)
-        self._test_conn_worker = worker
-        thread = QThread(self)
-        worker.moveToThread(thread)
-        worker.finished.connect(self._on_test_conn_finished)
-        thread.started.connect(worker.run)
-        worker.finished.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda w=worker: setattr(self, '_test_conn_worker', None)
-            if self._test_conn_worker is w else None
+        run_worker(
+            self,
+            worker,
+            pin_attr="_test_conn_worker",
+            on_finished=self._on_test_conn_finished,
         )
-        thread.start()
 
     @Slot(bool, str)
     def _on_test_conn_finished(self, ok: bool, message: str) -> None:
         self._test_conn_running = False
         if ok:
-            _set_status(self._conn_status, True, message or "Подключение успешно")
+            set_status(self._conn_status, "ok", message or "Подключение успешно")
         else:
-            _set_status(self._conn_status, False, message or "Ошибка подключения")
+            set_status(self._conn_status, "error", message or "Ошибка подключения")
 
     # ------------------------------------------------------------------
     # App settings
@@ -686,25 +618,17 @@ class SettingsWidget(QWidget):
             current_version=self._current_version,
             repo=GITHUB_REPO,
         )
-        self._update_worker = worker
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
+        thread = run_worker(
+            self,
+            worker,
+            pin_attr="_update_worker",
+            entry="check",
+            on_error=self._on_update_error,
+        )
         worker.update_available.connect(self._on_update_available)
         worker.no_update.connect(self._on_no_update)
-        worker.error.connect(self._on_update_error)
-
-        thread.started.connect(worker.check)
         worker.update_available.connect(thread.quit)
         worker.no_update.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda w=worker: setattr(self, '_update_worker', None)
-            if self._update_worker is w else None
-        )
-        thread.start()
 
     @Slot(str, str)
     def _on_update_available(self, tag: str, download_url: str) -> None:

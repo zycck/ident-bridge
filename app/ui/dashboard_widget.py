@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from datetime import datetime
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -14,7 +14,9 @@ from PySide6.QtWidgets import (
 
 from app.config import ConfigManager, SyncResult
 from app.core.app_logger import get_logger
+from app.core.constants import PING_INTERVAL_MS
 from app.core.sql_client import SqlClient
+from app.ui.threading import run_worker
 
 _log = get_logger(__name__)
 
@@ -153,7 +155,7 @@ class DashboardWidget(QWidget):
 
     def _start_ping_timer(self) -> None:
         self._ping_timer = QTimer(self)
-        self._ping_timer.setInterval(30_000)
+        self._ping_timer.setInterval(PING_INTERVAL_MS)
         self._ping_timer.timeout.connect(self._ping_db)
         self._ping_timer.start()
         # Defer first ping until after event loop starts
@@ -200,18 +202,9 @@ class DashboardWidget(QWidget):
         self._ping_running = True
 
         worker = _PingWorker(self._config)
-        self._ping_worker = worker  # keep alive — GC would delete it otherwise
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
+        thread = run_worker(self, worker, pin_attr="_ping_worker")
         worker.result.connect(self._on_ping_result)
         worker.result.connect(thread.quit)
-        thread.started.connect(worker.run)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda w=worker: setattr(self, '_ping_worker', None) if self._ping_worker is w else None)
-
-        thread.start()
 
     @Slot(object)
     def _on_ping_result(self, alive) -> None:

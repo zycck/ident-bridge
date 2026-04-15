@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import qtawesome as qta
-from PySide6.QtCore import QObject, QThread, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QDialog,
@@ -20,7 +20,15 @@ from PySide6.QtWidgets import (
 
 from app.config import AppConfig, QueryResult
 from app.core.app_logger import get_logger
+from app.core.constants import (
+    TEST_DIALOG_AUTO_RUN_MS,
+    TEST_DIALOG_DEFAULT_H,
+    TEST_DIALOG_DEFAULT_W,
+    TEST_DIALOG_MIN_H,
+    TEST_DIALOG_MIN_W,
+)
 from app.core.sql_client import SqlClient
+from app.ui.threading import run_worker
 
 _log = get_logger(__name__)
 
@@ -84,16 +92,15 @@ class TestRunDialog(QDialog):
         self._worker: _QueryWorker | None = None
 
         self.setWindowTitle("Тестовый запрос")
-        self.setMinimumSize(700, 520)
-        self.resize(860, 580)
+        self.setMinimumSize(TEST_DIALOG_MIN_W, TEST_DIALOG_MIN_H)
+        self.resize(TEST_DIALOG_DEFAULT_W, TEST_DIALOG_DEFAULT_H)
 
         self._build_ui()
         self._editor.setPlainText(initial_sql or _DEFAULT_SQL)
 
         # Auto-run: execute immediately when dialog opens (used from card test btn)
         if auto_run and initial_sql:
-            from PySide6.QtCore import QTimer
-            QTimer.singleShot(80, self._run_query)
+            QTimer.singleShot(TEST_DIALOG_AUTO_RUN_MS, self._run_query)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -164,22 +171,9 @@ class TestRunDialog(QDialog):
         self._set_status("Выполнение…", color="")
 
         worker = _QueryWorker(self._cfg, sql)
-        self._worker = worker  # keep alive — GC would delete it otherwise
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
+        run_worker(self, worker, pin_attr="_worker")
         worker.result.connect(self._on_result)
         worker.error.connect(self._on_error)
-        worker.finished.connect(thread.quit)
-        worker.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda w=worker: setattr(self, '_worker', None)
-            if self._worker is w else None
-        )
-
-        thread.start()
 
     # ------------------------------------------------------------------
     # Slots

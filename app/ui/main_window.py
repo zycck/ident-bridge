@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import qtawesome as qta
-from PySide6.QtCore import QThread, Slot
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,12 +19,14 @@ from PySide6.QtWidgets import (
 
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
+from app.core.constants import NAV_SIDEBAR_W
 from app.core.updater import GITHUB_REPO, download_and_apply
 from app.ui.dashboard_widget import DashboardWidget
 from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import install_global_handler
 from app.ui.export_jobs_widget import ExportJobsWidget
 from app.ui.settings_widget import SettingsWidget
+from app.ui.threading import run_worker
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
@@ -81,7 +83,7 @@ class MainWindow(QMainWindow):
         # Sidebar
         sidebar = QWidget()
         sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(168)
+        sidebar.setFixedWidth(NAV_SIDEBAR_W)
         nav_layout = QVBoxLayout(sidebar)
         nav_layout.setContentsMargins(8, 16, 8, 16)
         nav_layout.setSpacing(4)
@@ -137,7 +139,6 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _setup_shortcuts(self) -> None:
-        from PySide6.QtCore import Qt
         debug_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
         debug_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
         debug_shortcut.activated.connect(self._toggle_debug_window)
@@ -193,27 +194,12 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _run_update_check_silently(self) -> None:
-        worker = UpdateWorker(
-            current_version=self._current_version,
-            repo=GITHUB_REPO,
-        )
-        self._update_worker = worker  # keep alive — GC would delete it otherwise
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.check)
+        worker = UpdateWorker(current_version=self._current_version, repo=GITHUB_REPO)
+        thread = run_worker(self, worker, pin_attr="_update_worker", entry="check")
         worker.update_available.connect(self._on_update_available)
         worker.update_available.connect(thread.quit)
         worker.no_update.connect(thread.quit)
         worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda w=worker: setattr(self, '_update_worker', None)
-            if self._update_worker is w else None
-        )
-
-        thread.start()
 
     @Slot(str, str)
     def _on_update_available(self, version: str, url: str) -> None:
@@ -232,7 +218,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _install_exception_hook(self) -> None:
-        install_global_handler(None)
+        install_global_handler()
 
     # ------------------------------------------------------------------
     # Window / tray events

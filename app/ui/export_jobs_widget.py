@@ -9,7 +9,7 @@ from datetime import datetime
 import qtawesome as qta
 import sqlglot
 from sqlglot.errors import ParseError, TokenError
-from PySide6.QtCore import QThread, QTimer, Qt, Signal, Slot
+from PySide6.QtCore import QTimer, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -26,27 +26,32 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import AppConfig, ConfigManager, ExportJob, SyncResult
+from app.config import (
+    AppConfig,
+    ConfigManager,
+    ExportHistoryEntry,
+    ExportJob,
+    SyncResult,
+    TriggerType,
+)
 from app.core.app_logger import get_logger
+from app.core.constants import (
+    DEBOUNCE_SAVE_MS,
+    DEBOUNCE_SYNTAX_MS,
+    HISTORY_MAX,
+    HISTORY_ROW_HEIGHT,
+    HISTORY_SCROLL_MAX_H,
+    SCHED_VALUE_INPUT_W,
+    SQL_EDITOR_MAX_H,
+    SQL_EDITOR_MIN_H,
+)
 from app.core.scheduler import SyncScheduler
-from app.workers.export_worker import ExportWorker
 from app.ui.test_run_dialog import TestRunDialog
+from app.ui.threading import run_worker
+from app.ui.widgets import hsep
+from app.workers.export_worker import ExportWorker
 
 _log = get_logger(__name__)
-
-_HISTORY_MAX = 50
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _h_sep() -> QFrame:
-    """Thin horizontal separator line (overrides QFrame card style)."""
-    sep = QFrame()
-    sep.setFrameShape(QFrame.Shape.HLine)
-    sep.setStyleSheet("background-color: #E5E7EB; max-height: 1px; border: none;")
-    return sep
 
 
 # ---------------------------------------------------------------------------
@@ -128,23 +133,23 @@ class ExportJobCard(QWidget):
         self._job_id: str = job.get("id") or str(uuid.uuid4())
         self._running = False
         self._worker: ExportWorker | None = None
-        self._last_trigger: str = "manual"    # set just before export starts
-        self._current_trigger: str = "manual"  # captured at export start for history
-        self._history: list[dict] = []
+        self._last_trigger: TriggerType = TriggerType.MANUAL    # set just before export starts
+        self._current_trigger: TriggerType = TriggerType.MANUAL  # captured at export start for history
+        self._history: list[ExportHistoryEntry] = []
 
         self._scheduler = SyncScheduler(self)
         self._scheduler.trigger.connect(self._auto_trigger)
 
-        # 800 ms debounce — save after user stops typing in SQL/name/webhook
+        # debounce — save after user stops typing in SQL/name/webhook
         self._query_timer = QTimer(self)
         self._query_timer.setSingleShot(True)
-        self._query_timer.setInterval(800)
+        self._query_timer.setInterval(DEBOUNCE_SAVE_MS)
         self._query_timer.timeout.connect(self._emit_changed)
 
-        # 300 ms debounce — syntax check
+        # debounce — syntax check
         self._syntax_timer = QTimer(self)
         self._syntax_timer.setSingleShot(True)
-        self._syntax_timer.setInterval(300)
+        self._syntax_timer.setInterval(DEBOUNCE_SYNTAX_MS)
         self._syntax_timer.timeout.connect(self._check_syntax)
 
         self._build_ui()
@@ -184,7 +189,7 @@ class ExportJobCard(QWidget):
         hdr.addWidget(del_btn)
 
         root.addLayout(hdr)
-        root.addWidget(_h_sep())
+        root.addWidget(hsep())
 
         # ── SQL query ─────────────────────────────────────────────────────
         sql_lbl = QLabel("SQL запрос")
@@ -193,8 +198,8 @@ class ExportJobCard(QWidget):
 
         self._query_edit = QPlainTextEdit()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
-        self._query_edit.setMinimumHeight(88)
-        self._query_edit.setMaximumHeight(160)
+        self._query_edit.setMinimumHeight(SQL_EDITOR_MIN_H)
+        self._query_edit.setMaximumHeight(SQL_EDITOR_MAX_H)
         self._query_edit.textChanged.connect(self._on_query_changed)
         root.addWidget(self._query_edit)
 
@@ -214,7 +219,7 @@ class ExportJobCard(QWidget):
         sql_tools.addWidget(test_btn)
 
         root.addLayout(sql_tools)
-        root.addWidget(_h_sep())
+        root.addWidget(hsep())
 
         # ── Webhook URL ───────────────────────────────────────────────────
         wh_lbl = QLabel("Webhook URL")
@@ -225,7 +230,7 @@ class ExportJobCard(QWidget):
         self._webhook_edit.setPlaceholderText("https://… (необязательно)")
         self._webhook_edit.editingFinished.connect(self._emit_changed)
         root.addWidget(self._webhook_edit)
-        root.addWidget(_h_sep())
+        root.addWidget(hsep())
 
         # ── Schedule + status ─────────────────────────────────────────────
         sched_row = QHBoxLayout()
@@ -242,7 +247,7 @@ class ExportJobCard(QWidget):
         sched_row.addWidget(self._mode_combo)
 
         self._sched_value_edit = QLineEdit()
-        self._sched_value_edit.setFixedWidth(72)
+        self._sched_value_edit.setFixedWidth(SCHED_VALUE_INPUT_W)
         self._sched_value_edit.setPlaceholderText("ЧЧ:ММ")
         self._sched_value_edit.editingFinished.connect(self._on_sched_changed)
         sched_row.addWidget(self._sched_value_edit)
@@ -263,7 +268,7 @@ class ExportJobCard(QWidget):
         root.addLayout(sched_row)
 
         # ── History section (hidden until first entry) ────────────────────
-        self._hist_sep = _h_sep()
+        self._hist_sep = hsep()
         self._hist_sep.setVisible(False)
         root.addWidget(self._hist_sep)
 
@@ -285,7 +290,7 @@ class ExportJobCard(QWidget):
         self._history_scroll.setWidget(self._history_container)
         self._history_scroll.setWidgetResizable(True)
         self._history_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._history_scroll.setMaximumHeight(140)
+        self._history_scroll.setMaximumHeight(HISTORY_SCROLL_MAX_H)
         self._history_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -309,7 +314,7 @@ class ExportJobCard(QWidget):
             schedule_enabled=self._sched_check.isChecked(),
             schedule_mode="hourly" if self._mode_combo.currentIndex() == 1 else "daily",
             schedule_value=self._sched_value_edit.text().strip(),
-            history=list(self._history),  # type: ignore[typeddict-unknown-key]
+            history=list(self._history),
         )
 
     def _load_job(self, job: ExportJob) -> None:
@@ -327,7 +332,7 @@ class ExportJobCard(QWidget):
         mode = job.get("schedule_mode", "daily")
         self._mode_combo.setCurrentIndex(1 if mode == "hourly" else 0)
         self._sched_value_edit.setText(job.get("schedule_value", ""))
-        self._history = list(job.get("history") or [])  # type: ignore[arg-type]
+        self._history = list(job.get("history") or [])
 
         for w in (
             self._query_edit, self._name_edit, self._webhook_edit,
@@ -400,15 +405,15 @@ class ExportJobCard(QWidget):
 
     @Slot()
     def _auto_trigger(self) -> None:
-        """Called by scheduler — marks trigger as 'auto' then fires export."""
-        self._last_trigger = "auto"
+        """Called by scheduler — marks trigger as scheduled then fires export."""
+        self._last_trigger = TriggerType.SCHEDULED
         if not self._running:
             self._start_export()
 
     def start_export(self) -> None:
         """Public API — manual trigger; idempotent."""
         if not self._running:
-            self._last_trigger = "manual"
+            self._last_trigger = TriggerType.MANUAL
             self._start_export()
 
     def _start_export(self) -> None:
@@ -424,23 +429,16 @@ class ExportJobCard(QWidget):
         base_cfg = self._config.load()
 
         worker = ExportWorker(base_cfg, job)
-        self._worker = worker  # strong ref — GC would delete it otherwise
-        thread = QThread(self)
-        worker.moveToThread(thread)
-
-        thread.started.connect(worker.run)
-        worker.progress.connect(self._on_progress)
-        worker.finished.connect(self._on_finished)
-        worker.error.connect(self._on_error)
-        worker.finished.connect(thread.quit)
-        worker.error.connect(thread.quit)
-        thread.finished.connect(worker.deleteLater)
-        thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(
-            lambda w=worker: setattr(self, "_worker", None)
-            if self._worker is w else None
+        run_worker(
+            self,
+            worker,
+            pin_attr="_worker",
+            on_finished=self._on_finished,
+            on_error=self._on_error,
         )
-        thread.start()
+        # `progress` is a streaming signal — wired manually (run_worker only
+        # handles the terminal finished/error signals).
+        worker.progress.connect(self._on_progress)
 
     # ------------------------------------------------------------------ Worker slots
 
@@ -476,16 +474,16 @@ class ExportJobCard(QWidget):
     def _add_history_entry(
         self, *, ok: bool, ts: str, rows: int = 0, err: str = ""
     ) -> None:
-        entry: dict = {
+        entry: ExportHistoryEntry = {
             "ts":      ts,
-            "trigger": self._current_trigger,
+            "trigger": self._current_trigger.value,
             "ok":      ok,
             "rows":    rows,
             "err":     err,
         }
         self._history.insert(0, entry)          # newest first
-        if len(self._history) > _HISTORY_MAX:
-            self._history = self._history[:_HISTORY_MAX]
+        if len(self._history) > HISTORY_MAX:
+            self._history = self._history[:HISTORY_MAX]
         self._rebuild_history_ui()
         self._emit_changed()
 
@@ -514,16 +512,16 @@ class ExportJobCard(QWidget):
             for i, entry in enumerate(self._history):
                 self._history_layout.addWidget(self._make_history_row(entry, i))
 
-    def _make_history_row(self, entry: dict, index: int) -> QWidget:
+    def _make_history_row(self, entry: ExportHistoryEntry, index: int) -> QWidget:
         row = QWidget()
-        row.setFixedHeight(22)
+        row.setFixedHeight(HISTORY_ROW_HEIGHT)
 
         layout = QHBoxLayout(row)
         layout.setContentsMargins(0, 0, 4, 0)
         layout.setSpacing(6)
 
-        # Trigger icon
-        if entry.get("trigger") == "auto":
+        # Trigger icon — tolerate legacy "auto" as well as "scheduled"
+        if entry.get("trigger") in ("auto", "scheduled"):
             icon = qta.icon("fa5s.clock", color="#9CA3AF")
             tip  = "Авто"
         else:
@@ -657,7 +655,7 @@ class ExportJobsWidget(QWidget):
 
         root.addWidget(toolbar)
 
-        sep = _h_sep()
+        sep = hsep()
         root.addWidget(sep)
 
         # Scroll area for cards
