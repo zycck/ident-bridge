@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import QRegularExpression, Qt
+from PySide6.QtCore import QRegularExpression, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -171,6 +171,9 @@ class SqlEditor(QPlainTextEdit):
     """QPlainTextEdit with T-SQL syntax highlighting and tab → 4 spaces."""
 
     TAB_SPACES = 4
+    EXPAND_BTN_MARGIN = 6
+
+    expand_requested = Signal()  # emitted when the inline expand icon is clicked
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -185,6 +188,40 @@ class SqlEditor(QPlainTextEdit):
 
         # Attach syntax highlighter to the document
         self._highlighter = SqlHighlighter(self.document())
+
+        # Inline expand button (child of viewport, anchored top-right)
+        self._expand_btn = QPushButton(self.viewport())
+        from app.ui.lucide_icons import lucide
+        self._expand_btn.setIcon(lucide("maximize-2", color=Theme.gray_500, size=12))
+        self._expand_btn.setFixedSize(22, 22)
+        self._expand_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._expand_btn.setToolTip("Открыть в полном окне")
+        self._expand_btn.setStyleSheet(
+            "QPushButton {"
+            "  border: 1px solid transparent;"
+            "  background: rgba(255, 255, 255, 200);"
+            "  border-radius: 4px;"
+            "  padding: 0;"
+            "  min-height: 0;"
+            "}"
+            f"QPushButton:hover {{"
+            f"  background-color: {Theme.gray_100};"
+            f"  border-color: {Theme.border_strong};"
+            f"}}"
+        )
+        self._expand_btn.clicked.connect(self.expand_requested)
+        self._expand_btn.raise_()
+
+    def resizeEvent(self, event) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._reposition_expand_btn()
+
+    def _reposition_expand_btn(self) -> None:
+        vp = self.viewport()
+        sz = self._expand_btn.size()
+        x = vp.width() - sz.width() - self.EXPAND_BTN_MARGIN
+        y = self.EXPAND_BTN_MARGIN
+        self._expand_btn.move(max(0, x), max(0, y))
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         # Tab inserts 4 spaces instead of \t

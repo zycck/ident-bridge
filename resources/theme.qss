@@ -133,9 +133,7 @@ QLabel#statusLabel {
 }
 
 /* ── Inputs (unified height with buttons) ─────────────────────────────────── */
-QLineEdit,
-QPlainTextEdit,
-QTextEdit {
+QLineEdit {
     background-color: ${surface};
     color: ${gray_900};
     border: 1px solid ${border_strong};
@@ -148,14 +146,37 @@ QTextEdit {
     selection-color: ${primary_900};
 }
 
-QLineEdit:focus,
+/* QPlainTextEdit and QTextEdit do NOT get min-height so Python setMinimumHeight() wins */
+QPlainTextEdit,
+QTextEdit {
+    background-color: ${surface};
+    color: ${gray_900};
+    border: 1px solid ${border_strong};
+    border-radius: ${radius}px;
+    padding: ${control_pad_v}px ${control_pad_h}px;
+    font-family: ${font_family};
+    font-size: ${font_size_base}pt;
+    selection-background-color: ${primary_200};
+    selection-color: ${primary_900};
+}
+
+QLineEdit:focus {
+    border: 1px solid ${border_focus};
+    background-color: ${surface};
+}
+
 QPlainTextEdit:focus,
 QTextEdit:focus {
     border: 1px solid ${border_focus};
     background-color: ${surface};
 }
 
-QLineEdit:disabled,
+QLineEdit:disabled {
+    color: ${gray_400};
+    border-color: ${border};
+    background-color: ${gray_50};
+}
+
 QPlainTextEdit:disabled,
 QTextEdit:disabled {
     color: ${gray_400};
