@@ -48,7 +48,10 @@ def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
     try:
         with urllib.request.urlopen(request, context=ssl_ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-        return (data["tag_name"], data["assets"][0]["browser_download_url"])
+        assets = data.get("assets", [])
+        if not assets:
+            return None
+        return (data["tag_name"], assets[0]["browser_download_url"])
     except Exception:
         return None
 
@@ -73,27 +76,49 @@ def download_and_apply(download_url: str) -> None:
     old_exe = os.path.join(os.path.dirname(exe_path), "iDentSync_old.exe")
     # Write script next to the exe (not world-writable tempdir) to prevent TOCTOU attacks.
     script_dir = os.path.dirname(exe_path) if getattr(sys, "frozen", False) else tempfile.gettempdir()
-    script_path = os.path.join(script_dir, "_ident_updater.py")
-    script = (
-        "import os, shutil, time\n"
-        f"src = {new_exe!r}\n"
-        f"dst = {exe_path!r}\n"
-        f"old = {old_exe!r}\n"
-        "for _ in range(10):\n"
-        "    try:\n"
-        "        os.rename(dst, old)\n"
-        "        break\n"
-        "    except Exception:\n"
-        "        time.sleep(1)\n"
-        "shutil.move(src, dst)\n"
-        "os.startfile(dst)\n"
-    )
-    with open(script_path, "w", encoding="utf-8") as fh:
-        fh.write(script)
 
-    subprocess.Popen(
-        [sys.executable, script_path],
-        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
-        close_fds=True,
-    )
+    if getattr(sys, "frozen", False):
+        # В замороженном .exe нет интерпретатора Python — используем .bat через cmd.exe
+        script_path = os.path.join(script_dir, "_ident_updater.bat")
+        script = (
+            "@echo off\n"
+            ":wait\n"
+            "timeout /t 1 /nobreak >nul\n"
+            f'move /y "{exe_path}" "{old_exe}" 2>nul\n'
+            "if errorlevel 1 goto wait\n"
+            f'move /y "{new_exe}" "{exe_path}"\n'
+            f'start "" "{exe_path}"\n'
+            'del "%~f0"\n'
+        )
+        with open(script_path, "w", encoding="ascii") as fh:
+            fh.write(script)
+        subprocess.Popen(
+            ["cmd.exe", "/c", script_path],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+    else:
+        script_path = os.path.join(script_dir, "_ident_updater.py")
+        script = (
+            "import os, shutil, time\n"
+            f"src = {new_exe!r}\n"
+            f"dst = {exe_path!r}\n"
+            f"old = {old_exe!r}\n"
+            "for _ in range(10):\n"
+            "    try:\n"
+            "        os.rename(dst, old)\n"
+            "        break\n"
+            "    except Exception:\n"
+            "        time.sleep(1)\n"
+            "shutil.move(src, dst)\n"
+            "os.startfile(dst)\n"
+        )
+        with open(script_path, "w", encoding="utf-8") as fh:
+            fh.write(script)
+        subprocess.Popen(
+            [sys.executable, script_path],
+            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            close_fds=True,
+        )
+
     sys.exit(0)

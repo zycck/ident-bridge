@@ -79,13 +79,29 @@ class ConfigManager:
     def load(self) -> AppConfig:
         if not CONFIG_PATH.exists():
             return self._cfg
-        with CONFIG_PATH.open("r", encoding="utf-8") as fh:
-            data: dict = json.load(fh)
+        try:
+            with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+                data: dict = json.load(fh)
+        except json.JSONDecodeError:
+            # Повреждённый config.json — возвращаем последний известный конфиг
+            import logging
+            logging.getLogger(__name__).warning(
+                "config.json повреждён, используются последние известные настройки"
+            )
+            return self._cfg
 
         for key in ENCRYPTED_KEYS:
             if key in data:
-                encrypted_bytes = base64.b64decode(data[key])
-                data[key] = dpapi.decrypt(encrypted_bytes)
+                try:
+                    encrypted_bytes = base64.b64decode(data[key])
+                    data[key] = dpapi.decrypt(encrypted_bytes)
+                except Exception:
+                    # Ошибка расшифровки (смена профиля/миграция) — поле сбрасывается
+                    import logging
+                    logging.getLogger(__name__).warning(
+                        "Не удалось расшифровать поле '%s' — требуется повторный ввод", key
+                    )
+                    data[key] = ""
 
         self._cfg = AppConfig(**{k: v for k, v in data.items() if k in AppConfig.__optional_keys__})  # type: ignore[attr-defined]
         return self._cfg

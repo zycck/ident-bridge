@@ -57,5 +57,5 @@ def sync_path() -> None:
 
     expected = get_exe_path()
 
-    if current_value.strip('"').lower() != expected.strip('"').lower():
+    if os.path.normcase(current_value.strip('"')) != os.path.normcase(expected.strip('"')):
         register()

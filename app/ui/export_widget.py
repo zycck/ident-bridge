@@ -31,6 +31,8 @@ class ExportWidget(QWidget):
         self._config = config
         self._exporter = exporter
         self._notifier = notifier
+        self._export_running = False
+        self._export_worker: ExportWorker | None = None
 
         self._build_ui()
         self._apply_initial_state()
@@ -93,10 +95,22 @@ class ExportWidget(QWidget):
         self._warn_label.setVisible(not is_configured)
 
     # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def start_export(self) -> None:
+        """Публичный метод — можно вызывать из трея или других виджетов."""
+        if not self._export_running:
+            self._start_export()
+
+    # ------------------------------------------------------------------
     # Slots
     # ------------------------------------------------------------------
 
     def _start_export(self) -> None:
+        if self._export_running:
+            return
+        self._export_running = True
         self._btn.setEnabled(False)
         self._progress.setValue(0)
         self._step_label.setText("")
@@ -104,6 +118,7 @@ class ExportWidget(QWidget):
         self._result_label.setStyleSheet("")
 
         worker = ExportWorker(self._config, self._exporter, self._notifier)
+        self._export_worker = worker  # keep alive — GC would delete it otherwise
         thread = QThread(self)
 
         worker.moveToThread(thread)
@@ -113,8 +128,14 @@ class ExportWidget(QWidget):
         worker.finished.connect(self._on_finished)
         worker.error.connect(self._on_error)
         worker.finished.connect(thread.quit)
+        worker.error.connect(thread.quit)
         worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(
+            lambda w=worker: setattr(self, '_export_worker', None)
+            if self._export_worker is w else None
+        )
 
         thread.start()
 
@@ -123,6 +144,7 @@ class ExportWidget(QWidget):
         self._step_label.setText(description)
 
     def _on_finished(self, result: SyncResult) -> None:
+        self._export_running = False
         if result.success:
             self._result_label.setStyleSheet("")
             self._result_label.setText(
@@ -132,6 +154,7 @@ class ExportWidget(QWidget):
         self._btn.setEnabled(True)
 
     def _on_error(self, msg: str) -> None:
+        self._export_running = False
         self._result_label.setStyleSheet("color: #EF4444;")
         self._result_label.setText(f"Ошибка: {msg}")
         self._btn.setEnabled(True)

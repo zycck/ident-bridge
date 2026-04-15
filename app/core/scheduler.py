@@ -35,6 +35,9 @@ class SyncScheduler(QObject):
         return self._next_run
 
     def _schedule_next(self) -> None:
+        if self._mode is None or self._value is None:
+            return  # configure() не был вызван до start()
+
         now = datetime.now()
 
         if self._mode == "daily":

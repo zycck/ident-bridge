@@ -60,7 +60,7 @@ class SqlClient:
         raise ConnectionError(
             f"SQL Server connection failed after {_MAX_ATTEMPTS} attempts "
             f"(SQLSTATE {sqlstate})"
-        ) from None
+        ) from last_exc
 
     def disconnect(self) -> None:
         if self._conn is not None:
@@ -75,17 +75,18 @@ class SqlClient:
         if self._conn is None:
             return False
         try:
-            self._conn.cursor().execute("SELECT 1")
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT 1")
             return True
         except pyodbc.Error:
             return False
 
     def query(self, sql: str, params: tuple = ()) -> QueryResult:
         start = datetime.now(timezone.utc)
-        cursor = self._conn.cursor()  # type: ignore[union-attr]
-        cursor.execute(sql, params)
-        columns = [d[0] for d in cursor.description]
-        rows = list(cursor.fetchall())
+        with self._conn.cursor() as cursor:  # type: ignore[union-attr]
+            cursor.execute(sql, params)
+            columns = [d[0] for d in cursor.description]
+            rows = list(cursor.fetchall())
         elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         return QueryResult(
             columns=columns,
@@ -98,15 +99,17 @@ class SqlClient:
         try:
             self.connect()
             if not self.is_alive():
-                return (False, 'Connection established but health-check failed')
+                return (False, 'Подключение установлено, но проверка связи не прошла')
             result = self.query(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES"
                 " WHERE TABLE_TYPE = 'BASE TABLE'"
             )
             table_count = result.rows[0][0] if result.rows else 0
             return (True, f"Подключено · {table_count} таблиц · {result.duration_ms} мс")
-        except Exception as exc:
-            # Return sanitized message — never expose raw pyodbc error (may contain DSN)
+        except ConnectionError as exc:
+            # ConnectionError already contains a sanitized message (no DSN)
             return (False, str(exc))
+        except Exception:
+            return (False, "Неожиданная ошибка при подключении")
         finally:
             self.disconnect()

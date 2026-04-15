@@ -39,7 +39,8 @@ class DebugWindow(QDialog):
         self.resize(1000, 560)
         self.setWindowFlag(Qt.WindowType.Window, True)
         self._build_ui()
-        get_handler().message.connect(self._on_message)
+        self._connected = False
+        self._connect_log()
 
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
@@ -76,6 +77,25 @@ class DebugWindow(QDialog):
 
         root.addLayout(hdr)
         root.addWidget(self._log, stretch=1)
+
+    # ------------------------------------------------------------------
+    def _connect_log(self) -> None:
+        if not self._connected:
+            get_handler().message.connect(self._on_message)
+            self._connected = True
+
+    def _disconnect_log(self) -> None:
+        if self._connected:
+            get_handler().message.disconnect(self._on_message)
+            self._connected = False
+
+    def showEvent(self, event) -> None:  # type: ignore[override]
+        super().showEvent(event)
+        self._connect_log()
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        self._disconnect_log()
+        event.accept()
 
     # ------------------------------------------------------------------
     @Slot(str)

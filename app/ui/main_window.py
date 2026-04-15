@@ -73,7 +73,7 @@ class MainWindow(QMainWindow):
         # Connect app-level quit signal for proper cleanup
         QApplication.instance().aboutToQuit.connect(self._cleanup)  # type: ignore[union-attr]
 
-        if config.get("auto_update_check") != "False":
+        if config.get("auto_update_check"):
             self._run_update_check_silently()
 
         _log.info("iDentBridge %s started", current_version)
@@ -166,7 +166,7 @@ class MainWindow(QMainWindow):
         menu = QMenu()
         menu.addAction("Открыть", self._show_window)
         menu.addSeparator()
-        menu.addAction("Выгрузить сейчас", self._export_widget._start_export)
+        menu.addAction("Выгрузить сейчас", self._export_widget.start_export)
         menu.addAction("Проверить обновление", self._run_update_check_silently)
         menu.addSeparator()
         menu.addAction("Выход", self._quit)
@@ -203,7 +203,7 @@ class MainWindow(QMainWindow):
         if cfg.get("schedule_enabled") and value:
             self._scheduler.configure(mode, value)  # type: ignore[arg-type]
             self._scheduler.start()
-        self._scheduler.trigger.connect(self._export_widget._start_export)
+        self._scheduler.trigger.connect(self._export_widget.start_export)
 
     # ------------------------------------------------------------------
     # Update flow

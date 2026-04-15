@@ -16,15 +16,23 @@ class TelegramNotifier:
 
     def notify(self, message: str) -> None:
         text = message[:_MAX_LEN]
-        t = threading.Thread(target=self._send, args=(text,), daemon=True)
+        t = threading.Thread(target=self._send_safe, args=(text,), daemon=True)
         t.start()
+
+    def _send_safe(self, text: str) -> None:
+        try:
+            self._send(text)
+        except Exception:
+            pass  # фоновые уведомления не должны роняить приложение или светить токен в stderr
 
     def test(self) -> tuple[bool, str]:
         try:
             self._send("iDentBridge: connection test OK")
             return (True, "")
         except Exception as exc:
-            return (False, str(exc))
+            # Scrub token from message — it appears in the URL in urllib exceptions
+            safe = str(exc).replace(self._token, "***")
+            return (False, safe)
 
     def _send(self, text: str) -> None:
         url = _API_URL.format(token=self._token)
