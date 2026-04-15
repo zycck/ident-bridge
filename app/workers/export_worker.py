@@ -11,15 +11,24 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import time
 import urllib.request
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from app.config import AppConfig, ExportJob, SyncResult
+from app.core.constants import MAX_WEBHOOK_ROWS
 from app.core.sql_client import SqlClient
 
 _log = logging.getLogger(__name__)
+
+# Retry policy for webhook POST
+WEBHOOK_RETRY_ATTEMPTS: int = 3
+WEBHOOK_RETRY_BASE_DELAY: float = float(
+    os.environ.get("IDENTBRIDGE_WEBHOOK_RETRY_DELAY", "2.0")
+)
 
 
 class ExportWorker(QObject):
@@ -55,27 +64,49 @@ class ExportWorker(QObject):
             self.progress.emit(2, "Отправка данных...")
             webhook_url = (self._job.get("webhook_url") or "").strip()
             if webhook_url:
-                try:
-                    payload = json.dumps({
-                        "job":     job_name,
-                        "rows":    result.count,
-                        "columns": result.columns,
-                        "data":    [list(row) for row in result.rows],
-                    }, ensure_ascii=False, default=str).encode("utf-8")
-                    req = urllib.request.Request(
-                        webhook_url,
-                        data=payload,
-                        headers={
-                            "Content-Type": "application/json; charset=utf-8",
-                            "User-Agent":   "iDentBridge",
-                        },
-                        method="POST",
+                if result.count > MAX_WEBHOOK_ROWS:
+                    msg = (
+                        f"Слишком много строк для webhook ({result.count} > "
+                        f"{MAX_WEBHOOK_ROWS}). Сократите запрос."
                     )
-                    with urllib.request.urlopen(req, timeout=15) as resp:
-                        _log.info("Webhook %s → HTTP %d", webhook_url, resp.status)
-                except Exception as exc:
-                    _log.error("Webhook push failed: %s", exc)
-                    raise
+                    _log.error(msg)
+                    raise ValueError(msg)
+                last_exc: Exception | None = None
+                for attempt in range(1, WEBHOOK_RETRY_ATTEMPTS + 1):
+                    try:
+                        payload = json.dumps({
+                            "job":     job_name,
+                            "rows":    result.count,
+                            "columns": result.columns,
+                            "data":    [list(row) for row in result.rows],
+                        }, ensure_ascii=False, default=str).encode("utf-8")
+                        req = urllib.request.Request(
+                            webhook_url,
+                            data=payload,
+                            headers={
+                                "Content-Type": "application/json; charset=utf-8",
+                                "User-Agent":   "iDentBridge",
+                            },
+                            method="POST",
+                        )
+                        with urllib.request.urlopen(req, timeout=15) as resp:
+                            _log.info(
+                                "Webhook %s → HTTP %d (attempt %d)",
+                                webhook_url, resp.status, attempt,
+                            )
+                            last_exc = None
+                            break
+                    except Exception as exc:
+                        last_exc = exc
+                        _log.warning(
+                            "Webhook attempt %d/%d failed: %s",
+                            attempt, WEBHOOK_RETRY_ATTEMPTS, exc,
+                        )
+                        if attempt < WEBHOOK_RETRY_ATTEMPTS:
+                            time.sleep(WEBHOOK_RETRY_BASE_DELAY * (2 ** (attempt - 1)))
+                if last_exc is not None:
+                    _log.error("Webhook push failed after %d attempts: %s", WEBHOOK_RETRY_ATTEMPTS, last_exc)
+                    raise last_exc
                 _log.info("Выгрузка '%s': %d строк → webhook %s", job_name, result.count, webhook_url)
             else:
                 _log.info("Выгрузка '%s': %d строк (webhook не настроен)", job_name, result.count)

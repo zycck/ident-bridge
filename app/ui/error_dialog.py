@@ -23,6 +23,8 @@ from app.ui.theme import Theme
 # Note: INotifier integration removed in Phase 1 refactor — re-introduce via
 # DI (constructor injection) if a notification channel comes back.
 
+LOG_MAX_BYTES = 1_000_000  # rotate errors.log when it exceeds ~1 MB
+
 
 class ErrorDialog(QDialog):
     def __init__(
@@ -101,6 +103,17 @@ def install_global_handler() -> None:
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / "errors.log"
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                if log_path.exists() and log_path.stat().st_size > LOG_MAX_BYTES:
+                    rotated = log_path.with_suffix(".log.1")
+                    try:
+                        if rotated.exists():
+                            rotated.unlink()
+                        log_path.rename(rotated)
+                    except OSError:
+                        pass  # rotation failed — continue appending to current log
+            except OSError:
+                pass
             with log_path.open("a", encoding="utf-8") as fh:
                 fh.write(f"\n[{timestamp}]\n{tb_text}")
 

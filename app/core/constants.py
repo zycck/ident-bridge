@@ -35,3 +35,4 @@ USER_AGENT     = "iDentBridge/{version}"
 
 # ── Misc ─────────────────────────────────────────────────────────────
 MIN_DOWNLOAD_BYTES = 1_000_000
+MAX_WEBHOOK_ROWS   = 50_000   # safety cap to prevent OOM on huge query results

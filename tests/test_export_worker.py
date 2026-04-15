@@ -14,6 +14,12 @@ from app.workers.export_worker import ExportWorker
 # Fixtures
 # ---------------------------------------------------------------------------
 
+@pytest.fixture(autouse=True)
+def _no_sleep(monkeypatch):
+    """Suppress time.sleep inside the retry loop so tests run at full speed."""
+    monkeypatch.setattr("app.workers.export_worker.time.sleep", lambda *_: None)
+
+
 @pytest.fixture
 def base_cfg() -> AppConfig:
     # AppConfig is a TypedDict — use plain dict construction

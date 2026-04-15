@@ -67,7 +67,7 @@ def download_and_apply(download_url: str) -> None:
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl_ctx)
     )
-    with opener.open(download_url) as resp, open(new_exe, "wb") as fh:
+    with opener.open(download_url, timeout=120) as resp, open(new_exe, "wb") as fh:
         fh.write(resp.read())
 
     if os.path.getsize(new_exe) <= MIN_DOWNLOAD_BYTES:
@@ -99,6 +99,9 @@ def download_and_apply(download_url: str) -> None:
             ["cmd.exe", "/c", script_path],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
     else:
         script_path = os.path.join(script_dir, "_ident_updater.py")
@@ -122,6 +125,9 @@ def download_and_apply(download_url: str) -> None:
             [sys.executable, script_path],
             creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
             close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     sys.exit(0)
