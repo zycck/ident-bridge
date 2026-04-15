@@ -21,6 +21,18 @@ from app.core.updater import cleanup_old_exe
 APP_VERSION = "0.0.1"
 
 
+def _load_fonts() -> None:
+    """Register bundled fonts with Qt so the QSS font-family resolves them."""
+    from PySide6.QtGui import QFontDatabase
+    if getattr(sys, "frozen", False):
+        base = Path(sys._MEIPASS) / "resources" / "fonts"  # type: ignore[attr-defined]
+    else:
+        base = Path(__file__).parent / "resources" / "fonts"
+    inter_path = base / "InterVariable.ttf"
+    if inter_path.exists():
+        QFontDatabase.addApplicationFont(str(inter_path))
+
+
 def _load_theme() -> str:
     """Return QSS with design tokens substituted, resolving for dev/frozen modes."""
     if getattr(sys, "frozen", False):
@@ -51,6 +63,8 @@ def main() -> None:
 
     # Install Qt→Python logging bridge before any UI is created
     app_logger.setup()
+
+    _load_fonts()
 
     theme = _load_theme()
     if theme:
