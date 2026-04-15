@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Literal
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QFrame,
     QGroupBox,
     QHBoxLayout,
@@ -23,6 +25,25 @@ from PySide6.QtWidgets import (
 from app.ui.theme import Theme
 
 StatusKind = Literal["neutral", "ok", "error", "warning", "info"]
+
+
+def style_combo_popup(combo: QComboBox) -> None:
+    """
+    Strip the Windows default drop-shadow + black frame from a QComboBox
+    popup. Qt's stylesheet alone can't override the popup window's native
+    decoration — we have to set window flags on the underlying view.
+
+    Call this once after constructing each QComboBox.
+    """
+    view = combo.view()
+    if view is None:
+        return
+    # The view lives inside a top-level popup window. Disable the OS
+    # drop-shadow and any native frame.
+    win = view.window()
+    if win is not None:
+        win.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint, True)
+        win.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
 
 
 def hsep() -> QFrame:

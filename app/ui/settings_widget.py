@@ -26,7 +26,7 @@ from app.core.updater import GITHUB_REPO
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
-from app.ui.widgets import labeled_row, section, set_status, status_label
+from app.ui.widgets import labeled_row, section, set_status, status_label, style_combo_popup
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
@@ -175,6 +175,7 @@ class SettingsWidget(QWidget):
 
         # Instance row
         self._instance_combo = QComboBox()
+        style_combo_popup(self._instance_combo)
         self._instance_combo.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )
@@ -197,6 +198,7 @@ class SettingsWidget(QWidget):
 
         # Database row
         self._db_combo = QComboBox()
+        style_combo_popup(self._db_combo)
         self._db_combo.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
         )

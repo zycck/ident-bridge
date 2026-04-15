@@ -51,7 +51,7 @@ from app.ui.sql_editor import SqlEditor
 from app.ui.test_run_dialog import TestRunDialog
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
-from app.ui.widgets import HeaderLabel, hsep
+from app.ui.widgets import HeaderLabel, hsep, style_combo_popup
 from app.workers.export_worker import ExportWorker
 
 _log = get_logger(__name__)
@@ -538,6 +538,7 @@ class ExportJobEditor(QWidget):
         sched_controls.setSpacing(8)
 
         self._mode_combo = QComboBox()
+        style_combo_popup(self._mode_combo)
         self._mode_combo.addItems([
             "Ежедневно",
             "Каждые N часов",
