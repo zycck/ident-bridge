@@ -265,3 +265,87 @@ def test_hourly_next_run_is_timezone_aware(scheduler):
 
     assert nr is not None
     assert nr.tzinfo is not None, "hourly next_run is naive"
+
+
+# ── Minutely mode ─────────────────────────────────────────────────────
+
+def test_minutely_mode_5_minutes(parent):
+    sch = SyncScheduler(parent)
+    sch.configure("minutely", "5")
+    sch.start()
+    nr = sch.next_run()
+    assert nr is not None
+    now = datetime.now().astimezone()
+    delta = nr - now
+    # 5 minutes = 300s ± 5% jitter (±15s) → allow 280..320
+    assert timedelta(seconds=280) <= delta <= timedelta(seconds=320), (
+        f"Unexpected delta: {delta}"
+    )
+    sch.stop()
+
+
+def test_minutely_mode_1_minute(parent):
+    sch = SyncScheduler(parent)
+    sch.configure("minutely", "1")
+    sch.start()
+    nr = sch.next_run()
+    assert nr is not None
+    now = datetime.now().astimezone()
+    delta = nr - now
+    # 1 minute = 60s ± 5% jitter (±3s) → allow 55..65
+    assert timedelta(seconds=55) <= delta <= timedelta(seconds=65), (
+        f"Unexpected delta: {delta}"
+    )
+    sch.stop()
+
+
+def test_minutely_invalid_value(parent):
+    """minutely with value 0 should not crash — _schedule_next returns early."""
+    sch = SyncScheduler(parent)
+    sch.configure("minutely", "0")
+    sch.start()  # must not raise
+    # next_run stays None because _schedule_next returned early
+    assert sch.next_run() is None
+    sch.stop()
+
+
+# ── Secondly mode ─────────────────────────────────────────────────────
+
+def test_secondly_mode_30_seconds(parent):
+    sch = SyncScheduler(parent)
+    sch.configure("secondly", "30")
+    sch.start()
+    nr = sch.next_run()
+    assert nr is not None
+    now = datetime.now().astimezone()
+    delta = nr - now
+    # 30 seconds ± 5% jitter (±1.5s) → allow 28..32
+    assert timedelta(seconds=28) <= delta <= timedelta(seconds=32), (
+        f"Unexpected delta: {delta}"
+    )
+    sch.stop()
+
+
+def test_secondly_mode_10_seconds(parent):
+    sch = SyncScheduler(parent)
+    sch.configure("secondly", "10")
+    sch.start()
+    nr = sch.next_run()
+    assert nr is not None
+    now = datetime.now().astimezone()
+    delta = nr - now
+    # 10 seconds ± 5% jitter (±0.5s) → allow 9..12
+    assert timedelta(seconds=9) <= delta <= timedelta(seconds=12), (
+        f"Unexpected delta: {delta}"
+    )
+    sch.stop()
+
+
+def test_secondly_real_trigger_fires(parent, qtbot):
+    """Live test: configure 1-second secondly, wait for trigger signal."""
+    sch = SyncScheduler(parent)
+    sch.configure("secondly", "1")
+    sch.start()
+    with qtbot.wait_signal(sch.trigger, timeout=5000):
+        pass  # should fire within ~1s (max 1s + 5% jitter)
+    sch.stop()

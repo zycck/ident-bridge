@@ -25,11 +25,11 @@ class SyncScheduler(QObject):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._fire)
-        self._mode: Literal["daily", "hourly", "cron"] | None = None
+        self._mode: Literal["daily", "hourly", "minutely", "secondly", "cron"] | None = None
         self._value: str | None = None
         self._next_run: datetime | None = None
 
-    def configure(self, mode: Literal["daily", "hourly", "cron"], value: str) -> None:
+    def configure(self, mode: Literal["daily", "hourly", "minutely", "secondly", "cron"], value: str) -> None:
         self._mode = mode
         self._value = value
 
@@ -81,16 +81,31 @@ class SyncScheduler(QObject):
 
         now = _local_now()
 
-        if self._mode == "daily":
+        if self._mode == "secondly":
+            n = int(self._value)
+            if n < 1:
+                return
+            base_delay = float(n)
+
+        elif self._mode == "minutely":
+            n = int(self._value)
+            if n < 1:
+                return
+            base_delay = n * 60.0
+
+        elif self._mode == "hourly":
+            n = int(self._value)
+            if n < 1:
+                return
+            base_delay = n * 3600.0
+
+        elif self._mode == "daily":
             parts = self._value.split(":")
             hour, minute = int(parts[0]), int(parts[1])
             candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
             if candidate <= now:
                 candidate += timedelta(days=1)
             base_delay = (candidate - now).total_seconds()
-
-        elif self._mode == "hourly":
-            base_delay = int(self._value) * 3600
 
         elif self._mode == "cron":
             raise NotImplementedError("cron mode is not implemented")
