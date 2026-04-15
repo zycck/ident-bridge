@@ -2,8 +2,6 @@
 # PyInstaller spec for iDentBridge — single-file windowed .exe
 # Usage: pyinstaller build.spec
 
-from PyInstaller.utils.hooks import collect_data_files
-
 block_cipher = None
 
 a = Analysis(
@@ -11,13 +9,17 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ("resources/theme.qss", "resources"),
-    ] + collect_data_files("qtawesome"),
+        ("resources/theme.qss",  "resources"),
+        ("resources/icon.ico",   "resources"),
+        ("resources/check.svg",  "resources"),
+        ("resources/icons",      "resources/icons"),
+    ],
     hiddenimports=[
         "pyodbc",
         "PySide6.QtCore",
         "PySide6.QtWidgets",
         "PySide6.QtGui",
+        "PySide6.QtSvg",
         "encodings.utf_8",
     ],
     hookspath=[],
