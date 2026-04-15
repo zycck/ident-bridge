@@ -26,17 +26,28 @@ _log = get_logger(__name__)
 class _PingWorker(QObject):
     result = Signal(object)  # bool | None; None = instance not configured
 
-    def __init__(self, config: ConfigManager) -> None:
+    def __init__(self, instance: str, database: str, user: str, password: str, trust_cert: bool) -> None:
         super().__init__()
-        self._config = config
+        self._instance = instance
+        self._database = database
+        self._user = user
+        self._password = password
+        self._trust_cert = trust_cert
 
     @Slot()
     def run(self) -> None:
-        cfg = self._config.load()
-        if not cfg.get("sql_instance"):
+        from app.config import AppConfig
+        if not self._instance:
             _log.debug("DB ping skipped: instance not configured")
             self.result.emit(None)
             return
+        cfg = AppConfig(
+            sql_instance=self._instance,
+            sql_database=self._database,
+            sql_user=self._user,
+            sql_password=self._password,
+            sql_trust_cert=self._trust_cert,
+        )
         client = SqlClient(cfg)
         try:
             client.connect()
@@ -347,9 +358,17 @@ class DashboardWidget(QWidget):
     def _ping_db(self) -> None:
         if self._ping_running:
             return
+        # Capture config snapshot on the main thread before spawning the worker
+        cfg = self._config.load()
         self._ping_running = True
 
-        worker = _PingWorker(self._config)
+        worker = _PingWorker(
+            instance=cfg.get("sql_instance") or "",
+            database=cfg.get("sql_database") or "master",
+            user=cfg.get("sql_user") or "",
+            password=cfg.get("sql_password") or "",
+            trust_cert=cfg.get("sql_trust_cert") if cfg.get("sql_trust_cert") is not None else True,
+        )
         thread = run_worker(self, worker, pin_attr="_ping_worker")
         worker.result.connect(self._on_ping_result)
         worker.result.connect(thread.quit)

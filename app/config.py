@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -84,6 +85,7 @@ class AppConfig(TypedDict, total=False):
     auto_update_check: bool
     run_on_startup:    bool
     export_jobs:       list[ExportJob]
+    tray_notice_shown: bool  # shown once when app first minimises to tray
 
 
 # ---------------------------------------------------------------------------
@@ -97,70 +99,76 @@ ENCRYPTED_KEYS: frozenset[str] = frozenset({"sql_user", "sql_password"})
 
 class ConfigManager:
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         self._cfg: AppConfig = {}
         if CONFIG_PATH.exists():
             self._cfg = self.load()
 
     def load(self) -> AppConfig:
-        if not CONFIG_PATH.exists():
-            return self._cfg
-        try:
-            with CONFIG_PATH.open("r", encoding="utf-8") as fh:
-                data: dict = json.load(fh)
-        except json.JSONDecodeError:
-            logging.getLogger(__name__).warning(
-                "config.json повреждён, используются последние известные настройки"
-            )
-            return self._cfg
-
-        for key in ENCRYPTED_KEYS:
-            raw = data.get(key)
-            if not raw:
-                # Field missing or empty — normal for Trusted Connection mode
-                # (Windows authentication on a local SQL Server), no warning.
-                continue
+        with self._lock:
+            if not CONFIG_PATH.exists():
+                return self._cfg
             try:
-                encrypted_bytes = base64.b64decode(raw)
-                data[key] = dpapi.decrypt(encrypted_bytes)
-            except Exception:
-                # Real corruption: blob present but unreadable (e.g. DPAPI
-                # master key changed because the user moved profiles).
+                with CONFIG_PATH.open("r", encoding="utf-8") as fh:
+                    data: dict = json.load(fh)
+            except json.JSONDecodeError:
                 logging.getLogger(__name__).warning(
-                    "Не удалось расшифровать поле '%s' — требуется повторный ввод", key
+                    "config.json повреждён, используются последние известные настройки"
                 )
-                data[key] = ""
+                return self._cfg
 
-        # Backward-compat migration: trigger "auto" → "scheduled"
-        for job in data.get("export_jobs") or []:
-            for entry in job.get("history") or []:
-                if entry.get("trigger") == "auto":
-                    entry["trigger"] = "scheduled"
+            for key in ENCRYPTED_KEYS:
+                raw = data.get(key)
+                if not raw:
+                    # Field missing or empty — normal for Trusted Connection mode
+                    # (Windows authentication on a local SQL Server), no warning.
+                    continue
+                try:
+                    encrypted_bytes = base64.b64decode(raw)
+                    data[key] = dpapi.decrypt(encrypted_bytes)
+                except Exception:
+                    # Real corruption: blob present but unreadable (e.g. DPAPI
+                    # master key changed because the user moved profiles).
+                    logging.getLogger(__name__).warning(
+                        "Не удалось расшифровать поле '%s' — требуется повторный ввод", key
+                    )
+                    data[key] = ""
 
-        valid_keys = AppConfig.__annotations__.keys()
-        self._cfg = AppConfig(**{k: v for k, v in data.items() if k in valid_keys})  # type: ignore[typeddict-item]
-        return self._cfg
+            # Backward-compat migration: trigger "auto" → "scheduled"
+            for job in data.get("export_jobs") or []:
+                for entry in job.get("history") or []:
+                    if entry.get("trigger") == "auto":
+                        entry["trigger"] = "scheduled"
+
+            valid_keys = AppConfig.__annotations__.keys()
+            self._cfg = AppConfig(**{k: v for k, v in data.items() if k in valid_keys})  # type: ignore[typeddict-item]
+            return self._cfg
 
     def save(self, cfg: AppConfig) -> None:
-        out: dict = dict(cfg)
-        for key in ENCRYPTED_KEYS:
-            if key in out and out[key]:
-                encrypted_bytes = dpapi.encrypt(out[key])
-                out[key] = base64.b64encode(encrypted_bytes).decode("ascii")
+        with self._lock:
+            out: dict = dict(cfg)
+            for key in ENCRYPTED_KEYS:
+                if key in out and out[key]:
+                    encrypted_bytes = dpapi.encrypt(out[key])
+                    out[key] = base64.b64encode(encrypted_bytes).decode("ascii")
 
-        with CONFIG_PATH.open("w", encoding="utf-8") as fh:
-            json.dump(out, fh, indent=2, ensure_ascii=False)
+            with CONFIG_PATH.open("w", encoding="utf-8") as fh:
+                json.dump(out, fh, indent=2, ensure_ascii=False)
 
-        os.chmod(CONFIG_PATH, 0o600)
+            os.chmod(CONFIG_PATH, 0o600)
 
     def update(self, **changes: object) -> None:
         """Atomic load → merge → save. Preserves keys not in changes."""
-        cfg = self.load()
-        cfg.update(changes)  # type: ignore[typeddict-item]
-        self.save(cfg)
+        with self._lock:
+            cfg = self.load()
+            cfg.update(changes)  # type: ignore[typeddict-item]
+            self.save(cfg)
 
     def get(self, key: str) -> str | None:
-        return self._cfg.get(key)  # type: ignore[return-value]
+        with self._lock:
+            return self._cfg.get(key)  # type: ignore[return-value]
 
     def set(self, key: str, value: str) -> None:
-        self._cfg[key] = value  # type: ignore[literal-required]
+        with self._lock:
+            self._cfg[key] = value  # type: ignore[literal-required]

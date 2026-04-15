@@ -8,6 +8,7 @@ spawns a background worker. Handles the standard PySide6 GC-pin pattern
 """
 from __future__ import annotations
 
+import weakref
 from typing import Any, Callable
 
 from PySide6.QtCore import QObject, QThread
@@ -60,10 +61,18 @@ def run_worker(
 
     if pin_attr is not None:
         setattr(parent, pin_attr, worker)
+        parent_ref = weakref.ref(parent)
 
         def _clear() -> None:
-            if getattr(parent, pin_attr, None) is worker:
-                setattr(parent, pin_attr, None)
+            p = parent_ref()
+            if p is None:
+                return  # parent was garbage-collected
+            try:
+                if getattr(p, pin_attr, None) is worker:
+                    setattr(p, pin_attr, None)
+            except RuntimeError:
+                # Underlying C++ object already deleted — safe to ignore
+                pass
 
         thread.finished.connect(_clear)
 

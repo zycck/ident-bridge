@@ -332,6 +332,7 @@ class ExportJobEditor(QWidget):
     changed          = Signal(object)  # ExportJob — emitted on any field edit
     sync_completed   = Signal(object)  # SyncResult — emitted on successful run
     history_changed  = Signal()        # emitted whenever an entry is added or deleted
+    failure_alert    = Signal(str, int)  # (job_name, consecutive_failures) — tray notification
 
     def __init__(
         self,
@@ -345,6 +346,7 @@ class ExportJobEditor(QWidget):
         self._job_id: str = job.get("id") or str(uuid.uuid4())
         self._running = False
         self._worker: ExportWorker | None = None
+        self._consecutive_failures: int = 0  # reset on success; triggers tray alert at threshold
         self._last_trigger: TriggerType = TriggerType.MANUAL    # set just before export starts
         self._current_trigger: TriggerType = TriggerType.MANUAL  # captured at export start for history
         self._history: list[ExportHistoryEntry] = []
@@ -836,6 +838,7 @@ class ExportJobEditor(QWidget):
         self._run_btn.setEnabled(True)
         self._progress_lbl.setText("")
         if result.success:
+            self._consecutive_failures = 0
             ts_clock = result.timestamp.strftime("%H:%M:%S")
             ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M")
             self._update_status_summary(
@@ -843,6 +846,13 @@ class ExportJobEditor(QWidget):
             )
             self._add_history_entry(ok=True, rows=result.rows_synced, ts=ts_full)
             self.sync_completed.emit(result)
+        else:
+            self._consecutive_failures += 1
+            if self._consecutive_failures >= 3:
+                self.failure_alert.emit(
+                    self.to_job().get("name") or "Без названия",
+                    self._consecutive_failures,
+                )
 
     @Slot(str)
     def _on_error(self, msg: str) -> None:
@@ -852,6 +862,12 @@ class ExportJobEditor(QWidget):
         self._update_status_summary("error", f"✗ {msg[:70]}")
         ts_full = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._add_history_entry(ok=False, err=msg, ts=ts_full)
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= 3:
+            self.failure_alert.emit(
+                self.to_job().get("name") or "Без названия",
+                self._consecutive_failures,
+            )
 
     # ------------------------------------------------------------------ History data
 
@@ -957,6 +973,7 @@ class ExportJobsWidget(QWidget):
 
     sync_completed  = Signal(object)  # SyncResult — bubbled up from any editor
     history_changed = Signal()         # bubbled up from any editor
+    failure_alert   = Signal(str, int)  # (job_name, consecutive_count) — wire to tray in MainWindow
 
     def __init__(self, config: ConfigManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1205,6 +1222,7 @@ class ExportJobsWidget(QWidget):
         editor.history_changed.connect(self.history_changed)
         editor.history_changed.connect(self._save_jobs)
         editor.sync_completed.connect(self.sync_completed)
+        editor.failure_alert.connect(self.failure_alert)
 
         # Wrap in a container with padding, then in a QScrollArea page
         container = QWidget()
@@ -1265,6 +1283,13 @@ class ExportJobsWidget(QWidget):
     @Slot(str)
     def _on_tile_delete(self, job_id: str) -> None:
         editor = self._editors.get(job_id)
+        if editor is not None and getattr(editor, "_running", False):
+            QMessageBox.warning(
+                self,
+                "Выгрузка выполняется",
+                "Дождитесь завершения выгрузки перед удалением.",
+            )
+            return
         name = "без названия"
         if editor is not None:
             name = editor.to_job().get("name") or "без названия"
