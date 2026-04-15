@@ -96,7 +96,7 @@ class HistoryRow(QWidget):
         # QFontMetrics on the explicit font, not on the label's pre-show
         # font which may still be the Qt default.
         fm = QFontMetrics(small_font)
-        ts_lbl.setFixedWidth(fm.horizontalAdvance("Сегодня 00:00") + 12)
+        ts_lbl.setFixedWidth(fm.horizontalAdvance("Сегодня 00:00:00") + 12)
         layout.addWidget(ts_lbl)
 
         # ── Job name (only when shown in aggregated view) ─────────────
@@ -154,25 +154,31 @@ class HistoryRow(QWidget):
     def _format_ts(ts: str) -> str:
         """
         Format the stored ts string for display.
-        Today          → "Сегодня HH:MM"
-        Yesterday      → "Вчера HH:MM"
-        Earlier this y → "DD.MM HH:MM"
-        Older          → "DD.MM.YY HH:MM"
+        Today          → "Сегодня HH:MM:SS"
+        Yesterday      → "Вчера HH:MM:SS"
+        Earlier this y → "DD.MM HH:MM:SS"
+        Older          → "DD.MM.YY HH:MM:SS"
+        Handles both 19-char (new, with seconds) and 16-char (legacy) timestamps.
         """
         if not ts or len(ts) < 16:
             return ts
-        try:
-            dt = datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
-        except ValueError:
+        dt = None
+        for fmt, length in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
+            if len(ts) >= length:
+                try:
+                    dt = datetime.strptime(ts[:length], fmt)
+                    break
+                except ValueError:
+                    pass
+        if dt is None:
             return ts
         now = datetime.now()
         today = now.date()
-        date_str_full = dt.strftime("%d.%m.%y")
-        hhmm = dt.strftime("%H:%M")
+        time_str = dt.strftime("%H:%M:%S")
         if dt.date() == today:
-            return f"Сегодня {hhmm}"
+            return f"Сегодня {time_str}"
         if dt.date() == today - timedelta(days=1):
-            return f"Вчера {hhmm}"
+            return f"Вчера {time_str}"
         if dt.year == now.year:
-            return f"{dt.strftime('%d.%m')} {hhmm}"
-        return f"{date_str_full} {hhmm}"
+            return f"{dt.strftime('%d.%m')} {time_str}"
+        return f"{dt.strftime('%d.%m.%y')} {time_str}"

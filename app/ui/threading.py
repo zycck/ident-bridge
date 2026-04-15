@@ -67,12 +67,19 @@ def run_worker(
             p = parent_ref()
             if p is None:
                 return  # parent was garbage-collected
+            # Bypass getattr/setattr (which can fail on dead Shiboken
+            # wrappers) and write directly into __dict__. Identity check
+            # via __dict__.get prevents nuking a fresh worker that was
+            # pinned to the same attribute after this one finished.
             try:
-                if getattr(p, pin_attr, None) is worker:
+                if p.__dict__.get(pin_attr) is worker:
+                    p.__dict__[pin_attr] = None
+            except (RuntimeError, AttributeError, TypeError):
+                # Final fallback: try the regular setattr path
+                try:
                     setattr(p, pin_attr, None)
-            except RuntimeError:
-                # Underlying C++ object already deleted — safe to ignore
-                pass
+                except Exception:
+                    pass
 
         thread.finished.connect(_clear)
 

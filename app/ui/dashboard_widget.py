@@ -297,7 +297,7 @@ class DashboardWidget(QWidget):
         self._status_text.setStyleSheet(f"color: {color}; font-size: 9.5pt;")
 
     def update_last_sync(self, result: SyncResult) -> None:
-        ts = result.timestamp.strftime("%H:%M  %d.%m")
+        ts = result.timestamp.strftime("%H:%M:%S  %d.%m")
         self._last_sync_label.setText(f"{ts}  ·  {result.rows_synced} стр.")
 
     def show_update_banner(self, version: str, url: str) -> None:
