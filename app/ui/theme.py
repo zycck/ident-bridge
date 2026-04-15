@@ -63,6 +63,14 @@ class Theme:
     control_pad_v  = "4"
     control_pad_h  = "10"
 
+    # ── Syntax highlighting (SQL editor) ──────────────────────────────
+    syntax_keyword  = "#1D4ED8"   # blue-700, bold
+    syntax_function = "#9333EA"   # purple-600
+    syntax_string   = "#15803D"   # green-700
+    syntax_number   = "#C2410C"   # orange-700
+    syntax_comment  = "#94A3B8"   # slate-400, italic
+    syntax_operator = "#475569"   # slate-600
+
     # ── Typography ────────────────────────────────────────────────────
     font_family        = "Manrope, Segoe UI Variable, Segoe UI, sans-serif"
     font_mono          = "Cascadia Code, Consolas, Courier New, monospace"

@@ -83,12 +83,12 @@ class SqlHighlighter(QSyntaxHighlighter):
         super().__init__(document)
 
         # Color choices tuned for the lime brand on a white surface
-        self._kw_fmt        = _make_format("#1D4ED8", bold=True)   # blue-700
-        self._fn_fmt        = _make_format("#9333EA")              # purple-600
-        self._string_fmt    = _make_format("#15803D")              # green-700
-        self._number_fmt    = _make_format("#C2410C")              # orange-700
-        self._comment_fmt   = _make_format("#94A3B8", italic=True) # slate-400
-        self._operator_fmt  = _make_format("#475569")              # slate-600
+        self._kw_fmt        = _make_format(Theme.syntax_keyword,  bold=True)
+        self._fn_fmt        = _make_format(Theme.syntax_function)
+        self._string_fmt    = _make_format(Theme.syntax_string)
+        self._number_fmt    = _make_format(Theme.syntax_number)
+        self._comment_fmt   = _make_format(Theme.syntax_comment, italic=True)
+        self._operator_fmt  = _make_format(Theme.syntax_operator)
 
         # Pre-compile regex rules
         self._rules: list[tuple[QRegularExpression, QTextCharFormat]] = []
