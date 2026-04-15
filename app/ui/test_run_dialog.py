@@ -111,8 +111,8 @@ class TestRunDialog(QDialog):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setSpacing(10)
-        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(8)
+        root.setContentsMargins(12, 12, 12, 12)
 
         # ── SQL editor label ──────────────────────────────────────────
         sql_label = QLabel("SQL запрос:")
@@ -125,16 +125,16 @@ class TestRunDialog(QDialog):
         mono.setStyleHint(QFont.StyleHint.Monospace)
         self._editor.setFont(mono)
         fm = self._editor.fontMetrics()
-        self._editor.setFixedHeight(fm.lineSpacing() * 6 + 18)
+        self._editor.setFixedHeight(fm.lineSpacing() * 5 + 14)
         root.addWidget(self._editor)
 
         # ── Button row ────────────────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(6)
 
         self._run_btn = QPushButton("  Запустить")
         self._run_btn.setObjectName("primaryBtn")
-        self._run_btn.setIcon(lucide('play', color=Theme.gray_900))
+        self._run_btn.setIcon(lucide('play', color=Theme.gray_900, size=14))
         self._run_btn.clicked.connect(self._run_query)
         btn_row.addWidget(self._run_btn)
 

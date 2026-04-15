@@ -167,8 +167,8 @@ class SettingsWidget(QWidget):
         scroll.setWidget(container)
 
         layout = QVBoxLayout(container)
-        layout.setSpacing(16)
-        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+        layout.setContentsMargins(12, 12, 12, 12)
 
         # ── Section 1: SQL Server ─────────────────────────────────────
         sql_box, sql_lay = section("SQL Server")
@@ -182,14 +182,14 @@ class SettingsWidget(QWidget):
         self._instance_combo.currentIndexChanged.connect(self._on_instance_changed)
 
         scan_btn = QPushButton("  Сканировать")
-        scan_btn.setIcon(lucide('search', color=Theme.gray_700))
-        scan_btn.setFixedWidth(130)
+        scan_btn.setIcon(lucide('search', color=Theme.gray_700, size=14))
+        scan_btn.setFixedWidth(110)
         scan_btn.clicked.connect(self._scan_instances)
 
         inst_row = QHBoxLayout()
-        inst_row.setSpacing(8)
+        inst_row.setSpacing(6)
         inst_lbl = QLabel("SQL Instance")
-        inst_lbl.setFixedWidth(120)
+        inst_lbl.setFixedWidth(100)
         inst_lbl.setStyleSheet("color: #9CA3AF;")
         inst_row.addWidget(inst_lbl)
         inst_row.addWidget(self._instance_combo, stretch=1)
@@ -203,15 +203,15 @@ class SettingsWidget(QWidget):
         )
 
         refresh_db_btn = QPushButton()
-        refresh_db_btn.setIcon(lucide('refresh-cw', color=Theme.gray_700))
-        refresh_db_btn.setFixedWidth(36)
+        refresh_db_btn.setIcon(lucide('refresh-cw', color=Theme.gray_700, size=14))
+        refresh_db_btn.setFixedWidth(28)
         refresh_db_btn.setToolTip("Обновить список баз данных")
         refresh_db_btn.clicked.connect(self._refresh_databases)
 
         db_row = QHBoxLayout()
-        db_row.setSpacing(8)
+        db_row.setSpacing(6)
         db_lbl = QLabel("База данных")
-        db_lbl.setFixedWidth(120)
+        db_lbl.setFixedWidth(100)
         db_lbl.setStyleSheet("color: #9CA3AF;")
         db_row.addWidget(db_lbl)
         db_row.addWidget(self._db_combo, stretch=1)
@@ -229,7 +229,7 @@ class SettingsWidget(QWidget):
 
         test_conn_btn = QPushButton("  Тест подключения")
         test_conn_btn.setObjectName("primaryBtn")
-        test_conn_btn.setIcon(lucide('zap', color=Theme.gray_900))
+        test_conn_btn.setIcon(lucide('zap', color=Theme.gray_900, size=14))
         test_conn_btn.clicked.connect(self._test_connection)
         sql_lay.addWidget(test_conn_btn)
 
@@ -253,7 +253,7 @@ class SettingsWidget(QWidget):
         app_lay.addWidget(version_lbl)
 
         check_update_btn = QPushButton("  Проверить обновление")
-        check_update_btn.setIcon(lucide('download-cloud', color=Theme.gray_700))
+        check_update_btn.setIcon(lucide('download-cloud', color=Theme.gray_700, size=14))
         check_update_btn.clicked.connect(self._check_update)
         app_lay.addWidget(check_update_btn)
 
@@ -261,17 +261,17 @@ class SettingsWidget(QWidget):
 
         # ── Bottom buttons ────────────────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        btn_row.setSpacing(6)
         btn_row.addStretch()
 
         reset_btn = QPushButton("  Сбросить")
-        reset_btn.setIcon(lucide('rotate-ccw', color=Theme.gray_700))
+        reset_btn.setIcon(lucide('rotate-ccw', color=Theme.gray_700, size=14))
         reset_btn.clicked.connect(self._reset)
         btn_row.addWidget(reset_btn)
 
         save_btn = QPushButton("  Сохранить")
         save_btn.setObjectName("primaryBtn")
-        save_btn.setIcon(lucide('save', color=Theme.gray_900))
+        save_btn.setIcon(lucide('save', color=Theme.gray_900, size=14))
         save_btn.clicked.connect(self._save)
         btn_row.addWidget(save_btn)
 

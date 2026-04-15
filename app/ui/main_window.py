@@ -7,6 +7,7 @@ from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMenu,
     QPushButton,
@@ -113,6 +114,37 @@ class MainWindow(QMainWindow):
         debug_btn.clicked.connect(self._toggle_debug_window)
         nav_layout.addWidget(debug_btn)
 
+        # ── Footer: version + developer Telegram link ─────────────────────
+        footer = QWidget()
+        footer.setStyleSheet("background: transparent;")
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(8, 4, 8, 8)
+        footer_layout.setSpacing(2)
+
+        version_lbl = QLabel(f"v{self._current_version}")
+        version_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        version_lbl.setStyleSheet(
+            f"color: {Theme.gray_400}; "
+            f"font-size: {Theme.font_size_xs}pt; "
+            f"background: transparent;"
+        )
+        footer_layout.addWidget(version_lbl)
+
+        dev_lbl = QLabel(
+            f'<a href="https://t.me/zycck" '
+            f'style="color: {Theme.primary_700}; text-decoration: none;">@zycck</a>'
+        )
+        dev_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        dev_lbl.setOpenExternalLinks(True)
+        dev_lbl.setStyleSheet(
+            f"font-size: {Theme.font_size_xs}pt; "
+            f"background: transparent;"
+        )
+        dev_lbl.setToolTip("Связаться с разработчиком в Telegram")
+        footer_layout.addWidget(dev_lbl)
+
+        nav_layout.addWidget(footer)
+
         # Stacked pages
         self._stack = QStackedWidget()
         self._dashboard = DashboardWidget(self._config, self)
@@ -132,6 +164,7 @@ class MainWindow(QMainWindow):
 
         # Wire sync results from export jobs → dashboard last sync card
         self._export_jobs.sync_completed.connect(self._dashboard.update_last_sync)
+        self._export_jobs.history_changed.connect(self._dashboard.refresh_activity)
 
         self.navigate(0)
 
