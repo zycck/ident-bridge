@@ -107,6 +107,21 @@ class DashboardWidget(QWidget):
             f"font-size: {Theme.font_size_xs}pt;"
         )
         activity_hdr.addWidget(self._activity_count)
+
+        self._activity_clear_btn = QPushButton("Очистить всё")
+        self._activity_clear_btn.setFlat(True)
+        self._activity_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._activity_clear_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  border: none; background: transparent; padding: 0 0 0 12px;"
+            f"  color: {Theme.gray_500};"
+            f"  text-decoration: underline;"
+            f"}}"
+            f"QPushButton:hover {{ color: {Theme.error}; }}"
+        )
+        self._activity_clear_btn.clicked.connect(self._on_clear_all_history)
+        activity_hdr.addWidget(self._activity_clear_btn)
+
         activity_layout.addLayout(activity_hdr)
 
         # Scrollable list of history rows
@@ -336,3 +351,27 @@ class DashboardWidget(QWidget):
 
     def _on_update_clicked(self) -> None:
         self.update_requested.emit(self._update_url)
+
+    @Slot()
+    def _on_clear_all_history(self) -> None:
+        """Clear history entries from EVERY export job after confirmation."""
+        cfg = self._config.load()
+        jobs = cfg.get("export_jobs") or []  # type: ignore[assignment]
+        total = sum(len(job.get("history") or []) for job in jobs)
+        if total == 0:
+            return
+        from PySide6.QtWidgets import QMessageBox
+        reply = QMessageBox.question(
+            self,
+            "Очистить историю",
+            f"Удалить все записи истории ({total}) из всех выгрузок?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        for job in jobs:
+            if "history" in job:
+                job["history"] = []
+        cfg["export_jobs"] = jobs  # type: ignore[typeddict-unknown-key]
+        self._config.save(cfg)
+        self.refresh_activity()

@@ -157,6 +157,13 @@ class ExportJobCard(QWidget):
 
     # ------------------------------------------------------------------ UI
 
+    @staticmethod
+    def _section_break(root: "QVBoxLayout") -> None:
+        """Add a horizontal separator with breathing room above and below."""
+        root.addSpacing(4)
+        root.addWidget(hsep())
+        root.addSpacing(4)
+
     def _build_ui(self) -> None:
         self.setObjectName("exportCard")
         root = QVBoxLayout(self)
@@ -169,6 +176,7 @@ class ExportJobCard(QWidget):
 
         self._name_edit = QLineEdit()
         self._name_edit.setPlaceholderText("Название выгрузки…")
+        self._name_edit.setMinimumHeight(28)
         self._name_edit.editingFinished.connect(self._emit_changed)
         hdr.addWidget(self._name_edit, stretch=1)
 
@@ -178,7 +186,7 @@ class ExportJobCard(QWidget):
         self._run_btn.setFixedSize(28, 28)
         self._run_btn.setToolTip("Запустить выгрузку вручную")
         self._run_btn.clicked.connect(self.start_export)
-        hdr.addWidget(self._run_btn)
+        hdr.addWidget(self._run_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         del_btn = QPushButton()
         del_btn.setIcon(lucide("trash-2", color=Theme.gray_500, size=14))
@@ -196,10 +204,10 @@ class ExportJobCard(QWidget):
         )
         del_btn.setToolTip("Удалить выгрузку")
         del_btn.clicked.connect(self._on_delete)
-        hdr.addWidget(del_btn)
+        hdr.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         root.addLayout(hdr)
-        root.addWidget(hsep())
+        self._section_break(root)
 
         # ── SQL query ─────────────────────────────────────────────────────
         sql_lbl = QLabel("SQL запрос")
@@ -240,7 +248,7 @@ class ExportJobCard(QWidget):
         sql_tools.addWidget(test_btn)
 
         root.addLayout(sql_tools)
-        root.addWidget(hsep())
+        self._section_break(root)
 
         # ── Webhook URL ───────────────────────────────────────────────────
         wh_lbl = QLabel("Webhook URL")
@@ -255,7 +263,7 @@ class ExportJobCard(QWidget):
         self._webhook_edit.setPlaceholderText("https://… (необязательно)")
         self._webhook_edit.editingFinished.connect(self._emit_changed)
         root.addWidget(self._webhook_edit)
-        root.addWidget(hsep())
+        self._section_break(root)
 
         # ── Schedule + status ─────────────────────────────────────────────
         sched_row = QHBoxLayout()
@@ -299,14 +307,37 @@ class ExportJobCard(QWidget):
         self._hist_sep.setVisible(False)
         root.addWidget(self._hist_sep)
 
+        self._history_hdr_row = QWidget()
+        self._history_hdr_row.setStyleSheet("background: transparent;")
+        hdr_layout = QHBoxLayout(self._history_hdr_row)
+        hdr_layout.setContentsMargins(0, 0, 0, 0)
+        hdr_layout.setSpacing(8)
+
         self._history_hdr = QLabel("История")
         self._history_hdr.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_sm}pt; "
-            f"font-weight: {Theme.font_weight_semi};"
+            f"font-weight: {Theme.font_weight_semi}; "
+            f"background: transparent;"
         )
-        self._history_hdr.setVisible(False)
-        root.addWidget(self._history_hdr)
+        hdr_layout.addWidget(self._history_hdr)
+        hdr_layout.addStretch()
+
+        self._history_clear_btn = QPushButton("Очистить")
+        self._history_clear_btn.setFlat(True)
+        self._history_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._history_clear_btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  border: none; background: transparent; padding: 0;"
+            f"  color: {Theme.gray_500};"
+            f"  text-decoration: underline;"
+            f"}}"
+            f"QPushButton:hover {{ color: {Theme.error}; }}"
+        )
+        self._history_clear_btn.clicked.connect(self._on_clear_history)
+        hdr_layout.addWidget(self._history_clear_btn)
+
+        self._history_hdr_row.setVisible(False)
+        root.addWidget(self._history_hdr_row)
 
         # Inner container with transparent background
         self._history_container = QWidget()
@@ -539,6 +570,23 @@ class ExportJobCard(QWidget):
             self._emit_changed()
             self.history_changed.emit()
 
+    @Slot()
+    def _on_clear_history(self) -> None:
+        """Clear all history entries for this card after confirmation."""
+        if not self._history:
+            return
+        reply = QMessageBox.question(
+            self,
+            "Очистить историю",
+            f"Удалить все записи истории ({len(self._history)})?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self._history.clear()
+            self._rebuild_history_ui()
+            self._emit_changed()
+            self.history_changed.emit()
+
     # ------------------------------------------------------------------ History UI
 
     def _rebuild_history_ui(self) -> None:
@@ -551,7 +599,7 @@ class ExportJobCard(QWidget):
 
         has = bool(self._history)
         self._hist_sep.setVisible(has)
-        self._history_hdr.setVisible(has)
+        self._history_hdr_row.setVisible(has)
         self._history_scroll.setVisible(has)
         if has:
             self._history_hdr.setText(f"История ({len(self._history)})")

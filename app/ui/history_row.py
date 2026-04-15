@@ -11,15 +11,23 @@ Trigger types are visually distinguished by:
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from app.config import ExportHistoryEntry, TriggerType
 from app.core.constants import HISTORY_ROW_HEIGHT
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
+
+
+def _make_small_font(point_size: float = 8.5) -> QFont:
+    """Slightly smaller font that still inherits the app's Inter family."""
+    f = QFont()  # picks up QApplication default
+    f.setPointSizeF(point_size)
+    return f
 
 
 # Each trigger gets: (lucide icon name, accent color, human label)
@@ -80,12 +88,9 @@ class HistoryRow(QWidget):
 
         # ── Timestamp ─────────────────────────────────────────────────
         ts_lbl = QLabel(self._format_ts(entry.get("ts", "")))
-        ts_lbl.setStyleSheet(
-            f"color: {Theme.gray_500}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent;"
-        )
-        ts_lbl.setFixedWidth(58)
+        ts_lbl.setStyleSheet(f"color: {Theme.gray_500}; background: transparent;")
+        ts_lbl.setFont(_make_small_font(8.5))
+        ts_lbl.setFixedWidth(80)
         layout.addWidget(ts_lbl)
 
         # ── Job name (only when shown in aggregated view) ─────────────
@@ -93,10 +98,10 @@ class HistoryRow(QWidget):
             name_lbl = QLabel(job_name or "—")
             name_lbl.setStyleSheet(
                 f"color: {Theme.gray_700}; "
-                f"font-size: {Theme.font_size_xs}pt; "
                 f"font-weight: {Theme.font_weight_medium}; "
                 f"background: transparent;"
             )
+            name_lbl.setFont(_make_small_font(8.5))
             name_lbl.setMinimumWidth(80)
             name_lbl.setMaximumWidth(180)
             layout.addWidget(name_lbl)
@@ -114,11 +119,8 @@ class HistoryRow(QWidget):
             tooltip = err
 
         st_lbl = QLabel(text)
-        st_lbl.setStyleSheet(
-            f"color: {color}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent;"
-        )
+        st_lbl.setStyleSheet(f"color: {color}; background: transparent;")
+        st_lbl.setFont(_make_small_font(8.5))
         if tooltip:
             st_lbl.setToolTip(tooltip)
         layout.addWidget(st_lbl, stretch=1)
@@ -144,10 +146,27 @@ class HistoryRow(QWidget):
 
     @staticmethod
     def _format_ts(ts: str) -> str:
-        """HH:MM if today, DD.MM HH:MM if recent, raw otherwise."""
-        today = datetime.now().strftime("%Y-%m-%d")
-        if ts.startswith(today):
-            return ts[11:16]
-        if len(ts) >= 16:
-            return f"{ts[8:10]}.{ts[5:7]} {ts[11:16]}"
-        return ts
+        """
+        Format the stored ts string for display.
+        Today          → "Сегодня HH:MM"
+        Yesterday      → "Вчера HH:MM"
+        Earlier this y → "DD.MM HH:MM"
+        Older          → "DD.MM.YY HH:MM"
+        """
+        if not ts or len(ts) < 16:
+            return ts
+        try:
+            dt = datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
+        except ValueError:
+            return ts
+        now = datetime.now()
+        today = now.date()
+        date_str_full = dt.strftime("%d.%m.%y")
+        hhmm = dt.strftime("%H:%M")
+        if dt.date() == today:
+            return f"Сегодня {hhmm}"
+        if dt.date() == today - timedelta(days=1):
+            return f"Вчера {hhmm}"
+        if dt.year == now.year:
+            return f"{dt.strftime('%d.%m')} {hhmm}"
+        return f"{date_str_full} {hhmm}"
