@@ -235,6 +235,51 @@ class SqlEditorDialog(QDialog):
         self.resize(1100, 720)
         self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
 
+        # Force light theme on the dialog and its plain text edit child.
+        # QDialog sometimes ignores the global app stylesheet when shown as
+        # a separate top-level window on Windows — force the surface colors
+        # explicitly so the SQL editor doesn't render as black-on-black.
+        self.setStyleSheet(
+            f"QDialog {{"
+            f"  background-color: {Theme.surface_tinted};"
+            f"}}"
+            f"QPlainTextEdit {{"
+            f"  background-color: {Theme.surface};"
+            f"  color: {Theme.gray_900};"
+            f"  border: 1px solid {Theme.border_strong};"
+            f"  border-radius: {Theme.radius}px;"
+            f"  padding: 12px 14px;"
+            f"  selection-background-color: {Theme.primary_200};"
+            f"  selection-color: {Theme.primary_900};"
+            f"}}"
+            f"QPlainTextEdit:focus {{"
+            f"  border-color: {Theme.border_focus};"
+            f"}}"
+            f"QPushButton {{"
+            f"  min-height: 32px;"
+            f"  padding: 0 16px;"
+            f"  border: 1px solid {Theme.border_strong};"
+            f"  border-radius: {Theme.radius}px;"
+            f"  background-color: {Theme.surface};"
+            f"  color: {Theme.gray_700};"
+            f"}}"
+            f"QPushButton:hover {{"
+            f"  background-color: {Theme.gray_50};"
+            f"  border-color: {Theme.border_focus};"
+            f"  color: {Theme.primary_800};"
+            f"}}"
+            f"QPushButton#primaryBtn {{"
+            f"  background-color: {Theme.primary_500};"
+            f"  color: {Theme.gray_900};"
+            f"  border: 1px solid {Theme.primary_600};"
+            f"  font-weight: 600;"
+            f"}}"
+            f"QPushButton#primaryBtn:hover {{"
+            f"  background-color: {Theme.primary_600};"
+            f"  border-color: {Theme.primary_700};"
+            f"}}"
+        )
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(10)

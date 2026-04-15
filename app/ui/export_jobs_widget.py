@@ -466,7 +466,7 @@ class ExportJobEditor(QWidget):
 
         self._query_edit = SqlEditor()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
-        self._query_edit.setMinimumHeight(240)
+        self._query_edit.setMinimumHeight(320)
         # NO maximumHeight — let it expand to fill available space
         self._query_edit.setSizePolicy(
             QSizePolicy.Policy.Expanding,
