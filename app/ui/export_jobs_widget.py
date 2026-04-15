@@ -372,16 +372,16 @@ class ExportJobEditor(QWidget):
     @staticmethod
     def _section_break(root: "QVBoxLayout") -> None:
         """Add a horizontal separator with breathing room above and below."""
-        root.addSpacing(4)
+        root.addSpacing(8)
         root.addWidget(hsep())
-        root.addSpacing(4)
+        root.addSpacing(8)
 
     def _build_ui(self) -> None:
         # Keep "exportCard" objectName so theme.qss QWidget#exportCard rules still apply
         self.setObjectName("exportCard")
         root = QVBoxLayout(self)
-        root.setContentsMargins(16, 14, 16, 14)
-        root.setSpacing(8)
+        root.setContentsMargins(28, 24, 28, 24)
+        root.setSpacing(14)
 
         # ── Header: title + status summary + action buttons ───────────────
         hdr = QHBoxLayout()
@@ -421,7 +421,7 @@ class ExportJobEditor(QWidget):
         self._status_summary = QLabel("Ещё не запускалось")
         self._status_summary.setStyleSheet(
             f"color: {Theme.gray_500}; "
-            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-size: {Theme.font_size_md}pt; "
             f"background: transparent; "
             f"padding-left: 4px;"
         )
@@ -458,15 +458,15 @@ class ExportJobEditor(QWidget):
         sql_lbl = QLabel("SQL запрос")
         sql_lbl.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-size: {Theme.font_size_base}pt; "
             f"font-weight: {Theme.font_weight_semi};"
         )
         root.addWidget(sql_lbl)
 
         self._query_edit = QPlainTextEdit()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
-        self._query_edit.setMinimumHeight(80)
-        self._query_edit.setMaximumHeight(160)
+        self._query_edit.setMinimumHeight(180)
+        self._query_edit.setMaximumHeight(360)
         self._query_edit.textChanged.connect(self._on_query_changed)
         root.addWidget(self._query_edit)
 
@@ -487,7 +487,7 @@ class ExportJobEditor(QWidget):
         wh_lbl = QLabel("Webhook URL")
         wh_lbl.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-size: {Theme.font_size_base}pt; "
             f"font-weight: {Theme.font_weight_semi};"
         )
         root.addWidget(wh_lbl)
@@ -503,7 +503,7 @@ class ExportJobEditor(QWidget):
         sched_lbl = QLabel("Расписание")
         sched_lbl.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-size: {Theme.font_size_base}pt; "
             f"font-weight: {Theme.font_weight_semi};"
         )
         root.addWidget(sched_lbl)
@@ -520,11 +520,11 @@ class ExportJobEditor(QWidget):
         self._mode_combo = QComboBox()
         self._mode_combo.addItems(["Ежедневно", "Каждые N часов"])
         self._mode_combo.currentIndexChanged.connect(self._on_sched_changed)
-        self._mode_combo.setFixedWidth(150)
+        self._mode_combo.setFixedWidth(180)
         sched_controls.addWidget(self._mode_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self._sched_value_edit = QLineEdit()
-        self._sched_value_edit.setFixedWidth(SCHED_VALUE_INPUT_W)
+        self._sched_value_edit.setFixedWidth(100)
         self._sched_value_edit.setPlaceholderText("ЧЧ:ММ")
         self._sched_value_edit.editingFinished.connect(self._on_sched_changed)
         sched_controls.addWidget(self._sched_value_edit, alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -558,7 +558,7 @@ class ExportJobEditor(QWidget):
         self._history_hdr = QLabel("История")
         self._history_hdr.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-size: {Theme.font_size_base}pt; "
             f"font-weight: {Theme.font_weight_semi}; "
             f"background: transparent;"
         )
@@ -593,7 +593,7 @@ class ExportJobEditor(QWidget):
         self._history_scroll.setWidget(self._history_container)
         self._history_scroll.setWidgetResizable(True)
         self._history_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._history_scroll.setMaximumHeight(120)
+        self._history_scroll.setMaximumHeight(280)
         self._history_scroll.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
@@ -679,7 +679,7 @@ class ExportJobEditor(QWidget):
         color = color_map.get(kind, Theme.gray_500)
         self._status_summary.setStyleSheet(
             f"color: {color}; "
-            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-size: {Theme.font_size_md}pt; "
             f"background: transparent; "
             f"padding-left: 4px;"
         )
@@ -1072,17 +1072,10 @@ class ExportJobsWidget(QWidget):
         layout.addWidget(toolbar)
         layout.addWidget(hsep())
 
-        # Scroll area for the editor content
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        layout.addWidget(scroll, stretch=1)
-
-        self._editor_container = QWidget()
-        self._editor_container.setStyleSheet("background: transparent;")
-        self._editor_layout = QVBoxLayout(self._editor_container)
-        self._editor_layout.setContentsMargins(16, 16, 16, 16)
-        scroll.setWidget(self._editor_container)
+        # Internal QStackedWidget — one page per editor (no re-parenting)
+        self._editor_stack = QStackedWidget()
+        self._editor_scrolls: dict[str, QScrollArea] = {}
+        layout.addWidget(self._editor_stack, stretch=1)
 
         return page
 
@@ -1180,6 +1173,26 @@ class ExportJobsWidget(QWidget):
         editor.history_changed.connect(self.history_changed)
         editor.history_changed.connect(self._save_jobs)
         editor.sync_completed.connect(self.sync_completed)
+
+        # Wrap in a container with padding, then in a QScrollArea page
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        cl = QVBoxLayout(container)
+        cl.setContentsMargins(24, 20, 24, 20)
+        cl.setSpacing(0)
+        cl.addWidget(editor)
+        cl.addStretch()
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.setWidget(container)
+
+        self._editor_stack.addWidget(scroll)
+        self._editor_scrolls[job.get("id", "")] = scroll
+
         return editor
 
     @Slot(str)
@@ -1187,34 +1200,16 @@ class ExportJobsWidget(QWidget):
         editor = self._editors.get(job_id)
         if editor is None:
             return
-        # Clear existing editor from the scroll container
-        while self._editor_layout.count():
-            item = self._editor_layout.takeAt(0)
-            w = item.widget() if item else None
-            if w is not None:
-                w.setParent(None)
-                w.setParent(self)
-                w.hide()
-        self._editor_layout.addWidget(editor)
-        editor.show()
-        self._editor_layout.addStretch()
+        scroll = self._editor_scrolls.get(job_id)
+        if scroll is None:
+            return
+        self._editor_stack.setCurrentWidget(scroll)
         self._current_editor_id = job_id
         self._stack.setCurrentIndex(1)
 
     @Slot()
     def _show_tiles(self) -> None:
         self._current_editor_id = None
-        # Detach the editor from the layout so it's not parented to the
-        # container while hidden (it stays in self._editors and continues
-        # to run its scheduler).
-        while self._editor_layout.count():
-            item = self._editor_layout.takeAt(0)
-            w = item.widget() if item else None
-            if w is not None:
-                w.setParent(None)
-                # Re-parent back to self so the editor stays alive
-                w.setParent(self)
-                w.hide()
         self._stack.setCurrentIndex(0)
         # Refresh tile labels to reflect any edits made in the editor
         for ed in self._editors.values():
@@ -1250,9 +1245,13 @@ class ExportJobsWidget(QWidget):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return
-        # Stop scheduler, remove editor + tile
+        # Stop scheduler, remove editor + scroll page from internal stack
         if editor is not None:
             editor.stop_scheduler()
+            scroll = self._editor_scrolls.pop(job_id, None)
+            if scroll is not None:
+                self._editor_stack.removeWidget(scroll)
+                scroll.deleteLater()
             editor.deleteLater()
             del self._editors[job_id]
         for tile in list(self._tiles):
