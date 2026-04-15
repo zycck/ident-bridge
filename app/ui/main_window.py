@@ -172,6 +172,7 @@ class MainWindow(QMainWindow):
         # Wire sync results from export jobs → dashboard last sync card
         self._export_jobs.sync_completed.connect(self._dashboard.update_last_sync)
         self._export_jobs.history_changed.connect(self._dashboard.refresh_activity)
+        self._export_jobs.failure_alert.connect(self._on_export_failure_alert)
 
         self.navigate(0)
 
@@ -216,7 +217,11 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_tray(self) -> None:
-        self._tray = QSystemTrayIcon(QIcon(), self)
+        app_icon = QApplication.instance().windowIcon()  # type: ignore[union-attr]
+        if app_icon.isNull():
+            # Fallback — shouldn't happen if main._load_app_icon ran first
+            app_icon = QIcon()
+        self._tray = QSystemTrayIcon(app_icon, self)
         self._tray.setToolTip("iDentBridge")
 
         menu = QMenu()
@@ -272,6 +277,17 @@ class MainWindow(QMainWindow):
     def _on_update_requested(self, url: str) -> None:
         download_and_apply(url)
 
+    @Slot(str, int)
+    def _on_export_failure_alert(self, job_name: str, count: int) -> None:
+        """Show a tray balloon when an export job fails N times in a row."""
+        self._tray.showMessage(
+            "iDentBridge — ошибка выгрузки",
+            f"«{job_name}» — {count} неудачных запусков подряд. "
+            f"Откройте приложение, чтобы посмотреть детали.",
+            QSystemTrayIcon.MessageIcon.Warning,
+            8000,
+        )
+
     # ------------------------------------------------------------------
     # Error hook
     # ------------------------------------------------------------------
@@ -292,7 +308,10 @@ class MainWindow(QMainWindow):
     def _on_tray_activated(
         self, reason: QSystemTrayIcon.ActivationReason
     ) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
+        if reason in (
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+            QSystemTrayIcon.ActivationReason.Trigger,
+        ):
             self._show_window()
 
     def _quit(self) -> None:
@@ -309,6 +328,16 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._tray.isVisible():
+            cfg = self._config.load()
+            if not cfg.get("tray_notice_shown"):
+                self._tray.showMessage(
+                    "iDentBridge свёрнут в трей",
+                    "Приложение продолжает работать в фоне. "
+                    "Кликните по иконке в системном трее, чтобы вернуться.",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    6000,
+                )
+                self._config.update(tray_notice_shown=True)
             self.hide()
             event.ignore()
         else:
