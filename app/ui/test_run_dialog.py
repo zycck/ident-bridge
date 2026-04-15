@@ -76,6 +76,7 @@ class TestRunDialog(QDialog):
         self,
         cfg: AppConfig,
         initial_sql: str = "",
+        auto_run: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -88,6 +89,11 @@ class TestRunDialog(QDialog):
 
         self._build_ui()
         self._editor.setPlainText(initial_sql or _DEFAULT_SQL)
+
+        # Auto-run: execute immediately when dialog opens (used from card test btn)
+        if auto_run and initial_sql:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(80, self._run_query)
 
     # ------------------------------------------------------------------
     # UI construction

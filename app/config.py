@@ -36,6 +36,15 @@ class SyncResult:
     timestamp:   datetime
 
 
+class ExportHistoryEntry(TypedDict, total=False):
+    """Single run record stored inside ExportJob.history."""
+    ts:      str   # "YYYY-MM-DD HH:MM"
+    rows:    int
+    trigger: str   # "manual" | "auto"
+    ok:      bool
+    err:     str
+
+
 class ExportJob(TypedDict, total=False):
     """Configuration for a single named export job."""
     id:               str
@@ -45,6 +54,7 @@ class ExportJob(TypedDict, total=False):
     schedule_enabled: bool
     schedule_mode:    str   # "daily" | "hourly"
     schedule_value:   str   # "14:30" | "4"
+    history:          list  # list[ExportHistoryEntry]
 
 
 class AppConfig(TypedDict, total=False):

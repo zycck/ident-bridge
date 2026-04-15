@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from datetime import datetime
 
 import qtawesome as qta
 from PySide6.QtCore import QThread, QTimer, Qt, Signal, Slot
@@ -31,13 +32,90 @@ from app.ui.test_run_dialog import TestRunDialog
 
 _log = get_logger(__name__)
 
+_HISTORY_MAX = 50
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _h_sep() -> QFrame:
+    """Thin horizontal separator line (overrides QFrame card style)."""
+    sep = QFrame()
+    sep.setFrameShape(QFrame.Shape.HLine)
+    sep.setStyleSheet("background-color: #E5E7EB; max-height: 1px; border: none;")
+    return sep
+
+
+# ---------------------------------------------------------------------------
+# SQL Syntax Validator
+# ---------------------------------------------------------------------------
+
+_VALID_START_KW: frozenset[str] = frozenset({
+    "SELECT", "INSERT", "UPDATE", "DELETE", "WITH",
+    "EXEC", "EXECUTE", "DECLARE", "CREATE", "DROP",
+    "ALTER", "TRUNCATE", "MERGE", "SET", "BEGIN",
+})
+
+
+def _validate_sql(sql: str) -> tuple[bool, str]:
+    """
+    Pure-Python T-SQL surface validator.
+    Checks: non-empty, valid start keyword, balanced parentheses
+    (string literals skipped). Returns (ok, message).
+    """
+    sql = sql.strip()
+    if not sql:
+        return False, "Запрос пуст"
+
+    m = re.match(r"[A-Za-z_]\w*", sql)
+    if not m:
+        return False, "Нет ключевого слова"
+    kw = m.group(0).upper()
+    if kw not in _VALID_START_KW:
+        return False, f"Недопустимое начало: {kw}"
+
+    # Balanced parentheses — skip content inside string literals
+    depth = 0
+    in_str = False
+    i, n = 0, len(sql)
+    while i < n:
+        c = sql[i]
+        if in_str:
+            if c == "'":
+                if i + 1 < n and sql[i + 1] == "'":  # escaped ''
+                    i += 2
+                    continue
+                in_str = False
+        else:
+            if c == "'":
+                in_str = True
+            elif c == "(":
+                depth += 1
+            elif c == ")":
+                depth -= 1
+                if depth < 0:
+                    return False, "Лишняя закрывающая скобка"
+        i += 1
+
+    if in_str:
+        return False, "Незакрытая строка"
+    if depth > 0:
+        return False, f"Незакрыто скобок: {depth}"
+
+    return True, "SQL корректен"
+
+
+# ---------------------------------------------------------------------------
+# ExportJobCard
+# ---------------------------------------------------------------------------
 
 class ExportJobCard(QWidget):
     """Single export-job card with its own scheduler and worker thread."""
 
-    changed = Signal(object)         # ExportJob — emitted on any field edit
-    delete_requested = Signal(str)   # job id
-    sync_completed = Signal(object)  # SyncResult — emitted on successful run
+    changed          = Signal(object)  # ExportJob — emitted on any field edit
+    delete_requested = Signal(str)     # job id
+    sync_completed   = Signal(object)  # SyncResult — emitted on successful run
 
     def __init__(
         self,
@@ -51,15 +129,24 @@ class ExportJobCard(QWidget):
         self._job_id: str = job.get("id") or str(uuid.uuid4())
         self._running = False
         self._worker: ExportWorker | None = None
+        self._last_trigger: str = "manual"    # set just before export starts
+        self._current_trigger: str = "manual"  # captured at export start for history
+        self._history: list[dict] = []
 
         self._scheduler = SyncScheduler(self)
-        self._scheduler.trigger.connect(self._start_export)
+        self._scheduler.trigger.connect(self._auto_trigger)
 
-        # Debounce timer for SQL text changes
+        # 800 ms debounce — save after user stops typing in SQL/name/webhook
         self._query_timer = QTimer(self)
         self._query_timer.setSingleShot(True)
         self._query_timer.setInterval(800)
         self._query_timer.timeout.connect(self._emit_changed)
+
+        # 300 ms debounce — syntax check
+        self._syntax_timer = QTimer(self)
+        self._syntax_timer.setSingleShot(True)
+        self._syntax_timer.setInterval(300)
+        self._syntax_timer.timeout.connect(self._check_syntax)
 
         self._build_ui()
         self._load_job(job)
@@ -71,9 +158,9 @@ class ExportJobCard(QWidget):
         self.setObjectName("exportCard")
         root = QVBoxLayout(self)
         root.setContentsMargins(14, 12, 14, 14)
-        root.setSpacing(10)
+        root.setSpacing(8)
 
-        # Header: name + run + delete
+        # ── Header: name · run · delete ──────────────────────────────────
         hdr = QHBoxLayout()
         hdr.setSpacing(8)
 
@@ -98,42 +185,50 @@ class ExportJobCard(QWidget):
         hdr.addWidget(del_btn)
 
         root.addLayout(hdr)
+        root.addWidget(_h_sep())
 
-        # SQL query label + editor
+        # ── SQL query ─────────────────────────────────────────────────────
         sql_lbl = QLabel("SQL запрос")
-        sql_lbl.setStyleSheet("color: #9CA3AF; font-size: 8.5pt;")
+        sql_lbl.setStyleSheet("color: #9CA3AF; font-size: 8.5pt; font-weight: 600;")
         root.addWidget(sql_lbl)
 
         self._query_edit = QPlainTextEdit()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
         self._query_edit.setMinimumHeight(88)
         self._query_edit.setMaximumHeight(160)
-        self._query_edit.textChanged.connect(self._query_timer.start)
+        self._query_edit.textChanged.connect(self._on_query_changed)
         root.addWidget(self._query_edit)
+
+        # Syntax indicator + test button (inline row below editor)
+        sql_tools = QHBoxLayout()
+        sql_tools.setSpacing(8)
+
+        self._syntax_lbl = QLabel("")
+        self._syntax_lbl.setStyleSheet("font-size: 8pt; color: #9CA3AF;")
+        sql_tools.addWidget(self._syntax_lbl, stretch=1)
 
         test_btn = QPushButton("  Тестовый запрос")
         test_btn.setIcon(qta.icon("fa5s.terminal", color="#374151"))
         test_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        test_btn.setToolTip("Выполнить SQL запрос в тестовом окне")
         test_btn.clicked.connect(self._open_test_dialog)
-        root.addWidget(test_btn)
+        sql_tools.addWidget(test_btn)
 
-        # Webhook URL (optional)
-        wh_lbl = QLabel("Webhook URL (необязательно)")
-        wh_lbl.setStyleSheet("color: #9CA3AF; font-size: 8.5pt;")
+        root.addLayout(sql_tools)
+        root.addWidget(_h_sep())
+
+        # ── Webhook URL ───────────────────────────────────────────────────
+        wh_lbl = QLabel("Webhook URL")
+        wh_lbl.setStyleSheet("color: #9CA3AF; font-size: 8.5pt; font-weight: 600;")
         root.addWidget(wh_lbl)
 
         self._webhook_edit = QLineEdit()
-        self._webhook_edit.setPlaceholderText("https://…")
+        self._webhook_edit.setPlaceholderText("https://… (необязательно)")
         self._webhook_edit.editingFinished.connect(self._emit_changed)
         root.addWidget(self._webhook_edit)
+        root.addWidget(_h_sep())
 
-        # Thin separator
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background-color: #E5E7EB; max-height: 1px; border: none;")
-        root.addWidget(sep)
-
-        # Schedule row
+        # ── Schedule + status ─────────────────────────────────────────────
         sched_row = QHBoxLayout()
         sched_row.setSpacing(8)
 
@@ -153,25 +248,55 @@ class ExportJobCard(QWidget):
         self._sched_value_edit.editingFinished.connect(self._on_sched_changed)
         sched_row.addWidget(self._sched_value_edit)
 
-        sched_row.addStretch()
-
-        root.addLayout(sched_row)
-
-        # Status row
-        status_row = QHBoxLayout()
+        sched_row.addStretch(1)
 
         self._progress_lbl = QLabel()
         self._progress_lbl.setStyleSheet("color: #6B7280; font-size: 8.5pt;")
-        status_row.addWidget(self._progress_lbl, stretch=1)
+        sched_row.addWidget(self._progress_lbl)
 
         self._status_lbl = QLabel()
-        self._status_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._status_lbl.setAlignment(
+            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+        )
         self._status_lbl.setStyleSheet("font-size: 8.5pt;")
-        status_row.addWidget(self._status_lbl)
+        sched_row.addWidget(self._status_lbl)
 
-        root.addLayout(status_row)
+        root.addLayout(sched_row)
 
-    # ------------------------------------------------------------------ Data
+        # ── History section (hidden until first entry) ────────────────────
+        self._hist_sep = _h_sep()
+        self._hist_sep.setVisible(False)
+        root.addWidget(self._hist_sep)
+
+        self._history_hdr = QLabel("История")
+        self._history_hdr.setStyleSheet(
+            "color: #9CA3AF; font-size: 8.5pt; font-weight: 600;"
+        )
+        self._history_hdr.setVisible(False)
+        root.addWidget(self._history_hdr)
+
+        # Inner container with transparent background
+        self._history_container = QWidget()
+        self._history_container.setStyleSheet("QWidget { background-color: transparent; }")
+        self._history_layout = QVBoxLayout(self._history_container)
+        self._history_layout.setContentsMargins(0, 0, 0, 0)
+        self._history_layout.setSpacing(2)
+
+        self._history_scroll = QScrollArea()
+        self._history_scroll.setWidget(self._history_container)
+        self._history_scroll.setWidgetResizable(True)
+        self._history_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._history_scroll.setMaximumHeight(140)
+        self._history_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._history_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+        )
+        self._history_scroll.setVisible(False)
+        root.addWidget(self._history_scroll)
+
+    # ------------------------------------------------------------------ Load / save
 
     def job_id(self) -> str:
         return self._job_id
@@ -185,9 +310,17 @@ class ExportJobCard(QWidget):
             schedule_enabled=self._sched_check.isChecked(),
             schedule_mode="hourly" if self._mode_combo.currentIndex() == 1 else "daily",
             schedule_value=self._sched_value_edit.text().strip(),
+            history=list(self._history),  # type: ignore[typeddict-unknown-key]
         )
 
     def _load_job(self, job: ExportJob) -> None:
+        # Block all signals during programmatic load to avoid spurious saves
+        for w in (
+            self._query_edit, self._name_edit, self._webhook_edit,
+            self._sched_check, self._mode_combo, self._sched_value_edit,
+        ):
+            w.blockSignals(True)
+
         self._name_edit.setText(job.get("name", ""))
         self._query_edit.setPlainText(job.get("sql_query", ""))
         self._webhook_edit.setText(job.get("webhook_url", ""))
@@ -195,7 +328,18 @@ class ExportJobCard(QWidget):
         mode = job.get("schedule_mode", "daily")
         self._mode_combo.setCurrentIndex(1 if mode == "hourly" else 0)
         self._sched_value_edit.setText(job.get("schedule_value", ""))
+        self._history = list(job.get("history") or [])  # type: ignore[arg-type]
+
+        for w in (
+            self._query_edit, self._name_edit, self._webhook_edit,
+            self._sched_check, self._mode_combo, self._sched_value_edit,
+        ):
+            w.blockSignals(False)
+
         self._update_placeholder()
+        self._rebuild_history_ui()
+        # Trigger syntax check after layout settles
+        QTimer.singleShot(0, self._check_syntax)
 
     # ------------------------------------------------------------------ Schedule
 
@@ -210,7 +354,7 @@ class ExportJobCard(QWidget):
         )
 
     def _apply_schedule(self) -> None:
-        """Start or stop this card's scheduler based on current settings."""
+        """Start or stop this card's scheduler based on current UI settings."""
         self._scheduler.stop()
         if not self._sched_check.isChecked():
             return
@@ -234,17 +378,45 @@ class ExportJobCard(QWidget):
     def stop_scheduler(self) -> None:
         self._scheduler.stop()
 
+    # ------------------------------------------------------------------ SQL validation
+
+    def _on_query_changed(self) -> None:
+        self._query_timer.start()
+        self._syntax_timer.start()
+
+    def _check_syntax(self) -> None:
+        sql = self._query_edit.toPlainText().strip()
+        if not sql:
+            self._syntax_lbl.setText("")
+            return
+        ok, msg = _validate_sql(sql)
+        if ok:
+            self._syntax_lbl.setStyleSheet("font-size: 8pt; color: #34D399;")
+            self._syntax_lbl.setText("✓ SQL корректен")
+        else:
+            self._syntax_lbl.setStyleSheet("font-size: 8pt; color: #EF4444;")
+            self._syntax_lbl.setText(f"✗ {msg}")
+
     # ------------------------------------------------------------------ Export
 
-    def start_export(self) -> None:
-        """Public API — idempotent manual trigger."""
+    @Slot()
+    def _auto_trigger(self) -> None:
+        """Called by scheduler — marks trigger as 'auto' then fires export."""
+        self._last_trigger = "auto"
         if not self._running:
+            self._start_export()
+
+    def start_export(self) -> None:
+        """Public API — manual trigger; idempotent."""
+        if not self._running:
+            self._last_trigger = "manual"
             self._start_export()
 
     def _start_export(self) -> None:
         if self._running:
             return
         self._running = True
+        self._current_trigger = self._last_trigger  # capture for history entry
         self._run_btn.setEnabled(False)
         self._progress_lbl.setText("Запуск…")
         self._status_lbl.setText("")
@@ -271,6 +443,8 @@ class ExportJobCard(QWidget):
         )
         thread.start()
 
+    # ------------------------------------------------------------------ Worker slots
+
     @Slot(int, str)
     def _on_progress(self, _step: int, description: str) -> None:
         self._progress_lbl.setText(description)
@@ -281,9 +455,11 @@ class ExportJobCard(QWidget):
         self._run_btn.setEnabled(True)
         self._progress_lbl.setText("")
         if result.success:
-            ts = result.timestamp.strftime("%H:%M:%S")
+            ts_clock = result.timestamp.strftime("%H:%M:%S")
+            ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M")
             self._status_lbl.setStyleSheet("font-size: 8.5pt; color: #34D399;")
-            self._status_lbl.setText(f"✓ {result.rows_synced} строк · {ts}")
+            self._status_lbl.setText(f"✓ {result.rows_synced} строк · {ts_clock}")
+            self._add_history_entry(ok=True, rows=result.rows_synced, ts=ts_full)
             self.sync_completed.emit(result)
 
     @Slot(str)
@@ -293,13 +469,131 @@ class ExportJobCard(QWidget):
         self._progress_lbl.setText("")
         self._status_lbl.setStyleSheet("font-size: 8.5pt; color: #EF4444;")
         self._status_lbl.setText(f"✗ {msg[:70]}")
+        ts_full = datetime.now().strftime("%Y-%m-%d %H:%M")
+        self._add_history_entry(ok=False, err=msg, ts=ts_full)
+
+    # ------------------------------------------------------------------ History data
+
+    def _add_history_entry(
+        self, *, ok: bool, ts: str, rows: int = 0, err: str = ""
+    ) -> None:
+        entry: dict = {
+            "ts":      ts,
+            "trigger": self._current_trigger,
+            "ok":      ok,
+            "rows":    rows,
+            "err":     err,
+        }
+        self._history.insert(0, entry)          # newest first
+        if len(self._history) > _HISTORY_MAX:
+            self._history = self._history[:_HISTORY_MAX]
+        self._rebuild_history_ui()
+        self._emit_changed()
+
+    def _delete_history(self, index: int) -> None:
+        if 0 <= index < len(self._history):
+            self._history.pop(index)
+            self._rebuild_history_ui()
+            self._emit_changed()
+
+    # ------------------------------------------------------------------ History UI
+
+    def _rebuild_history_ui(self) -> None:
+        """Clear and repopulate history rows; show/hide section accordingly."""
+        # Remove all existing row widgets
+        while self._history_layout.count():
+            item = self._history_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+        has = bool(self._history)
+        self._hist_sep.setVisible(has)
+        self._history_hdr.setVisible(has)
+        self._history_scroll.setVisible(has)
+        if has:
+            self._history_hdr.setText(f"История ({len(self._history)})")
+            for i, entry in enumerate(self._history):
+                self._history_layout.addWidget(self._make_history_row(entry, i))
+
+    def _make_history_row(self, entry: dict, index: int) -> QWidget:
+        row = QWidget()
+        row.setFixedHeight(22)
+
+        layout = QHBoxLayout(row)
+        layout.setContentsMargins(0, 0, 4, 0)
+        layout.setSpacing(6)
+
+        # Trigger icon
+        if entry.get("trigger") == "auto":
+            icon = qta.icon("fa5s.clock", color="#9CA3AF")
+            tip  = "Авто"
+        else:
+            icon = qta.icon("fa5s.hand-pointer", color="#9CA3AF")
+            tip  = "Вручную"
+
+        ico_lbl = QLabel()
+        ico_lbl.setPixmap(icon.pixmap(11, 11))
+        ico_lbl.setToolTip(tip)
+        ico_lbl.setFixedWidth(14)
+        layout.addWidget(ico_lbl)
+
+        # Timestamp — show HH:MM if today, else DD.MM HH:MM
+        ts = entry.get("ts", "")
+        today = datetime.now().strftime("%Y-%m-%d")
+        if ts.startswith(today):
+            display_ts = ts[11:16]          # "HH:MM"
+        elif len(ts) >= 16:
+            # "YYYY-MM-DD HH:MM" → "DD.MM HH:MM"
+            display_ts = f"{ts[8:10]}.{ts[5:7]} {ts[11:16]}"
+        else:
+            display_ts = ts
+
+        ts_lbl = QLabel(display_ts)
+        ts_lbl.setStyleSheet("color: #9CA3AF; font-size: 8pt;")
+        ts_lbl.setFixedWidth(54)
+        layout.addWidget(ts_lbl)
+
+        # Status
+        if entry.get("ok"):
+            rows = entry.get("rows", 0)
+            st_lbl = QLabel(f"✓  {rows} строк")
+            st_lbl.setStyleSheet("color: #34D399; font-size: 8pt;")
+        else:
+            err_text = entry.get("err", "Ошибка")
+            st_lbl = QLabel(f"✗  {err_text[:55]}")
+            st_lbl.setStyleSheet("color: #EF4444; font-size: 8pt;")
+            st_lbl.setToolTip(err_text)
+
+        layout.addWidget(st_lbl, stretch=1)
+
+        # Delete (×) button
+        del_btn = QPushButton("×")
+        del_btn.setFixedSize(16, 16)
+        del_btn.setStyleSheet(
+            "QPushButton {"
+            "  border: none; background: transparent;"
+            "  color: #D1D5DB; font-size: 11pt; padding: 0;"
+            "}"
+            "QPushButton:hover { color: #EF4444; }"
+        )
+        del_btn.setToolTip("Удалить запись")
+        del_btn.clicked.connect(
+            lambda _checked=False, i=index: self._delete_history(i)
+        )
+        layout.addWidget(del_btn)
+
+        return row
 
     # ------------------------------------------------------------------ Test dialog
 
     def _open_test_dialog(self) -> None:
+        sql = self._query_edit.toPlainText().strip()
         cfg = self._config.load()
         TestRunDialog(
-            cfg, initial_sql=self._query_edit.toPlainText().strip(), parent=self
+            cfg,
+            initial_sql=sql,
+            auto_run=bool(sql),   # execute immediately if SQL is present
+            parent=self,
         ).exec()
 
     # ------------------------------------------------------------------ Signals
@@ -310,7 +604,8 @@ class ExportJobCard(QWidget):
     def _on_delete(self) -> None:
         name = self._name_edit.text().strip() or "без названия"
         reply = QMessageBox.question(
-            self, "Удалить выгрузку",
+            self,
+            "Удалить выгрузку",
             f"Удалить выгрузку «{name}»?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -320,13 +615,17 @@ class ExportJobCard(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# ExportJobsWidget
+# ---------------------------------------------------------------------------
 
 class ExportJobsWidget(QWidget):
     """Container — card-based export job manager."""
 
     sync_completed = Signal(object)  # SyncResult — bubbled up from any card
 
-    def __init__(self, config: ConfigManager, parent: QWidget | None = None) -> None:
+    def __init__(
+        self, config: ConfigManager, parent: QWidget | None = None
+    ) -> None:
         super().__init__(parent)
         self._config = config
         self._cards: list[ExportJobCard] = []
@@ -359,12 +658,10 @@ class ExportJobsWidget(QWidget):
 
         root.addWidget(toolbar)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("background-color: #E5E7EB; max-height: 1px; border: none;")
+        sep = _h_sep()
         root.addWidget(sep)
 
-        # Scroll area
+        # Scroll area for cards
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -401,6 +698,7 @@ class ExportJobsWidget(QWidget):
                 schedule_enabled=bool(raw.get("schedule_enabled", False)),
                 schedule_mode=raw.get("schedule_mode", "daily"),
                 schedule_value=raw.get("schedule_value", ""),
+                history=list(raw.get("history") or []),  # type: ignore[typeddict-unknown-key]
             )
             self._add_card(job)
         self._refresh_empty()
@@ -419,6 +717,7 @@ class ExportJobsWidget(QWidget):
             schedule_enabled=False,
             schedule_mode="daily",
             schedule_value="",
+            history=[],  # type: ignore[typeddict-unknown-key]
         )
         self._add_card(job)
         self._save_jobs()
@@ -430,7 +729,7 @@ class ExportJobsWidget(QWidget):
         card.delete_requested.connect(self._remove_card)
         card.sync_completed.connect(self.sync_completed)
         self._cards.append(card)
-        # Insert before the trailing stretch
+        # Insert before trailing stretch
         self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
 
     @Slot(str)
