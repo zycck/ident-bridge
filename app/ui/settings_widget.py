@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import qtawesome as qta
-from PySide6.QtCore import QObject, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -203,7 +203,18 @@ class SettingsWidget(QWidget):
         self._test_tg_worker: _TestTgWorker | None = None
         self._update_worker: object | None = None
 
+        # Запоминает выбор БД в памяти — не зависит от того, сохранён ли конфиг на диск
+        self._selected_db: str = ""
+        # Флаг: идёт начальная загрузка полей → не триггерить автосохранение
+        self._loading: bool = False
+        # Дебаунс-таймер для автосохранения при вводе текста
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(800)
+        self._save_timer.timeout.connect(self._auto_save)
+
         self._build_ui()
+        self._connect_auto_save()
         self._load_fields()
 
     # ------------------------------------------------------------------
@@ -403,15 +414,52 @@ class SettingsWidget(QWidget):
         layout.addStretch()
 
     # ------------------------------------------------------------------
+    # Auto-save wiring
+    # ------------------------------------------------------------------
+
+    def _connect_auto_save(self) -> None:
+        """Connect widget signals → auto-save after every user interaction."""
+        # DB combo — updates _selected_db and saves
+        self._db_combo.currentIndexChanged.connect(self._on_db_changed)
+        # Line edits — save on blur (editingFinished)
+        self._login_edit.editingFinished.connect(self._auto_save)
+        self._password_edit.editingFinished.connect(self._auto_save)
+        self._sched_value_edit.editingFinished.connect(self._auto_save)
+        self._webhook_edit.editingFinished.connect(self._auto_save)
+        self._tg_token_edit.editingFinished.connect(self._auto_save)
+        self._tg_chat_id_edit.editingFinished.connect(self._auto_save)
+        # Editable instance combo — save when user confirms manual entry
+        if self._instance_combo.lineEdit() is not None:
+            self._instance_combo.lineEdit().editingFinished.connect(self._auto_save)
+        # Checkboxes / mode combos — save immediately on change
+        self._sched_enabled.toggled.connect(self._auto_save)
+        self._sched_mode_combo.currentIndexChanged.connect(self._auto_save)
+        self._auto_update_check.toggled.connect(self._auto_save)
+        # QPlainTextEdit — debounce 800 ms to avoid per-keystroke saves
+        self._query_edit.textChanged.connect(self._save_timer.start)
+
+    # ------------------------------------------------------------------
     # Load / Save / Reset
     # ------------------------------------------------------------------
 
     def _load_fields(self) -> None:
+        self._loading = True
+        try:
+            self._load_fields_impl()
+        finally:
+            self._loading = False
+
+    def _load_fields_impl(self) -> None:
         cfg = self._config.load()
 
         # Credentials FIRST — _on_instance_changed reads them to fetch databases
         self._login_edit.setText(cfg.get("sql_user", "") or "")
         self._password_edit.setText(cfg.get("sql_password", "") or "")
+
+        # Запоминаем сохранённую БД — _on_dblist_finished будет её восстанавливать
+        saved_db = cfg.get("sql_database", "") or ""
+        if saved_db:
+            self._selected_db = saved_db
 
         # SQL instance — block signals while populating, fire exactly once at end
         saved_instance = cfg.get("sql_instance", "")
@@ -434,15 +482,6 @@ class SettingsWidget(QWidget):
             # Qt sets currentIndex=0 during addItem even with signals blocked,
             # so setCurrentIndex(0) emits nothing. Always trigger fetch explicitly.
             self._on_instance_changed(target_idx)
-
-        saved_db = cfg.get("sql_database", "")
-        if saved_db:
-            db_idx = self._db_combo.findText(saved_db)
-            if db_idx >= 0:
-                self._db_combo.setCurrentIndex(db_idx)
-            else:
-                self._db_combo.addItem(saved_db)
-                self._db_combo.setCurrentText(saved_db)
         query = cfg.get("sql_query", "") or ""
         if not query:
             query = (
@@ -506,6 +545,52 @@ class SettingsWidget(QWidget):
 
     def _reset(self) -> None:
         self._load_fields()
+
+    # ------------------------------------------------------------------
+    # Auto-save helpers
+    # ------------------------------------------------------------------
+
+    @Slot(int)
+    def _on_db_changed(self, idx: int) -> None:
+        """Track DB selection in memory and trigger auto-save."""
+        text = self._db_combo.itemText(idx)
+        if text and text not in ("Загрузка…",):
+            self._selected_db = text
+        self._auto_save()
+
+    def _auto_save(self) -> None:
+        """Silently persist current field values; called on every user interaction."""
+        if self._loading:
+            return
+
+        # Prefer in-memory _selected_db — avoids saving "Загрузка…" placeholder
+        db = self._selected_db
+        if not db:
+            combo_text = self._db_combo.currentText().strip()
+            if combo_text and combo_text not in ("Загрузка…", "Нет баз данных"):
+                db = combo_text
+
+        mode_index = self._sched_mode_combo.currentIndex()
+        schedule_mode = "hourly" if mode_index == 1 else "daily"
+
+        cfg: AppConfig = {
+            "sql_instance": self._instance_combo.currentText().strip(),
+            "sql_database": db,
+            "sql_user": self._login_edit.text().strip(),
+            "sql_password": self._password_edit.text(),
+            "sql_query": self._query_edit.toPlainText().strip(),  # type: ignore[typeddict-unknown-key]
+            "webhook_url": self._webhook_edit.text().strip(),
+            "tg_token": self._tg_token_edit.text().strip(),
+            "tg_chat_id": self._tg_chat_id_edit.text().strip(),
+            "schedule_enabled": self._sched_enabled.isChecked(),
+            "schedule_mode": schedule_mode,
+            "schedule_value": self._sched_value_edit.text().strip(),
+            "auto_update_check": self._auto_update_check.isChecked(),
+            "run_on_startup": self._startup_check.isChecked(),
+            "github_repo": GITHUB_REPO,
+        }
+        self._config.save(cfg)
+        _log.debug("Auto-saved settings")
 
     # ------------------------------------------------------------------
     # Schedule
@@ -648,22 +733,36 @@ class SettingsWidget(QWidget):
         pending = self._dblist_pending
         self._dblist_pending = None
 
-        cfg = self._config.load()
-        saved_db = cfg.get("sql_database", "")
+        # Приоритет восстановления: память (_selected_db) > диск (sql_database)
+        restore = self._selected_db or self._config.load().get("sql_database", "") or ""
 
+        # Block signals while populating — prevents multiple _on_db_changed firings
+        self._db_combo.blockSignals(True)
         self._db_combo.clear()
         self._db_combo.setEnabled(True)
 
         if not databases:
-            if saved_db:
-                self._db_combo.addItem(saved_db)
+            if restore:
+                self._db_combo.addItem(restore)
         else:
             for db in databases:
                 self._db_combo.addItem(db)
-            if saved_db:
-                idx = self._db_combo.findText(saved_db)
-                if idx >= 0:
-                    self._db_combo.setCurrentIndex(idx)
+
+        self._db_combo.blockSignals(False)
+
+        # Restore selection — explicitly trigger _on_db_changed so _selected_db
+        # is always updated regardless of whether the index actually changed.
+        final_idx = 0
+        if restore:
+            idx = self._db_combo.findText(restore)
+            if idx >= 0:
+                final_idx = idx
+
+        if self._db_combo.count() > 0:
+            if self._db_combo.currentIndex() != final_idx:
+                self._db_combo.setCurrentIndex(final_idx)  # emits currentIndexChanged
+            else:
+                self._on_db_changed(final_idx)  # index unchanged — call directly
 
         # Instance changed while we were fetching — fetch the new one now
         if pending is not None:
@@ -730,7 +829,6 @@ class SettingsWidget(QWidget):
         self._test_conn_running = False
         if ok:
             _set_status(self._conn_status, True, message or "Подключение успешно")
-            self._refresh_databases()
         else:
             _set_status(self._conn_status, False, message or "Ошибка подключения")
 
