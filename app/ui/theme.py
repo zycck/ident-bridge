@@ -55,22 +55,22 @@ class Theme:
     border_focus  = "#A6CA15"
 
     # ── Dimensions (raw values; QSS adds px/pt) ──────────────────────
-    radius_sm      = "4"
-    radius         = "6"
-    radius_md      = "8"
-    radius_lg      = "12"
-    control_height = "36"
-    control_pad_v  = "6"
-    control_pad_h  = "12"
+    radius_sm      = "3"
+    radius         = "5"
+    radius_md      = "7"
+    radius_lg      = "10"
+    control_height = "28"   # was 36 — Linear/Raycast style
+    control_pad_v  = "4"
+    control_pad_h  = "10"
 
     # ── Typography ────────────────────────────────────────────────────
     font_family        = "Segoe UI Variable, Segoe UI, sans-serif"
     font_mono          = "Cascadia Code, Consolas, Courier New, monospace"
     font_size_xs       = "8"
-    font_size_sm       = "9"
-    font_size_base     = "10"
-    font_size_md       = "11"
-    font_size_lg       = "13"
+    font_size_sm       = "8.5"
+    font_size_base     = "9"
+    font_size_md       = "10"
+    font_size_lg       = "12"
     font_weight_normal = "400"
     font_weight_medium = "500"
     font_weight_semi   = "600"

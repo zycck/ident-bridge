@@ -30,7 +30,7 @@ QPushButton#navBtn {
     color: ${gray_600};
     border: none;
     border-radius: ${radius}px;
-    padding: 10px 14px;
+    padding: 7px 10px;
     text-align: left;
     font-size: ${font_size_base}pt;
     font-weight: ${font_weight_normal};
@@ -56,8 +56,8 @@ QPushButton#navBtnActive {
     border-radius: 0px;
     border-top-right-radius: ${radius}px;
     border-bottom-right-radius: ${radius}px;
-    padding: 10px 14px;
-    padding-left: 11px;
+    padding: 7px 10px;
+    padding-left: 8px;
     text-align: left;
     font-size: ${font_size_base}pt;
     font-weight: ${font_weight_semi};
@@ -68,8 +68,8 @@ QGroupBox {
     background-color: ${surface};
     border: 1px solid ${border};
     border-radius: ${radius}px;
-    margin-top: 12px;
-    padding: 14px 12px 12px 12px;
+    margin-top: 10px;
+    padding: 10px 10px 8px 10px;
     color: ${gray_700};
 }
 
@@ -77,11 +77,11 @@ QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
     left: 14px;
-    top: -7px;
+    top: -6px;
     background-color: ${surface_tinted};
     padding: 0 6px;
     color: ${gray_600};
-    font-size: ${font_size_xs}pt;
+    font-size: 7.5pt;
     font-weight: ${font_weight_bold};
     letter-spacing: 0.8px;
     text-transform: uppercase;
@@ -108,11 +108,11 @@ QLabel#sectionHeader {
     color: ${gray_600};
     font-size: ${font_size_sm}pt;
     font-weight: ${font_weight_semi};
-    letter-spacing: 0.4px;
+    letter-spacing: 0.3px;
     text-transform: uppercase;
     background: transparent;
     border: none;
-    padding: 4px 0;
+    padding: 2px 0;
 }
 
 /* ── Row Label (labeled_row helper) ──────────────────────────────────────── */
@@ -209,8 +209,8 @@ QComboBox QAbstractItemView {
 }
 
 QComboBox QAbstractItemView::item {
-    min-height: 28px;
-    padding: 4px 10px;
+    min-height: 24px;
+    padding: 3px 8px;
     border-radius: ${radius_sm}px;
     margin: 1px 2px;
 }
@@ -290,9 +290,9 @@ QCheckBox {
 }
 
 QCheckBox::indicator {
-    width: 18px;
-    height: 18px;
-    border: 1.5px solid ${border_strong};
+    width: 14px;
+    height: 14px;
+    border: 1px solid ${border_strong};
     border-radius: ${radius_sm}px;
     background-color: ${surface};
 }
@@ -335,8 +335,8 @@ QHeaderView::section {
     border: none;
     border-bottom: 1px solid ${border};
     border-right: 1px solid ${border};
-    padding: 7px 10px;
-    font-size: ${font_size_sm}pt;
+    padding: 5px 8px;
+    font-size: ${font_size_xs}pt;
     font-weight: ${font_weight_bold};
     letter-spacing: 0.5px;
     text-transform: uppercase;
@@ -425,7 +425,7 @@ QToolTip {
     color: ${gray_50};
     border: 1px solid ${gray_700};
     border-radius: ${radius}px;
-    padding: 6px 10px;
+    padding: 4px 8px;
     font-size: ${font_size_sm}pt;
 }
 
@@ -453,7 +453,7 @@ QMenu {
 }
 
 QMenu::item {
-    padding: 7px 16px;
+    padding: 5px 12px;
     border-radius: ${radius_sm}px;
     margin: 1px 2px;
 }
