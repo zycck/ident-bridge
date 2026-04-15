@@ -1,9 +1,12 @@
+import logging
+import os
 import random
 from datetime import datetime, timedelta
 from typing import Literal
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+_log = logging.getLogger(__name__)
 
 # Daily-mode scheduling uses datetime.now().astimezone() to be DST-aware.
 # When the local timezone observes DST transitions, "daily at 14:30" stays
@@ -31,7 +34,37 @@ class SyncScheduler(QObject):
         self._value = value
 
     def start(self) -> None:
-        self.stop()
+        self._timer.stop()
+        fast = os.environ.get("IDENTBRIDGE_FAST_TRIGGER_SECONDS")
+        if fast and fast.strip().lstrip("-").isdigit() and int(fast) > 0:
+            seconds = int(fast)
+            _log.warning(
+                "FAST_TRIGGER mode active: firing every %d seconds (dev only)",
+                seconds,
+            )
+            # Disconnect the single-shot _fire callback; use direct trigger.emit
+            try:
+                self._timer.timeout.disconnect()
+            except (TypeError, RuntimeError):
+                pass
+            self._timer.setSingleShot(False)
+            self._timer.setInterval(seconds * 1000)
+            self._timer.timeout.connect(self.trigger.emit)
+            self._timer.start()
+            self._next_run = datetime.now().astimezone() + timedelta(seconds=seconds)
+            self.next_run_changed.emit(self._next_run)
+            return
+        # Normal path: single-shot timer managed by _schedule_next / _fire
+        # Ensure the timer is back in single-shot mode (in case start() was
+        # previously called with FAST_TRIGGER and is now called without it).
+        try:
+            self._timer.timeout.disconnect()
+        except (TypeError, RuntimeError):
+            pass
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self._fire)
+        self._next_run = None
+        self.next_run_changed.emit(None)
         self._schedule_next()
 
     def stop(self) -> None:
