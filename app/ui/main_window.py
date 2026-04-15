@@ -303,6 +303,7 @@ class MainWindow(QMainWindow):
         """Called by aboutToQuit — stop background services before exit."""
         _log.info("Shutting down…")
         self._export_jobs.stop_all_schedulers()
+        self._dashboard.stop()
         if self._debug_window is not None:
             self._debug_window.close()
 

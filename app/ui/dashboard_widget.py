@@ -265,6 +265,15 @@ class DashboardWidget(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
+    def stop(self) -> None:
+        """Stop the periodic ping timer. Called on app shutdown."""
+        if hasattr(self, "_ping_timer") and self._ping_timer is not None:
+            self._ping_timer.stop()
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        self.stop()
+        super().closeEvent(event)
+
     def set_connected(self, ok: bool | None) -> None:
         if ok is None:
             color, label = Theme.gray_400, "Не настроено"
