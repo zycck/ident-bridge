@@ -4,12 +4,11 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.request
 from pathlib import Path
 
-
-GITHUB_REPO = "zycck/ident-bridge"
-API_URL = "https://api.github.com/repos/{repo}/releases/latest"
+from app.core.constants import GITHUB_API_URL, GITHUB_REPO, MIN_DOWNLOAD_BYTES
 
 
 def _parse_version(version: str) -> tuple[int, ...]:
@@ -32,16 +31,20 @@ def get_exe_path() -> str:
 
 
 def cleanup_old_exe() -> None:
+    """Remove leftover iDentSync_old.exe from a previous self-update."""
     old_exe = os.path.join(os.path.dirname(get_exe_path()), "iDentSync_old.exe")
-    try:
-        if os.path.exists(old_exe):
-            os.remove(old_exe)
-    except Exception:
-        pass
+    for attempt in range(5):
+        try:
+            if os.path.exists(old_exe):
+                os.remove(old_exe)
+            return
+        except (OSError, PermissionError):
+            if attempt < 4:
+                time.sleep(0.5)
 
 
 def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
-    url = API_URL.format(repo=repo)
+    url = GITHUB_API_URL.format(repo=repo)
     headers = {"User-Agent": "iDentBridge/0.0.1"}
     request = urllib.request.Request(url, headers=headers)
     ssl_ctx = ssl.create_default_context()
@@ -67,7 +70,7 @@ def download_and_apply(download_url: str) -> None:
     with opener.open(download_url) as resp, open(new_exe, "wb") as fh:
         fh.write(resp.read())
 
-    if os.path.getsize(new_exe) <= 1_000_000:
+    if os.path.getsize(new_exe) <= MIN_DOWNLOAD_BYTES:
         raise ValueError(
             f"Downloaded file is too small ({os.path.getsize(new_exe)} bytes); "
             "aborting update to avoid replacing the app with a corrupt file."

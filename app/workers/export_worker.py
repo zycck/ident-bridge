@@ -53,7 +53,29 @@ class ExportWorker(QObject):
             self.progress.emit(2, "Отправка данных...")
             webhook_url = (self._job.get("webhook_url") or "").strip()
             if webhook_url:
-                # TODO: implement HTTP push
+                try:
+                    import json as _json
+                    import urllib.request
+                    payload = _json.dumps({
+                        "job":     job_name,
+                        "rows":    result.count,
+                        "columns": result.columns,
+                        "data":    [list(row) for row in result.rows],
+                    }, ensure_ascii=False, default=str).encode("utf-8")
+                    req = urllib.request.Request(
+                        webhook_url,
+                        data=payload,
+                        headers={
+                            "Content-Type": "application/json; charset=utf-8",
+                            "User-Agent":   "iDentBridge",
+                        },
+                        method="POST",
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        _log.info("Webhook %s → HTTP %d", webhook_url, resp.status)
+                except Exception as exc:
+                    _log.error("Webhook push failed: %s", exc)
+                    raise
                 _log.info("Выгрузка '%s': %d строк → webhook %s", job_name, result.count, webhook_url)
             else:
                 _log.info("Выгрузка '%s': %d строк (webhook не настроен)", job_name, result.count)

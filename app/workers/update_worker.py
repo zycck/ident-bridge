@@ -22,6 +22,8 @@ class UpdateWorker(QObject):
     no_update: Signal = Signal()
     # Emitted on network / parse errors
     error: Signal = Signal(str)
+    # Terminal signal — always emitted exactly once when check() completes
+    finished: Signal = Signal()
 
     def __init__(self, current_version: str, repo: str) -> None:
         super().__init__()
@@ -32,14 +34,17 @@ class UpdateWorker(QObject):
     def check(self) -> None:
         """Fetch the latest GitHub release and emit the appropriate signal."""
         try:
-            release = check_latest(self._repo)
-            if release is None:
-                self.error.emit("Не удалось получить информацию о релизе")
-                return
-            tag, download_url = release
-            if is_newer(tag, self._current_version):
-                self.update_available.emit(tag, download_url)
-            else:
-                self.no_update.emit()
-        except Exception as exc:  # noqa: BLE001
-            self.error.emit(str(exc))
+            try:
+                release = check_latest(self._repo)
+                if release is None:
+                    self.error.emit("Не удалось получить информацию о релизе")
+                    return
+                tag, download_url = release
+                if is_newer(tag, self._current_version):
+                    self.update_available.emit(tag, download_url)
+                else:
+                    self.no_update.emit()
+            except Exception as exc:  # noqa: BLE001
+                self.error.emit(str(exc))
+        finally:
+            self.finished.emit()
