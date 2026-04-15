@@ -4,8 +4,26 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+*.egg
 .env
 *.spec.bak
 *.log
 .venv/
 venv/
+
+# IDE / editor caches
+.idea/
+.vscode/
+
+# Tooling caches
+.claude/
+.code-review-graph/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local user config (DPAPI-encrypted but per-user)
+config.json
+
+# Generated Qt resource modules
+app/ui/icons_rc.py
