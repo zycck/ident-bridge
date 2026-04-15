@@ -18,14 +18,14 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.config import INotifier
+# Note: INotifier integration removed in Phase 1 refactor — re-introduce via
+# DI (constructor injection) if a notification channel comes back.
 
 
 class ErrorDialog(QDialog):
     def __init__(
         self,
         exc: BaseException,
-        notifier: INotifier | None = None,
         parent: QDialog | None = None,
     ) -> None:
         super().__init__(parent)
@@ -67,11 +67,6 @@ class ErrorDialog(QDialog):
         copy_btn.clicked.connect(self._copy_to_clipboard)
         btn_row.addWidget(copy_btn)
 
-        send_btn = QPushButton("Отправить разработчику")
-        send_btn.setEnabled(notifier is not None)
-        send_btn.clicked.connect(lambda: self._send_to_notifier(notifier))
-        btn_row.addWidget(send_btn)
-
         btn_row.addStretch()
 
         close_btn = QPushButton("Закрыть")
@@ -86,18 +81,12 @@ class ErrorDialog(QDialog):
         if clipboard is not None:
             clipboard.setText(self._traceback_text)
 
-    def _send_to_notifier(self, notifier: INotifier | None) -> None:
-        if notifier is not None:
-            # Truncate to avoid sending overly large payloads (Telegram limit ~4096 chars)
-            truncated = self._traceback_text[:2000]
-            notifier.notify(truncated)
-
 
 # ---------------------------------------------------------------------------
 # Global exception hook
 # ---------------------------------------------------------------------------
 
-def install_global_handler(notifier: INotifier | None = None) -> None:
+def install_global_handler() -> None:
     """Replace sys.excepthook with one that shows ErrorDialog and logs to disk."""
 
     def _hook(exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
@@ -116,7 +105,7 @@ def install_global_handler(notifier: INotifier | None = None) -> None:
         # -- Show dialog if Qt is running ----------------------------------
         app = QApplication.instance()
         if app is not None:
-            dialog = ErrorDialog(exc, notifier)
+            dialog = ErrorDialog(exc)
             dialog.exec()
 
     sys.excepthook = _hook
