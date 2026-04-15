@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import QThread, Slot
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -17,15 +17,19 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import ConfigManager, IExporter, INotifier
+from app.core.app_logger import get_logger
 from app.core.scheduler import SyncScheduler
 from app.core.telegram import TelegramNotifier
 from app.core.updater import GITHUB_REPO, download_and_apply
 from app.core.webhook import SheetsWebhook
 from app.ui.dashboard_widget import DashboardWidget
+from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import install_global_handler
 from app.ui.export_widget import ExportWidget
 from app.ui.settings_widget import SettingsWidget
 from app.workers.update_worker import UpdateWorker
+
+_log = get_logger(__name__)
 
 
 _NAV_LABELS = ("Статус", "Выгрузка", "Настройки")
@@ -55,14 +59,24 @@ class MainWindow(QMainWindow):
         # Scheduler (created before widgets so dashboard can connect)
         self._scheduler = SyncScheduler(self)
 
+        # Debug window — created lazily on first Ctrl+D press
+        self._debug_window: DebugWindow | None = None
+        # Strong ref to update worker — GC kills workers without explicit Python reference
+        self._update_worker: object | None = None
+
         self._build_ui()
         self._build_tray()
         self._setup_scheduler()
         self._install_exception_hook()
+        self._setup_shortcuts()
+
+        # Connect app-level quit signal for proper cleanup
+        QApplication.instance().aboutToQuit.connect(self._cleanup)  # type: ignore[union-attr]
 
         if config.get("auto_update_check") != "False":
             self._run_update_check_silently()
 
+        _log.info("iDentBridge %s started", current_version)
         self.setWindowTitle("iDentBridge")
         self.resize(900, 600)
 
@@ -80,7 +94,8 @@ class MainWindow(QMainWindow):
 
         # Sidebar
         sidebar = QWidget()
-        sidebar.setFixedWidth(160)
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(168)
         nav_layout = QVBoxLayout(sidebar)
         nav_layout.setContentsMargins(8, 16, 8, 16)
         nav_layout.setSpacing(4)
@@ -93,6 +108,12 @@ class MainWindow(QMainWindow):
             nav_layout.addWidget(btn)
             self._nav_btns.append(btn)
         nav_layout.addStretch()
+
+        debug_btn = QPushButton("Debug")
+        debug_btn.setObjectName("navBtn")
+        debug_btn.setToolTip("Панель отладки (Ctrl+D)")
+        debug_btn.clicked.connect(self._toggle_debug_window)
+        nav_layout.addWidget(debug_btn)
 
         # Stacked pages
         self._stack = QStackedWidget()
@@ -114,6 +135,25 @@ class MainWindow(QMainWindow):
         self._dashboard.update_requested.connect(self._on_update_requested)
 
         self.navigate(0)
+
+    # ------------------------------------------------------------------
+    # Shortcuts
+    # ------------------------------------------------------------------
+
+    def _setup_shortcuts(self) -> None:
+        from PySide6.QtCore import Qt
+        debug_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
+        debug_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
+        debug_shortcut.activated.connect(self._toggle_debug_window)
+
+    def _toggle_debug_window(self) -> None:
+        if self._debug_window is None:
+            self._debug_window = DebugWindow(parent=None)
+        if self._debug_window.isVisible():
+            self._debug_window.hide()
+        else:
+            self._debug_window.show()
+            self._debug_window.raise_()
 
     # ------------------------------------------------------------------
     # System tray
@@ -174,6 +214,7 @@ class MainWindow(QMainWindow):
             current_version=self._current_version,
             repo=GITHUB_REPO,
         )
+        self._update_worker = worker  # keep alive — GC would delete it otherwise
         thread = QThread(self)
         worker.moveToThread(thread)
 
@@ -184,6 +225,7 @@ class MainWindow(QMainWindow):
         worker.error.connect(thread.quit)
         thread.finished.connect(worker.deleteLater)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_update_worker', None))
 
         thread.start()
 
@@ -223,13 +265,20 @@ class MainWindow(QMainWindow):
             self._show_window()
 
     def _quit(self) -> None:
-        self._scheduler.stop()
         QApplication.quit()
+
+    @Slot()
+    def _cleanup(self) -> None:
+        """Called by aboutToQuit — stop background services before exit."""
+        _log.info("Shutting down…")
+        self._scheduler.stop()
+        if self._debug_window is not None:
+            self._debug_window.close()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         if self._tray.isVisible():
             self.hide()
             event.ignore()
         else:
-            self._scheduler.stop()
             event.accept()
+            QApplication.quit()

@@ -1,11 +1,14 @@
+import logging
 import winreg
 import subprocess
 
 import pyodbc
 
 from app.config import SqlInstance
+from app.core.odbc_utils import best_driver
 
 _INSTANCES_KEY = r"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
+_log = logging.getLogger(__name__)
 
 
 def scan_local() -> list[SqlInstance]:
@@ -13,6 +16,7 @@ def scan_local() -> list[SqlInstance]:
     try:
         key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _INSTANCES_KEY)
     except OSError:
+        _log.debug("No local SQL instances found in registry")
         return results
 
     with key:
@@ -29,16 +33,18 @@ def scan_local() -> list[SqlInstance]:
             except OSError:
                 break
 
+    _log.debug("scan_local: %d instances", len(results))
     return results
 
 
 def scan_network() -> list[SqlInstance]:
     try:
+        _log.debug("scan_network: running sqlcmd -L")
         proc = subprocess.run(
-            ['sqlcmd', '-L', '-t', '3'],
+            ['sqlcmd', '-L', '-t', '1'],
             capture_output=True,
             text=True,
-            timeout=5,
+            timeout=3,
         )
         results: list[SqlInstance] = []
         for line in proc.stdout.splitlines():
@@ -54,12 +60,18 @@ def scan_network() -> list[SqlInstance]:
                 host=host,
                 display=stripped,
             ))
+        _log.debug("scan_network: %d instances", len(results))
         return results
-    except Exception:
+    except FileNotFoundError:
+        _log.debug("scan_network: sqlcmd not found, skipping network scan")
+        return []
+    except Exception as exc:
+        _log.warning("scan_network failed: %s", exc)
         return []
 
 
 def scan_all() -> list[SqlInstance]:
+    """Scan local registry (fast) then network (2 s timeout), deduplicate, sort."""
     combined = scan_local() + scan_network()
 
     seen: dict[str, SqlInstance] = {}
@@ -68,28 +80,31 @@ def scan_all() -> list[SqlInstance]:
         if key not in seen:
             seen[key] = instance
 
-    return sorted(seen.values(), key=lambda i: i.display.lower())
+    sorted_instances = sorted(seen.values(), key=lambda i: i.display.lower())
+    _log.info("scan_all: %d unique instances", len(sorted_instances))
+    return sorted_instances
 
 
 def list_databases(instance: SqlInstance, user: str, password: str) -> list[str]:
+    driver = best_driver()
+    auth = f"UID={user};PWD={password};" if user else "Trusted_Connection=yes;"
     conn_str = (
-        "Driver={ODBC Driver 17 for SQL Server};"
+        f"Driver={{{driver}}};"
         f"Server={instance.display};"
         "Database=master;"
-        f"UID={user};"
-        f"PWD={password};"
-        "APP=iDentBridge"
+        + auth +
+        "APP=iDentBridge;"
+        "TrustServerCertificate=yes;"
+        "Connect Timeout=5;"
     )
     conn: pyodbc.Connection | None = None
     try:
-        conn = pyodbc.connect(conn_str, autocommit=True, timeout=10)
+        conn = pyodbc.connect(conn_str, autocommit=True, timeout=5)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name"
         )
         return [row[0] for row in cursor.fetchall()]
-    except Exception:
-        return []
     finally:
         if conn is not None:
             try:

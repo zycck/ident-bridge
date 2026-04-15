@@ -1,14 +1,7 @@
 # -*- coding: utf-8 -*-
-"""
-DashboardWidget — status overview panel.
-
-Shows three status cards (DB connection, last sync, next run), an update
-banner, and a live log pane.  Polls the SQL connection every 30 seconds
-via QTimer and reacts to scheduler signals.
-"""
 from datetime import datetime
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -20,8 +13,34 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import ConfigManager, SyncResult
+from app.core.app_logger import get_logger
 from app.core.scheduler import SyncScheduler
 from app.core.sql_client import SqlClient
+
+_log = get_logger(__name__)
+
+
+class _PingWorker(QObject):
+    result = Signal(bool)
+
+    def __init__(self, config: ConfigManager) -> None:
+        super().__init__()
+        self._config = config
+
+    @Slot()
+    def run(self) -> None:
+        cfg = self._config.load()
+        client = SqlClient(cfg)
+        try:
+            client.connect()
+            alive = client.is_alive()
+        except Exception as exc:
+            _log.debug("DB ping failed: %s", exc)
+            alive = False
+        finally:
+            client.disconnect()
+        _log.debug("DB ping: %s", "alive" if alive else "unreachable")
+        self.result.emit(alive)
 
 
 class DashboardWidget(QWidget):
@@ -36,6 +55,8 @@ class DashboardWidget(QWidget):
         super().__init__(parent)
         self._config = config
         self._update_url: str = ""
+        self._ping_running = False
+        self._ping_worker: _PingWorker | None = None  # strong ref to prevent GC
 
         self._build_ui()
         self._connect_signals(scheduler)
@@ -58,43 +79,46 @@ class DashboardWidget(QWidget):
         row = QHBoxLayout()
         row.setSpacing(12)
 
-        # Card 1 — DB connection
         card1 = self._make_card()
         c1_layout = QVBoxLayout(card1)
         c1_layout.setSpacing(6)
         c1_title = QLabel("Подключение к БД")
         c1_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        c1_title.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: 600;")
         indicator_row = QHBoxLayout()
         indicator_row.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._status_dot = QLabel("●")
         self._status_dot.setObjectName("statusDot")
-        self._status_dot.setStyleSheet("color: #6B7280; font-size: 18px;")
+        self._status_dot.setStyleSheet("color: #6B7280; font-size: 20px;")
         self._status_text = QLabel("Проверка...")
         self._status_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._status_text.setStyleSheet("color: #9CA3AF; font-size: 9.5pt;")
         indicator_row.addWidget(self._status_dot)
         indicator_row.addWidget(self._status_text)
         c1_layout.addWidget(c1_title)
         c1_layout.addLayout(indicator_row)
 
-        # Card 2 — Last sync
         card2 = self._make_card()
         c2_layout = QVBoxLayout(card2)
         c2_layout.setSpacing(6)
         c2_title = QLabel("Последняя синхронизация")
         c2_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        c2_title.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: 600;")
         self._last_sync_label = QLabel("Никогда")
         self._last_sync_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._last_sync_label.setStyleSheet("color: #D1D5DB; font-size: 10pt;")
         c2_layout.addWidget(c2_title)
         c2_layout.addWidget(self._last_sync_label)
 
-        # Card 3 — Next run
         card3 = self._make_card()
         c3_layout = QVBoxLayout(card3)
         c3_layout.setSpacing(6)
         c3_title = QLabel("Следующий запуск")
         c3_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        c3_title.setStyleSheet("color: #6B7280; font-size: 9pt; font-weight: 600;")
         self._next_run_label = QLabel("Не запланировано")
         self._next_run_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._next_run_label.setStyleSheet("color: #D1D5DB; font-size: 10pt;")
         c3_layout.addWidget(c3_title)
         c3_layout.addWidget(self._next_run_label)
 
@@ -131,7 +155,7 @@ class DashboardWidget(QWidget):
     def _build_log(self) -> QPlainTextEdit:
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
-        self._log.document().setMaximumBlockCount(20)
+        self._log.document().setMaximumBlockCount(200)
         self._log.setMinimumHeight(120)
         return self._log
 
@@ -147,15 +171,19 @@ class DashboardWidget(QWidget):
         self._ping_timer.setInterval(30_000)
         self._ping_timer.timeout.connect(self._ping_db)
         self._ping_timer.start()
+        # Defer first ping until after event loop starts
+        QTimer.singleShot(1500, self._ping_db)
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def set_connected(self, ok: bool) -> None:
-        color = "#22C55E" if ok else "#EF4444"
-        self._status_dot.setStyleSheet(f"color: {color}; font-size: 18px;")
-        self._status_text.setText("Подключено" if ok else "Нет связи")
+        color = "#34D399" if ok else "#F87171"
+        label = "Подключено" if ok else "Нет связи"
+        self._status_dot.setStyleSheet(f"color: {color}; font-size: 20px;")
+        self._status_text.setText(label)
+        self._status_text.setStyleSheet(f"color: {color}; font-size: 9.5pt;")
 
     def append_log(self, msg: str) -> None:
         ts = datetime.now().strftime("%H:%M:%S")
@@ -184,15 +212,27 @@ class DashboardWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _ping_db(self) -> None:
-        cfg = self._config.load()
-        client = SqlClient(cfg)
-        try:
-            client.connect()
-            alive = client.is_alive()
-        except Exception:  # noqa: BLE001
-            alive = False
-        finally:
-            client.disconnect()
+        if self._ping_running:
+            return
+        self._ping_running = True
+
+        worker = _PingWorker(self._config)
+        self._ping_worker = worker  # keep alive — GC would delete it otherwise
+        thread = QThread(self)
+        worker.moveToThread(thread)
+
+        worker.result.connect(self._on_ping_result)
+        worker.result.connect(thread.quit)
+        thread.started.connect(worker.run)
+        thread.finished.connect(worker.deleteLater)
+        thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda: setattr(self, '_ping_worker', None))
+
+        thread.start()
+
+    @Slot(bool)
+    def _on_ping_result(self, alive: bool) -> None:
+        self._ping_running = False
         self.set_connected(alive)
 
     def _on_update_clicked(self) -> None:

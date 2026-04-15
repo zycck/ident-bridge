@@ -1,0 +1,64 @@
+"""Thread-safe logging bridge: Python logging → Qt signal → UI."""
+from __future__ import annotations
+
+import logging
+from PySide6.QtCore import QObject, Signal
+
+_FMT  = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
+_DFMT = "%H:%M:%S"
+
+
+class _Bridge(QObject):
+    """QObject wrapper so we can emit signals from a plain Handler."""
+    message = Signal(str)
+
+
+class QtLogHandler(logging.Handler):
+    """Routes Python log records to a Qt signal — safe across threads."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._bridge = _Bridge()
+        self.setFormatter(logging.Formatter(_FMT, _DFMT))
+
+    @property
+    def message(self) -> Signal:
+        return self._bridge.message  # type: ignore[return-value]
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            self._bridge.message.emit(self.format(record))
+        except Exception:
+            self.handleError(record)
+
+
+# ── Singleton ────────────────────────────────────────────────────────────────
+
+_handler: QtLogHandler | None = None
+
+
+def setup() -> QtLogHandler:
+    """Install handler on root logger. Call once at startup."""
+    global _handler
+    if _handler is None:
+        _handler = QtLogHandler()
+        fmt = logging.Formatter(_FMT, _DFMT)
+
+        root = logging.getLogger()
+        root.setLevel(logging.DEBUG)
+        root.addHandler(_handler)
+
+        # Mirror all logs to stderr — visible in terminal when running python main.py
+        stderr_handler = logging.StreamHandler()
+        stderr_handler.setFormatter(fmt)
+        root.addHandler(stderr_handler)
+
+    return _handler
+
+
+def get_handler() -> QtLogHandler:
+    return _handler if _handler is not None else setup()
+
+
+def get_logger(name: str) -> logging.Logger:
+    return logging.getLogger(name)

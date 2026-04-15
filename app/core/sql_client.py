@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pyodbc
 
 from app.config import AppConfig, QueryResult
+from app.core.odbc_utils import best_driver
 
 _MAX_ATTEMPTS = 3
 _BASE_DELAY = 2.0   # seconds; doubles each retry
@@ -29,15 +30,20 @@ class SqlClient:
                 delay *= 2
 
             try:
+                driver = best_driver()
+                user = self._cfg.get("sql_user", "") or ""
+                password = self._cfg.get("sql_password", "") or ""
+                auth = f"UID={user};PWD={password};" if user else "Trusted_Connection=yes;"
                 conn_str = (
-                    "Driver={ODBC Driver 17 for SQL Server};"
+                    f"Driver={{{driver}}};"
                     f"Server={self._cfg['sql_instance']};"
                     f"Database={self._cfg['sql_database']};"
-                    f"UID={self._cfg['sql_user']};"
-                    f"PWD={self._cfg['sql_password']};"
-                    "APP=iDentBridge"
+                    + auth +
+                    "APP=iDentBridge;"
+                    "TrustServerCertificate=yes;"
+                    "Connect Timeout=5;"
                 )
-                self._conn = pyodbc.connect(conn_str, autocommit=True, timeout=10)
+                self._conn = pyodbc.connect(conn_str, autocommit=True, timeout=5)
                 # Python strings are immutable; we cannot truly zero conn_str in memory.
                 # Credentials are protected at rest via DPAPI in config.json.
                 return
