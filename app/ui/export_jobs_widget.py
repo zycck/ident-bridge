@@ -167,26 +167,75 @@ class ExportJobCard(QWidget):
     def _build_ui(self) -> None:
         self.setObjectName("exportCard")
         root = QVBoxLayout(self)
-        root.setContentsMargins(12, 10, 12, 12)
-        root.setSpacing(6)
+        root.setContentsMargins(16, 14, 16, 14)
+        root.setSpacing(8)
 
-        # ── Header: name · run · delete ──────────────────────────────────
+        # ── Header: title + status summary + action buttons ───────────────
         hdr = QHBoxLayout()
-        hdr.setSpacing(6)
+        hdr.setSpacing(10)
+
+        # Left column: name (title-style) + status summary
+        title_col = QVBoxLayout()
+        title_col.setSpacing(2)
+        title_col.setContentsMargins(0, 0, 0, 0)
 
         self._name_edit = QLineEdit()
-        self._name_edit.setPlaceholderText("Название выгрузки…")
-        self._name_edit.setMinimumHeight(28)
+        self._name_edit.setObjectName("cardTitle")
+        self._name_edit.setPlaceholderText("Без названия")
+        self._name_edit.setStyleSheet(
+            f"QLineEdit#cardTitle {{"
+            f"  background: transparent;"
+            f"  border: 1px solid transparent;"
+            f"  padding: 2px 4px;"
+            f"  font-size: {Theme.font_size_md}pt;"
+            f"  font-weight: {Theme.font_weight_semi};"
+            f"  color: {Theme.gray_900};"
+            f"  min-height: 22px;"
+            f"}}"
+            f"QLineEdit#cardTitle:hover {{"
+            f"  background: {Theme.gray_50};"
+            f"  border-radius: 4px;"
+            f"}}"
+            f"QLineEdit#cardTitle:focus {{"
+            f"  background: {Theme.surface};"
+            f"  border: 1px solid {Theme.border_strong};"
+            f"  border-radius: 4px;"
+            f"}}"
+        )
         self._name_edit.editingFinished.connect(self._emit_changed)
-        hdr.addWidget(self._name_edit, stretch=1)
+        title_col.addWidget(self._name_edit)
 
-        self._run_btn = QPushButton()
-        self._run_btn.setIcon(lucide("play", color=Theme.gray_900, size=14))
+        self._status_summary = QLabel("Ещё не запускалось")
+        self._status_summary.setStyleSheet(
+            f"color: {Theme.gray_500}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"background: transparent; "
+            f"padding-left: 4px;"
+        )
+        title_col.addWidget(self._status_summary)
+
+        hdr.addLayout(title_col, stretch=1)
+
+        # Right column: action buttons grouped together
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(4)
+
+        self._test_btn = QPushButton("  Тест")
+        self._test_btn.setIcon(lucide("terminal", color=Theme.gray_700, size=12))
+        self._test_btn.setFixedHeight(28)
+        self._test_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._test_btn.setToolTip("Выполнить SQL запрос в тестовом окне")
+        self._test_btn.clicked.connect(self._open_test_dialog)
+        btn_row.addWidget(self._test_btn)
+
+        self._run_btn = QPushButton("  Запустить")
+        self._run_btn.setIcon(lucide("play", color=Theme.gray_900, size=12))
         self._run_btn.setObjectName("primaryBtn")
-        self._run_btn.setFixedSize(28, 28)
+        self._run_btn.setFixedHeight(28)
+        self._run_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self._run_btn.setToolTip("Запустить выгрузку вручную")
         self._run_btn.clicked.connect(self.start_export)
-        hdr.addWidget(self._run_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        btn_row.addWidget(self._run_btn)
 
         del_btn = QPushButton()
         del_btn.setIcon(lucide("trash-2", color=Theme.gray_500, size=14))
@@ -204,12 +253,13 @@ class ExportJobCard(QWidget):
         )
         del_btn.setToolTip("Удалить выгрузку")
         del_btn.clicked.connect(self._on_delete)
-        hdr.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+        btn_row.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
+        hdr.addLayout(btn_row)
         root.addLayout(hdr)
         self._section_break(root)
 
-        # ── SQL query ─────────────────────────────────────────────────────
+        # ── SQL запрос ────────────────────────────────────────────────────
         sql_lbl = QLabel("SQL запрос")
         sql_lbl.setStyleSheet(
             f"color: {Theme.gray_600}; "
@@ -220,37 +270,25 @@ class ExportJobCard(QWidget):
 
         self._query_edit = QPlainTextEdit()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
-        self._query_edit.setMinimumHeight(72)
-        self._query_edit.setMaximumHeight(140)
+        self._query_edit.setMinimumHeight(80)
+        self._query_edit.setMaximumHeight(160)
         self._query_edit.textChanged.connect(self._on_query_changed)
         root.addWidget(self._query_edit)
 
-        # Syntax indicator + test button (inline row below editor)
-        sql_tools = QHBoxLayout()
-        sql_tools.setSpacing(6)
-
+        # Syntax indicator only — Тест button moved to header
         self._syntax_lbl = QLabel("")
         self._syntax_lbl.setObjectName("syntaxStatus")
         self._syntax_lbl.setStyleSheet(
             f"color: {Theme.gray_500}; "
             f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent;"
+            f"background: transparent; "
+            f"padding-top: 2px;"
         )
-        sql_tools.addWidget(self._syntax_lbl)
-        sql_tools.addStretch(1)
+        root.addWidget(self._syntax_lbl)
 
-        test_btn = QPushButton("  Тест")
-        test_btn.setIcon(lucide("terminal", color=Theme.gray_700, size=12))
-        test_btn.setFixedHeight(24)
-        test_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        test_btn.setToolTip("Выполнить SQL запрос в тестовом окне")
-        test_btn.clicked.connect(self._open_test_dialog)
-        sql_tools.addWidget(test_btn)
-
-        root.addLayout(sql_tools)
         self._section_break(root)
 
-        # ── Webhook URL ───────────────────────────────────────────────────
+        # ── Webhook URL ────────────────────────────────────────────────────
         wh_lbl = QLabel("Webhook URL")
         wh_lbl.setStyleSheet(
             f"color: {Theme.gray_600}; "
@@ -263,49 +301,58 @@ class ExportJobCard(QWidget):
         self._webhook_edit.setPlaceholderText("https://… (необязательно)")
         self._webhook_edit.editingFinished.connect(self._emit_changed)
         root.addWidget(self._webhook_edit)
+
         self._section_break(root)
 
-        # ── Schedule + status ─────────────────────────────────────────────
-        sched_row = QHBoxLayout()
-        sched_row.setSpacing(6)
+        # ── Расписание ─────────────────────────────────────────────────────
+        sched_lbl = QLabel("Расписание")
+        sched_lbl.setStyleSheet(
+            f"color: {Theme.gray_600}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-weight: {Theme.font_weight_semi};"
+        )
+        root.addWidget(sched_lbl)
 
-        self._sched_check = QCheckBox("Авто")
+        self._sched_check = QCheckBox("Запускать автоматически")
         self._sched_check.setToolTip("Включить автоматическую выгрузку по расписанию")
         self._sched_check.toggled.connect(self._on_sched_changed)
-        sched_row.addWidget(self._sched_check, alignment=Qt.AlignmentFlag.AlignVCenter)
+        root.addWidget(self._sched_check)
+
+        sched_controls = QHBoxLayout()
+        sched_controls.setContentsMargins(24, 0, 0, 0)   # indent under checkbox
+        sched_controls.setSpacing(8)
 
         self._mode_combo = QComboBox()
         self._mode_combo.addItems(["Ежедневно", "Каждые N часов"])
         self._mode_combo.currentIndexChanged.connect(self._on_sched_changed)
-        sched_row.addWidget(self._mode_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
+        self._mode_combo.setFixedWidth(150)
+        sched_controls.addWidget(self._mode_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         self._sched_value_edit = QLineEdit()
         self._sched_value_edit.setFixedWidth(SCHED_VALUE_INPUT_W)
         self._sched_value_edit.setPlaceholderText("ЧЧ:ММ")
         self._sched_value_edit.editingFinished.connect(self._on_sched_changed)
-        sched_row.addWidget(self._sched_value_edit, alignment=Qt.AlignmentFlag.AlignVCenter)
+        sched_controls.addWidget(self._sched_value_edit, alignment=Qt.AlignmentFlag.AlignVCenter)
 
-        sched_row.addStretch(1)
+        sched_controls.addStretch(1)
 
+        # progress label (shown while export is running, hidden otherwise)
         self._progress_lbl = QLabel()
         self._progress_lbl.setStyleSheet(
-            f"color: {Theme.gray_500}; font-size: {Theme.font_size_sm}pt;"
+            f"color: {Theme.gray_500}; "
+            f"font-size: {Theme.font_size_xs}pt; "
+            f"background: transparent;"
         )
-        sched_row.addWidget(self._progress_lbl)
+        sched_controls.addWidget(self._progress_lbl)
 
-        self._status_lbl = QLabel()
-        self._status_lbl.setAlignment(
-            Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-        )
-        self._status_lbl.setStyleSheet(f"font-size: {Theme.font_size_sm}pt;")
-        sched_row.addWidget(self._status_lbl)
-
-        root.addLayout(sched_row)
+        root.addLayout(sched_controls)
 
         # ── History section (hidden until first entry) ────────────────────
         self._hist_sep = hsep()
         self._hist_sep.setVisible(False)
+        root.addSpacing(4)
         root.addWidget(self._hist_sep)
+        root.addSpacing(4)
 
         self._history_hdr_row = QWidget()
         self._history_hdr_row.setStyleSheet("background: transparent;")
@@ -316,6 +363,7 @@ class ExportJobCard(QWidget):
         self._history_hdr = QLabel("История")
         self._history_hdr.setStyleSheet(
             f"color: {Theme.gray_600}; "
+            f"font-size: {Theme.font_size_sm}pt; "
             f"font-weight: {Theme.font_weight_semi}; "
             f"background: transparent;"
         )
@@ -341,7 +389,7 @@ class ExportJobCard(QWidget):
 
         # Inner container with transparent background
         self._history_container = QWidget()
-        self._history_container.setStyleSheet("QWidget { background-color: transparent; }")
+        self._history_container.setStyleSheet("background: transparent;")
         self._history_layout = QVBoxLayout(self._history_container)
         self._history_layout.setContentsMargins(0, 0, 0, 0)
         self._history_layout.setSpacing(2)
@@ -402,8 +450,45 @@ class ExportJobCard(QWidget):
 
         self._update_placeholder()
         self._rebuild_history_ui()
+        # Restore status summary from most recent history entry (if any)
+        if self._history:
+            latest = self._history[0]
+            if latest.get("ok"):
+                ts_short = (
+                    latest.get("ts", "")[11:16]
+                    if len(latest.get("ts", "")) >= 16
+                    else latest.get("ts", "")
+                )
+                self._update_status_summary(
+                    "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}"
+                )
+            else:
+                self._update_status_summary(
+                    "error", f"✗ {latest.get('err', 'Ошибка')[:70]}"
+                )
         # Trigger syntax check after layout settles
         QTimer.singleShot(0, self._check_syntax)
+
+    # ------------------------------------------------------------------ Status summary
+
+    def _update_status_summary(self, kind: str, text: str) -> None:
+        """Update the header status line beneath the card title.
+        kind ∈ {'idle', 'ok', 'error', 'running'}
+        """
+        color_map = {
+            "idle":    Theme.gray_500,
+            "ok":      Theme.success,
+            "error":   Theme.error,
+            "running": Theme.info,
+        }
+        color = color_map.get(kind, Theme.gray_500)
+        self._status_summary.setStyleSheet(
+            f"color: {color}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"background: transparent; "
+            f"padding-left: 4px;"
+        )
+        self._status_summary.setText(text)
 
     # ------------------------------------------------------------------ Schedule
 
@@ -494,7 +579,7 @@ class ExportJobCard(QWidget):
         self._current_trigger = self._last_trigger  # capture for history entry
         self._run_btn.setEnabled(False)
         self._progress_lbl.setText("Запуск…")
-        self._status_lbl.setText("")
+        self._update_status_summary("running", "Запуск…")
 
         job = self.to_job()
         base_cfg = self._config.load()
@@ -516,6 +601,7 @@ class ExportJobCard(QWidget):
     @Slot(int, str)
     def _on_progress(self, _step: int, description: str) -> None:
         self._progress_lbl.setText(description)
+        self._update_status_summary("running", description)
 
     @Slot(object)
     def _on_finished(self, result: SyncResult) -> None:
@@ -525,10 +611,9 @@ class ExportJobCard(QWidget):
         if result.success:
             ts_clock = result.timestamp.strftime("%H:%M:%S")
             ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M")
-            self._status_lbl.setStyleSheet(
-                f"font-size: {Theme.font_size_sm}pt; color: {Theme.success};"
+            self._update_status_summary(
+                "ok", f"✓ {result.rows_synced} строк · {ts_clock}"
             )
-            self._status_lbl.setText(f"✓ {result.rows_synced} строк · {ts_clock}")
             self._add_history_entry(ok=True, rows=result.rows_synced, ts=ts_full)
             self.sync_completed.emit(result)
 
@@ -537,10 +622,7 @@ class ExportJobCard(QWidget):
         self._running = False
         self._run_btn.setEnabled(True)
         self._progress_lbl.setText("")
-        self._status_lbl.setStyleSheet(
-            f"font-size: {Theme.font_size_sm}pt; color: {Theme.error};"
-        )
-        self._status_lbl.setText(f"✗ {msg[:70]}")
+        self._update_status_summary("error", f"✗ {msg[:70]}")
         ts_full = datetime.now().strftime("%Y-%m-%d %H:%M")
         self._add_history_entry(ok=False, err=msg, ts=ts_full)
 
