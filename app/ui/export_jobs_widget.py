@@ -56,6 +56,9 @@ from app.workers.export_worker import ExportWorker
 
 _log = get_logger(__name__)
 
+# Maps _mode_combo index → schedule_mode string (order must match addItems call)
+_MODE_BY_INDEX: tuple[str, ...] = ("daily", "hourly", "minutely", "secondly")
+
 
 # ---------------------------------------------------------------------------
 # SQL Syntax Validator (sqlglot-backed, T-SQL dialect)
@@ -272,23 +275,36 @@ class ExportJobTile(QFrame):
             return "Расписание не настроено"
         if mode == "daily":
             return f"Ежедневно в {value}"
-        else:
-            return f"Каждые {value} часов"
+        if mode == "hourly":
+            return f"Каждые {value} ч"
+        if mode == "minutely":
+            return f"Каждые {value} мин"
+        if mode == "secondly":
+            return f"Каждые {value} с"
+        return f"Расписание: {mode}"
 
     @staticmethod
     def _format_short_ts(ts: str) -> str:
         if not ts or len(ts) < 16:
             return ts
-        try:
-            dt = datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
-        except ValueError:
+        # Try 19-char (with seconds) first, fall back to 16-char (legacy)
+        dt = None
+        for fmt, length in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
+            if len(ts) >= length:
+                try:
+                    dt = datetime.strptime(ts[:length], fmt)
+                    break
+                except ValueError:
+                    pass
+        if dt is None:
             return ts
         today = datetime.now().date()
+        time_str = dt.strftime("%H:%M:%S")
         if dt.date() == today:
-            return f"сегодня {dt.strftime('%H:%M')}"
+            return f"сегодня {time_str}"
         if dt.date() == today - timedelta(days=1):
-            return f"вчера {dt.strftime('%H:%M')}"
-        return dt.strftime("%d.%m %H:%M")
+            return f"вчера {time_str}"
+        return f"{dt.strftime('%d.%m')} {time_str}"
 
     # ------------------------------------------------------------------
     def _on_run_clicked(self) -> None:
@@ -522,7 +538,12 @@ class ExportJobEditor(QWidget):
         sched_controls.setSpacing(8)
 
         self._mode_combo = QComboBox()
-        self._mode_combo.addItems(["Ежедневно", "Каждые N часов"])
+        self._mode_combo.addItems([
+            "Ежедневно",
+            "Каждые N часов",
+            "Каждые N минут",
+            "Каждые N секунд",
+        ])
         self._mode_combo.currentIndexChanged.connect(self._on_sched_changed)
         self._mode_combo.setFixedWidth(180)
         sched_controls.addWidget(self._mode_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -620,7 +641,7 @@ class ExportJobEditor(QWidget):
             sql_query=self._query_edit.toPlainText().strip(),
             webhook_url=self._webhook_edit.text().strip(),
             schedule_enabled=self._sched_check.isChecked(),
-            schedule_mode="hourly" if self._mode_combo.currentIndex() == 1 else "daily",
+            schedule_mode=_MODE_BY_INDEX[self._mode_combo.currentIndex()],
             schedule_value=self._sched_value_edit.text().strip(),
             history=list(self._history),
         )
@@ -638,7 +659,11 @@ class ExportJobEditor(QWidget):
         self._webhook_edit.setText(job.get("webhook_url", ""))
         self._sched_check.setChecked(bool(job.get("schedule_enabled", False)))
         mode = job.get("schedule_mode", "daily")
-        self._mode_combo.setCurrentIndex(1 if mode == "hourly" else 0)
+        try:
+            idx = _MODE_BY_INDEX.index(mode)
+        except ValueError:
+            idx = 0
+        self._mode_combo.setCurrentIndex(idx)
         self._sched_value_edit.setText(job.get("schedule_value", ""))
         self._history = list(job.get("history") or [])
 
@@ -654,11 +679,13 @@ class ExportJobEditor(QWidget):
         if self._history:
             latest = self._history[0]
             if latest.get("ok"):
-                ts_short = (
-                    latest.get("ts", "")[11:16]
-                    if len(latest.get("ts", "")) >= 16
-                    else latest.get("ts", "")
-                )
+                _ts = latest.get("ts", "")
+                if len(_ts) >= 19:
+                    ts_short = _ts[11:19]
+                elif len(_ts) >= 16:
+                    ts_short = _ts[11:16]
+                else:
+                    ts_short = _ts
                 self._update_status_summary(
                     "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}"
                 )
@@ -698,8 +725,14 @@ class ExportJobEditor(QWidget):
         self._emit_changed()
 
     def _update_placeholder(self) -> None:
+        placeholders = {
+            0: "ЧЧ:ММ",
+            1: "N часов",
+            2: "N минут",
+            3: "N секунд",
+        }
         self._sched_value_edit.setPlaceholderText(
-            "N часов" if self._mode_combo.currentIndex() == 1 else "ЧЧ:ММ"
+            placeholders.get(self._mode_combo.currentIndex(), "")
         )
 
     def _apply_schedule(self) -> None:
@@ -707,16 +740,18 @@ class ExportJobEditor(QWidget):
         self._scheduler.stop()
         if not self._sched_check.isChecked():
             return
-        mode = "hourly" if self._mode_combo.currentIndex() == 1 else "daily"
+        mode = _MODE_BY_INDEX[self._mode_combo.currentIndex()]
         value = self._sched_value_edit.text().strip()
         if not value:
             return
         if mode == "daily":
             if not re.fullmatch(r"\d{1,2}:\d{2}", value):
                 return
-        else:
+        elif mode in ("hourly", "minutely", "secondly"):
             if not value.isdigit() or int(value) < 1:
                 return
+        else:
+            return  # unknown mode
         self._scheduler.configure(mode, value)  # type: ignore[arg-type]
         self._scheduler.start()
         _log.debug(
@@ -840,7 +875,7 @@ class ExportJobEditor(QWidget):
         if result.success:
             self._consecutive_failures = 0
             ts_clock = result.timestamp.strftime("%H:%M:%S")
-            ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M")
+            ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M:%S")
             self._update_status_summary(
                 "ok", f"✓ {result.rows_synced} строк · {ts_clock}"
             )
@@ -860,7 +895,7 @@ class ExportJobEditor(QWidget):
         self._run_btn.setEnabled(True)
         self._progress_lbl.setText("")
         self._update_status_summary("error", f"✗ {msg[:70]}")
-        ts_full = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ts_full = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._add_history_entry(ok=False, err=msg, ts=ts_full)
         self._consecutive_failures += 1
         if self._consecutive_failures >= 3:
