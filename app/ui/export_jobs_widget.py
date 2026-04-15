@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
+# third-party
 import sqlglot
 from sqlglot.errors import ParseError, TokenError
 from PySide6.QtCore import QTimer, Qt, Signal, Slot
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -49,7 +51,7 @@ from app.ui.sql_editor import SqlEditor
 from app.ui.test_run_dialog import TestRunDialog
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
-from app.ui.widgets import hsep
+from app.ui.widgets import HeaderLabel, hsep
 from app.workers.export_worker import ExportWorker
 
 _log = get_logger(__name__)
@@ -277,7 +279,6 @@ class ExportJobTile(QFrame):
     def _format_short_ts(ts: str) -> str:
         if not ts or len(ts) < 16:
             return ts
-        from datetime import datetime, timedelta
         try:
             dt = datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
         except ValueError:
@@ -294,7 +295,6 @@ class ExportJobTile(QFrame):
         self.run_requested.emit(self._job_id)
 
     def _show_menu(self) -> None:
-        from PySide6.QtWidgets import QMenu
         menu = QMenu(self)
         open_act = menu.addAction("Открыть")
         del_act = menu.addAction("Удалить")
@@ -378,13 +378,23 @@ class ExportJobEditor(QWidget):
         root.addSpacing(8)
 
     def _build_ui(self) -> None:
-        # Keep "exportCard" objectName so theme.qss QWidget#exportCard rules still apply
+        """Compose the editor UI from sub-section builders."""
         self.setObjectName("exportCard")
         root = QVBoxLayout(self)
         root.setContentsMargins(28, 24, 28, 24)
         root.setSpacing(14)
 
-        # ── Header: title + status summary + action buttons ───────────────
+        self._build_header(root)
+        self._section_break(root)
+        self._build_sql_section(root)
+        self._section_break(root)
+        self._build_webhook_section(root)
+        self._section_break(root)
+        self._build_schedule_section(root)
+        self._build_history_section(root)
+
+    def _build_header(self, root: QVBoxLayout) -> None:
+        """Header row: title + status summary + Тест/Запустить buttons."""
         hdr = QHBoxLayout()
         hdr.setSpacing(10)
 
@@ -453,16 +463,10 @@ class ExportJobEditor(QWidget):
 
         hdr.addLayout(btn_row)
         root.addLayout(hdr)
-        self._section_break(root)
 
-        # ── SQL запрос ────────────────────────────────────────────────────
-        sql_lbl = QLabel("SQL запрос")
-        sql_lbl.setStyleSheet(
-            f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_base}pt; "
-            f"font-weight: {Theme.font_weight_semi};"
-        )
-        root.addWidget(sql_lbl)
+    def _build_sql_section(self, root: QVBoxLayout) -> None:
+        """SQL editor + syntax indicator."""
+        root.addWidget(HeaderLabel("SQL запрос"))
 
         self._query_edit = SqlEditor()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
@@ -493,32 +497,18 @@ class ExportJobEditor(QWidget):
 
         root.addLayout(syntax_row)
 
-        self._section_break(root)
-
-        # ── Webhook URL ────────────────────────────────────────────────────
-        wh_lbl = QLabel("Webhook URL")
-        wh_lbl.setStyleSheet(
-            f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_base}pt; "
-            f"font-weight: {Theme.font_weight_semi};"
-        )
-        root.addWidget(wh_lbl)
+    def _build_webhook_section(self, root: QVBoxLayout) -> None:
+        """Webhook URL label + input."""
+        root.addWidget(HeaderLabel("Webhook URL"))
 
         self._webhook_edit = QLineEdit()
         self._webhook_edit.setPlaceholderText("https://… (необязательно)")
         self._webhook_edit.editingFinished.connect(self._emit_changed)
         root.addWidget(self._webhook_edit)
 
-        self._section_break(root)
-
-        # ── Расписание ─────────────────────────────────────────────────────
-        sched_lbl = QLabel("Расписание")
-        sched_lbl.setStyleSheet(
-            f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_base}pt; "
-            f"font-weight: {Theme.font_weight_semi};"
-        )
-        root.addWidget(sched_lbl)
+    def _build_schedule_section(self, root: QVBoxLayout) -> None:
+        """Schedule label + auto checkbox + indented mode/value controls."""
+        root.addWidget(HeaderLabel("Расписание"))
 
         self._sched_check = QCheckBox("Запускать автоматически")
         self._sched_check.setToolTip("Включить автоматическую выгрузку по расписанию")
@@ -554,7 +544,8 @@ class ExportJobEditor(QWidget):
 
         root.addLayout(sched_controls)
 
-        # ── History section (hidden until first entry) ────────────────────
+    def _build_history_section(self, root: QVBoxLayout) -> None:
+        """Hidden-by-default history group: separator + header row + scroll."""
         self._hist_sep = hsep()
         self._hist_sep.setVisible(False)
         root.addSpacing(4)
@@ -734,6 +725,13 @@ class ExportJobEditor(QWidget):
     def stop_scheduler(self) -> None:
         self._scheduler.stop()
 
+    def stop_timers(self) -> None:
+        """Stop the debounce timers — call before deleteLater()."""
+        if hasattr(self, "_query_timer") and self._query_timer is not None:
+            self._query_timer.stop()
+        if hasattr(self, "_syntax_timer") and self._syntax_timer is not None:
+            self._syntax_timer.stop()
+
     # ------------------------------------------------------------------ SQL validation
 
     def _on_query_changed(self) -> None:
@@ -768,11 +766,10 @@ class ExportJobEditor(QWidget):
     def _open_sql_in_window(self) -> None:
         """Open the SQL editor in a large standalone dialog."""
         from app.ui.sql_editor import SqlEditorDialog
-        import sqlglot as _sqlglot
 
         def _format(sql: str) -> str:
             try:
-                statements = _sqlglot.transpile(sql, read="tsql", write="tsql", pretty=True)
+                statements = sqlglot.transpile(sql, read="tsql", write="tsql", pretty=True)
                 if statements:
                     return ";\n\n".join(statements).rstrip(";\n") + ";"
             except Exception:
@@ -1282,6 +1279,7 @@ class ExportJobsWidget(QWidget):
         # Stop scheduler, remove editor + scroll page from internal stack
         if editor is not None:
             editor.stop_scheduler()
+            editor.stop_timers()         # stop debounce timers before deleteLater()
             scroll = self._editor_scrolls.pop(job_id, None)
             if scroll is not None:
                 self._editor_stack.removeWidget(scroll)
@@ -1312,3 +1310,11 @@ class ExportJobsWidget(QWidget):
         """Stop all per-job schedulers — call on app shutdown."""
         for editor in self._editors.values():
             editor.stop_scheduler()
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        """Safety net: stop schedulers + timers if the widget is closed
+        independently of the app's normal aboutToQuit cleanup hook."""
+        self.stop_all_schedulers()
+        for editor in self._editors.values():
+            editor.stop_timers()
+        super().closeEvent(event)
