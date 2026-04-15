@@ -40,6 +40,9 @@ class HistoryRow(QWidget):
         entry: ExportHistoryEntry,
         index: int,
         parent: QWidget | None = None,
+        *,
+        job_name: str | None = None,
+        show_delete: bool = True,
     ) -> None:
         super().__init__(parent)
         self._index = index
@@ -85,6 +88,19 @@ class HistoryRow(QWidget):
         ts_lbl.setFixedWidth(58)
         layout.addWidget(ts_lbl)
 
+        # ── Job name (only when shown in aggregated view) ─────────────
+        if job_name is not None:
+            name_lbl = QLabel(job_name or "—")
+            name_lbl.setStyleSheet(
+                f"color: {Theme.gray_700}; "
+                f"font-size: {Theme.font_size_xs}pt; "
+                f"font-weight: {Theme.font_weight_medium}; "
+                f"background: transparent;"
+            )
+            name_lbl.setMinimumWidth(80)
+            name_lbl.setMaximumWidth(180)
+            layout.addWidget(name_lbl)
+
         # ── Status text ──────────────────────────────────────────────
         if entry.get("ok"):
             rows = entry.get("rows", 0)
@@ -108,22 +124,23 @@ class HistoryRow(QWidget):
         layout.addWidget(st_lbl, stretch=1)
 
         # ── Delete (×) button ────────────────────────────────────────
-        del_btn = QPushButton()
-        del_btn.setIcon(lucide("x", color=Theme.gray_400, size=10))
-        del_btn.setFixedSize(18, 18)
-        del_btn.setFlat(True)
-        del_btn.setStyleSheet(
-            "QPushButton {"
-            "  border: none; background: transparent; padding: 0;"
-            "}"
-            f"QPushButton:hover {{"
-            f"  background-color: {Theme.error_bg};"
-            f"  border-radius: 9px;"
-            f"}}"
-        )
-        del_btn.setToolTip("Удалить запись")
-        del_btn.clicked.connect(lambda: self.delete_requested.emit(self._index))
-        layout.addWidget(del_btn)
+        if show_delete:
+            del_btn = QPushButton()
+            del_btn.setIcon(lucide("x", color=Theme.gray_400, size=10))
+            del_btn.setFixedSize(18, 18)
+            del_btn.setFlat(True)
+            del_btn.setStyleSheet(
+                "QPushButton {"
+                "  border: none; background: transparent; padding: 0;"
+                "}"
+                f"QPushButton:hover {{"
+                f"  background-color: {Theme.error_bg};"
+                f"  border-radius: 9px;"
+                f"}}"
+            )
+            del_btn.setToolTip("Удалить запись")
+            del_btn.clicked.connect(lambda: self.delete_requested.emit(self._index))
+            layout.addWidget(del_btn)
 
     @staticmethod
     def _format_ts(ts: str) -> str:

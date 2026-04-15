@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -79,6 +80,73 @@ class DashboardWidget(QWidget):
         root.addLayout(self._build_card_row())
         root.addWidget(self._build_update_banner())
         root.addWidget(self._build_log())
+        root.addWidget(self._build_activity_section(), stretch=1)
+
+        # Populate activity rows from existing jobs
+        self.refresh_activity()
+
+    def _build_activity_section(self) -> QFrame:
+        # ── Activity / run history ─────────────────────────────────────
+        activity_box = QFrame()
+        activity_box.setObjectName("activityCard")
+        activity_box.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        activity_layout = QVBoxLayout(activity_box)
+        activity_layout.setContentsMargins(12, 10, 12, 10)
+        activity_layout.setSpacing(6)
+
+        # Header row: title + count
+        activity_hdr = QHBoxLayout()
+        self._activity_title = QLabel("История запусков")
+        self._activity_title.setObjectName("sectionHeader")
+        self._activity_title.setStyleSheet(
+            f"color: {Theme.gray_600}; "
+            f"font-size: {Theme.font_size_xs}pt; "
+            f"font-weight: {Theme.font_weight_semi}; "
+            f"text-transform: uppercase; "
+            f"letter-spacing: 0.3px;"
+        )
+        activity_hdr.addWidget(self._activity_title)
+        activity_hdr.addStretch()
+        self._activity_count = QLabel("0")
+        self._activity_count.setStyleSheet(
+            f"color: {Theme.gray_500}; "
+            f"font-size: {Theme.font_size_xs}pt;"
+        )
+        activity_hdr.addWidget(self._activity_count)
+        activity_layout.addLayout(activity_hdr)
+
+        # Scrollable list of history rows
+        self._activity_container = QWidget()
+        self._activity_container.setStyleSheet("background: transparent;")
+        self._activity_layout = QVBoxLayout(self._activity_container)
+        self._activity_layout.setContentsMargins(0, 4, 0, 0)
+        self._activity_layout.setSpacing(2)
+
+        self._activity_scroll = QScrollArea()
+        self._activity_scroll.setWidget(self._activity_container)
+        self._activity_scroll.setWidgetResizable(True)
+        self._activity_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._activity_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._activity_scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+        )
+        activity_layout.addWidget(self._activity_scroll)
+
+        # Empty state placeholder (replaced in refresh_activity)
+        self._activity_empty = QLabel(
+            "Нет запусков. Запустите выгрузку на вкладке «Выгрузки»."
+        )
+        self._activity_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._activity_empty.setStyleSheet(
+            f"color: {Theme.gray_400}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"padding: 24px 0;"
+        )
+        self._activity_layout.addWidget(self._activity_empty)
+
+        return activity_box
 
     def _build_card_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
@@ -219,6 +287,53 @@ class DashboardWidget(QWidget):
         self._update_url = url
         self._update_label.setText(f"Доступна версия {version}  ·  ")
         self._update_banner.setVisible(True)
+
+    def refresh_activity(self) -> None:
+        """Re-aggregate history from all export jobs and rebuild the list."""
+        cfg = self._config.load()
+        jobs: list = cfg.get("export_jobs") or []  # type: ignore[assignment]
+
+        # Flatten: list of (entry, job_name) tuples
+        all_entries: list[tuple[dict, str]] = []
+        for job in jobs:
+            job_name = job.get("name", "") or "(без названия)"
+            for entry in (job.get("history") or []):
+                all_entries.append((entry, job_name))
+
+        # Sort by ts desc (string sort works because ts format is YYYY-MM-DD HH:MM)
+        all_entries.sort(key=lambda x: x[0].get("ts", ""), reverse=True)
+
+        # Cap to most recent 100
+        all_entries = all_entries[:100]
+
+        # Clear existing rows
+        while self._activity_layout.count():
+            item = self._activity_layout.takeAt(0)
+            if item and item.widget():
+                item.widget().deleteLater()
+
+        # Populate
+        if not all_entries:
+            self._activity_empty = QLabel(
+                "Нет запусков. Запустите выгрузку на вкладке «Выгрузки»."
+            )
+            self._activity_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._activity_empty.setStyleSheet(
+                f"color: {Theme.gray_400}; "
+                f"font-size: {Theme.font_size_sm}pt; "
+                f"padding: 24px 0;"
+            )
+            self._activity_layout.addWidget(self._activity_empty)
+        else:
+            from app.ui.history_row import HistoryRow
+            for i, (entry, job_name) in enumerate(all_entries):
+                row = HistoryRow(
+                    entry, i, self, job_name=job_name, show_delete=False
+                )
+                self._activity_layout.addWidget(row)
+            self._activity_layout.addStretch()
+
+        self._activity_count.setText(str(len(all_entries)))
 
     # ------------------------------------------------------------------
     # Private slots
