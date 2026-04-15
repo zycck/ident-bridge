@@ -183,7 +183,6 @@ class SettingsWidget(QWidget):
 
         scan_btn = QPushButton("  Сканировать")
         scan_btn.setIcon(lucide('search', color=Theme.gray_700, size=14))
-        scan_btn.setFixedWidth(110)
         scan_btn.clicked.connect(self._scan_instances)
 
         inst_row = QHBoxLayout()

@@ -1,12 +1,9 @@
 # -*- coding: utf-8 -*-
-from datetime import datetime
-
 from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -79,7 +76,6 @@ class DashboardWidget(QWidget):
 
         root.addLayout(self._build_card_row())
         root.addWidget(self._build_update_banner())
-        root.addWidget(self._build_log())
         root.addWidget(self._build_activity_section(), stretch=1)
 
         # Populate activity rows from existing jobs
@@ -101,9 +97,7 @@ class DashboardWidget(QWidget):
         self._activity_title.setStyleSheet(
             f"color: {Theme.gray_600}; "
             f"font-size: {Theme.font_size_xs}pt; "
-            f"font-weight: {Theme.font_weight_semi}; "
-            f"text-transform: uppercase; "
-            f"letter-spacing: 0.3px;"
+            f"font-weight: {Theme.font_weight_semi};"
         )
         activity_hdr.addWidget(self._activity_title)
         activity_hdr.addStretch()
@@ -238,13 +232,6 @@ class DashboardWidget(QWidget):
 
         return self._update_banner
 
-    def _build_log(self) -> QPlainTextEdit:
-        self._log = QPlainTextEdit()
-        self._log.setReadOnly(True)
-        self._log.document().setMaximumBlockCount(200)
-        self._log.setMinimumHeight(120)
-        return self._log
-
     # ------------------------------------------------------------------
     # Timer
     # ------------------------------------------------------------------
@@ -271,13 +258,6 @@ class DashboardWidget(QWidget):
         self._status_dot.setStyleSheet(f"color: {color}; font-size: 20px;")
         self._status_text.setText(label)
         self._status_text.setStyleSheet(f"color: {color}; font-size: 9.5pt;")
-
-    def append_log(self, msg: str) -> None:
-        ts = datetime.now().strftime("%H:%M:%S")
-        self._log.appendPlainText(f"[{ts}] {msg}")
-        self._log.verticalScrollBar().setValue(
-            self._log.verticalScrollBar().maximum()
-        )
 
     def update_last_sync(self, result: SyncResult) -> None:
         ts = result.timestamp.strftime("%H:%M  %d.%m")

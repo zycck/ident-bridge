@@ -205,10 +205,8 @@ class ExportJobCard(QWidget):
         sql_lbl = QLabel("SQL запрос")
         sql_lbl.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"font-weight: {Theme.font_weight_semi}; "
-            f"text-transform: uppercase; "
-            f"letter-spacing: 0.3px;"
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-weight: {Theme.font_weight_semi};"
         )
         root.addWidget(sql_lbl)
 
@@ -248,10 +246,8 @@ class ExportJobCard(QWidget):
         wh_lbl = QLabel("Webhook URL")
         wh_lbl.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"font-weight: {Theme.font_weight_semi}; "
-            f"text-transform: uppercase; "
-            f"letter-spacing: 0.3px;"
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-weight: {Theme.font_weight_semi};"
         )
         root.addWidget(wh_lbl)
 
@@ -306,10 +302,8 @@ class ExportJobCard(QWidget):
         self._history_hdr = QLabel("История")
         self._history_hdr.setStyleSheet(
             f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"font-weight: {Theme.font_weight_semi}; "
-            f"text-transform: uppercase; "
-            f"letter-spacing: 0.3px;"
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"font-weight: {Theme.font_weight_semi};"
         )
         self._history_hdr.setVisible(False)
         root.addWidget(self._history_hdr)

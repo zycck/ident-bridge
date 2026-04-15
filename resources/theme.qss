@@ -37,7 +37,7 @@ QPushButton#navBtn {
 }
 
 QPushButton#navBtn:hover {
-    background-color: rgba(166, 202, 21, 0.10);
+    background-color: rgba(166, 202, 21, 0.08);
     color: ${primary_700};
     border: none;
 }
@@ -49,15 +49,11 @@ QPushButton#navBtn:pressed {
 }
 
 QPushButton#navBtnActive {
-    background-color: rgba(166, 202, 21, 0.18);
+    background-color: rgba(166, 202, 21, 0.16);
     color: ${primary_800};
     border: none;
-    border-left: 3px solid ${primary_500};
-    border-radius: 0px;
-    border-top-right-radius: ${radius}px;
-    border-bottom-right-radius: ${radius}px;
+    border-radius: ${radius}px;
     padding: 7px 10px;
-    padding-left: 8px;
     text-align: left;
     font-size: ${font_size_base}pt;
     font-weight: ${font_weight_semi};
