@@ -45,6 +45,7 @@ from app.core.constants import (
 from app.core.scheduler import SyncScheduler
 from app.ui.history_row import HistoryRow
 from app.ui.lucide_icons import lucide
+from app.ui.sql_editor import SqlEditor
 from app.ui.test_run_dialog import TestRunDialog
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
@@ -463,14 +464,21 @@ class ExportJobEditor(QWidget):
         )
         root.addWidget(sql_lbl)
 
-        self._query_edit = QPlainTextEdit()
+        self._query_edit = SqlEditor()
         self._query_edit.setPlaceholderText("SELECT … FROM …")
-        self._query_edit.setMinimumHeight(180)
-        self._query_edit.setMaximumHeight(360)
+        self._query_edit.setMinimumHeight(240)
+        # NO maximumHeight — let it expand to fill available space
+        self._query_edit.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
         self._query_edit.textChanged.connect(self._on_query_changed)
-        root.addWidget(self._query_edit)
+        root.addWidget(self._query_edit, stretch=1)   # stretch=1 so it takes available space
 
-        # Syntax indicator only — Тест button is in the header
+        # Syntax indicator row with Format button
+        syntax_row = QHBoxLayout()
+        syntax_row.setSpacing(8)
+
         self._syntax_lbl = QLabel("")
         self._syntax_lbl.setObjectName("syntaxStatus")
         self._syntax_lbl.setStyleSheet(
@@ -479,7 +487,16 @@ class ExportJobEditor(QWidget):
             f"background: transparent; "
             f"padding-top: 2px;"
         )
-        root.addWidget(self._syntax_lbl)
+        syntax_row.addWidget(self._syntax_lbl, stretch=1)
+
+        format_btn = QPushButton("  Форматировать")
+        format_btn.setIcon(lucide("align-left", color=Theme.gray_700, size=12))
+        format_btn.setFixedHeight(28)
+        format_btn.setToolTip("Pretty-print SQL via sqlglot")
+        format_btn.clicked.connect(self._format_sql)
+        syntax_row.addWidget(format_btn)
+
+        root.addLayout(syntax_row)
 
         self._section_break(root)
 
@@ -751,6 +768,28 @@ class ExportJobEditor(QWidget):
             short = msg if len(msg) <= 36 else msg[:33] + "…"
             self._syntax_lbl.setText(f"✗ {short}")
             self._syntax_lbl.setToolTip(msg)
+
+    @Slot()
+    def _format_sql(self) -> None:
+        """Pretty-print the current SQL via sqlglot."""
+        sql = self._query_edit.toPlainText().strip()
+        if not sql:
+            return
+        try:
+            import sqlglot
+            statements = sqlglot.transpile(
+                sql,
+                read="tsql",
+                write="tsql",
+                pretty=True,
+            )
+            if statements:
+                formatted = ";\n\n".join(statements).rstrip(";\n") + ";"
+                # Preserve cursor position approximately — go to start
+                self._query_edit.setPlainText(formatted)
+        except Exception as exc:
+            # Bad SQL — leave it alone, the user already sees the syntax indicator
+            _log.debug("Format failed: %s", exc)
 
     # ------------------------------------------------------------------ Export
 
