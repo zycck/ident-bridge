@@ -199,26 +199,34 @@ QComboBox::drop-down {
     subcontrol-position: top right;
 }
 
+/* === ComboBox dropdown popup === */
 QComboBox QAbstractItemView {
     background-color: ${surface};
     color: ${gray_900};
-    border: 1px solid ${border};
+    border: 1px solid ${border_strong};
     border-radius: ${radius}px;
+    padding: 4px;
+    outline: 0;
     selection-background-color: ${primary_100};
     selection-color: ${primary_900};
-    outline: none;
-    padding: 3px;
 }
 
 QComboBox QAbstractItemView::item {
-    min-height: 24px;
-    padding: 3px 8px;
+    background-color: ${surface};
+    color: ${gray_900};
+    padding: 6px 10px;
     border-radius: ${radius_sm}px;
-    margin: 1px 2px;
+    min-height: 22px;
 }
 
 QComboBox QAbstractItemView::item:hover {
     background-color: ${primary_50};
+    color: ${primary_900};
+}
+
+QComboBox QAbstractItemView::item:selected {
+    background-color: ${primary_100};
+    color: ${primary_900};
 }
 
 /* ── Buttons (default outline) ────────────────────────────────────────────── */
