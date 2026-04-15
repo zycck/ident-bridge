@@ -4,6 +4,8 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import Qt, Slot
+
+from app.core.constants import DEBUG_LOG_BLOCK_LIMIT
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -71,8 +73,6 @@ def _format_line(text: str) -> str:
 class DebugWindow(QDialog):
     """Floating window that mirrors all Python logging output in real-time."""
 
-    _MAX_BLOCKS = 3000
-
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Debug — iDentBridge")
@@ -91,7 +91,7 @@ class DebugWindow(QDialog):
 
         self._log = QPlainTextEdit()
         self._log.setReadOnly(True)
-        self._log.setMaximumBlockCount(self._MAX_BLOCKS)
+        self._log.setMaximumBlockCount(DEBUG_LOG_BLOCK_LIMIT)
         self._log.setStyleSheet(_STYLE_LOG)
         font = QFont("Cascadia Code", 9)
         font.setStyleHint(QFont.StyleHint.Monospace)

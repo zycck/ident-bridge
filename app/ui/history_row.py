@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from app.config import ExportHistoryEntry, TriggerType
@@ -95,7 +95,6 @@ class HistoryRow(QWidget):
         # using (Manrope at 8.5pt is wider than Inter/Segoe). Measure with
         # QFontMetrics on the explicit font, not on the label's pre-show
         # font which may still be the Qt default.
-        from PySide6.QtGui import QFontMetrics
         fm = QFontMetrics(small_font)
         ts_lbl.setFixedWidth(fm.horizontalAdvance("Сегодня 00:00") + 12)
         layout.addWidget(ts_lbl)

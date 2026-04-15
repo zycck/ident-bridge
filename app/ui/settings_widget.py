@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from app.config import AppConfig, ConfigManager, SqlInstance
 from app.core import startup as StartupManager
 from app.core.app_logger import get_logger
-from app.core.constants import SETTINGS_SAVE_DEBOUNCE_MS
+
 from app.core.instance_scanner import list_databases, scan_all
 from app.core.sql_client import SqlClient
 from app.core.updater import GITHUB_REPO

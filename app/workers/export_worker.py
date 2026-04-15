@@ -9,7 +9,9 @@ Pipeline steps (emitted via progress signal):
 """
 from __future__ import annotations
 
+import json
 import logging
+import urllib.request
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -54,9 +56,7 @@ class ExportWorker(QObject):
             webhook_url = (self._job.get("webhook_url") or "").strip()
             if webhook_url:
                 try:
-                    import json as _json
-                    import urllib.request
-                    payload = _json.dumps({
+                    payload = json.dumps({
                         "job":     job_name,
                         "rows":    result.count,
                         "columns": result.columns,

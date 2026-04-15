@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QVBoxLayout,
@@ -14,6 +15,7 @@ from app.config import ConfigManager, SyncResult
 from app.core.app_logger import get_logger
 from app.core.constants import PING_INTERVAL_MS
 from app.core.sql_client import SqlClient
+from app.ui.history_row import HistoryRow
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
@@ -320,7 +322,6 @@ class DashboardWidget(QWidget):
             )
             self._activity_layout.addWidget(self._activity_empty)
         else:
-            from app.ui.history_row import HistoryRow
             for i, (entry, job_name) in enumerate(all_entries):
                 row = HistoryRow(
                     entry, i, self, job_name=job_name, show_delete=False
@@ -360,7 +361,6 @@ class DashboardWidget(QWidget):
         total = sum(len(job.get("history") or []) for job in jobs)
         if total == 0:
             return
-        from PySide6.QtWidgets import QMessageBox
         reply = QMessageBox.question(
             self,
             "Очистить историю",

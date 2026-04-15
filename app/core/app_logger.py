@@ -6,9 +6,10 @@ import logging
 
 from PySide6.QtCore import QObject, Signal
 
+from app.core.constants import LOG_RING_BUFFER
+
 _FMT  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DFMT = "%H:%M:%S"
-_BUFFER_SIZE = 500
 
 
 class _Bridge(QObject):
@@ -22,7 +23,7 @@ class QtLogHandler(logging.Handler):
     def __init__(self) -> None:
         super().__init__()
         self._bridge = _Bridge()
-        self._buffer: collections.deque[str] = collections.deque(maxlen=_BUFFER_SIZE)
+        self._buffer: collections.deque[str] = collections.deque(maxlen=LOG_RING_BUFFER)
         self.setFormatter(logging.Formatter(_FMT, _DFMT))
 
     @property

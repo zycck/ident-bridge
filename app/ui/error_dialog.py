@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.ui.theme import Theme
+
 # Note: INotifier integration removed in Phase 1 refactor — re-introduce via
 # DI (constructor injection) if a notification channel comes back.
 
@@ -44,7 +46,7 @@ class ErrorDialog(QDialog):
 
         # -- Header label --------------------------------------------------
         header = QLabel("Произошла непредвиденная ошибка:")
-        header.setStyleSheet("color: #EF4444; font-weight: bold; font-size: 13px;")
+        header.setStyleSheet(f"color: {Theme.error}; font-weight: bold; font-size: 13px;")
         root.addWidget(header)
 
         # -- Traceback viewer ----------------------------------------------

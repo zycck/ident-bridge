@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
@@ -108,7 +109,6 @@ class ConfigManager:
             with CONFIG_PATH.open("r", encoding="utf-8") as fh:
                 data: dict = json.load(fh)
         except json.JSONDecodeError:
-            import logging
             logging.getLogger(__name__).warning(
                 "config.json повреждён, используются последние известные настройки"
             )
@@ -126,7 +126,6 @@ class ConfigManager:
             except Exception:
                 # Real corruption: blob present but unreadable (e.g. DPAPI
                 # master key changed because the user moved profiles).
-                import logging
                 logging.getLogger(__name__).warning(
                     "Не удалось расшифровать поле '%s' — требуется повторный ввод", key
                 )
