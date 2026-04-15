@@ -496,6 +496,13 @@ class ExportJobEditor(QWidget):
         format_btn.clicked.connect(self._format_sql)
         syntax_row.addWidget(format_btn)
 
+        expand_btn = QPushButton("  Развернуть")
+        expand_btn.setIcon(lucide("maximize-2", color=Theme.gray_700, size=12))
+        expand_btn.setFixedHeight(28)
+        expand_btn.setToolTip("Открыть редактор SQL в полном окне")
+        expand_btn.clicked.connect(self._open_sql_in_window)
+        syntax_row.addWidget(expand_btn)
+
         root.addLayout(syntax_row)
 
         self._section_break(root)
@@ -790,6 +797,29 @@ class ExportJobEditor(QWidget):
         except Exception as exc:
             # Bad SQL — leave it alone, the user already sees the syntax indicator
             _log.debug("Format failed: %s", exc)
+
+    @Slot()
+    def _open_sql_in_window(self) -> None:
+        """Open the SQL editor in a large standalone dialog."""
+        from app.ui.sql_editor import SqlEditorDialog
+        import sqlglot as _sqlglot
+
+        def _format(sql: str) -> str:
+            try:
+                statements = _sqlglot.transpile(sql, read="tsql", write="tsql", pretty=True)
+                if statements:
+                    return ";\n\n".join(statements).rstrip(";\n") + ";"
+            except Exception:
+                pass
+            return sql
+
+        dialog = SqlEditorDialog(
+            self._query_edit.toPlainText(),
+            parent=self,
+            on_format=_format,
+        )
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            self._query_edit.setPlainText(dialog.text())
 
     # ------------------------------------------------------------------ Export
 
@@ -1219,8 +1249,7 @@ class ExportJobsWidget(QWidget):
         cl = QVBoxLayout(container)
         cl.setContentsMargins(24, 20, 24, 20)
         cl.setSpacing(0)
-        cl.addWidget(editor)
-        cl.addStretch()
+        cl.addWidget(editor, stretch=1)   # editor takes ALL extra space — no addStretch()
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)

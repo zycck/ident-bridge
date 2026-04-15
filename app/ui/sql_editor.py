@@ -18,7 +18,15 @@ from PySide6.QtGui import (
     QTextCharFormat,
     QTextDocument,
 )
-from PySide6.QtWidgets import QPlainTextEdit, QWidget
+from PySide6.QtWidgets import (
+    QDialog,
+    QHBoxLayout,
+    QPlainTextEdit,
+    QPushButton,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.ui.theme import Theme
 
@@ -205,3 +213,78 @@ class SqlEditor(QPlainTextEdit):
             event.accept()
             return
         super().keyPressEvent(event)
+
+
+class SqlEditorDialog(QDialog):
+    """
+    Standalone full-window SQL editor for users who want the most space
+    possible. Wraps a SqlEditor in a large dialog with Save/Cancel buttons.
+    The editor's text is pulled from the parent SqlEditor on open and
+    written back on accept.
+    """
+
+    def __init__(
+        self,
+        initial_text: str,
+        parent: QWidget | None = None,
+        *,
+        on_format: object = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("SQL запрос — iDentBridge")
+        self.resize(1100, 720)
+        self.setWindowFlag(Qt.WindowType.WindowMaximizeButtonHint, True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        self._editor = SqlEditor()
+        self._editor.setPlainText(initial_text)
+        self._editor.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Expanding,
+        )
+        layout.addWidget(self._editor, stretch=1)
+
+        # Button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+
+        if on_format is not None:
+            format_btn = QPushButton("Форматировать")
+            format_btn.setFixedHeight(32)
+            format_btn.clicked.connect(self._do_format)
+            btn_row.addWidget(format_btn)
+            self._on_format = on_format
+        else:
+            self._on_format = None
+
+        btn_row.addStretch()
+
+        cancel_btn = QPushButton("Отмена")
+        cancel_btn.setFixedHeight(32)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+
+        save_btn = QPushButton("Сохранить")
+        save_btn.setObjectName("primaryBtn")
+        save_btn.setFixedHeight(32)
+        save_btn.clicked.connect(self.accept)
+        btn_row.addWidget(save_btn)
+
+        layout.addLayout(btn_row)
+
+    def _do_format(self) -> None:
+        if self._on_format is None:
+            return
+        sql = self._editor.toPlainText()
+        try:
+            formatted = self._on_format(sql)
+            if formatted:
+                self._editor.setPlainText(formatted)
+        except Exception:
+            pass
+
+    def text(self) -> str:
+        return self._editor.toPlainText()
