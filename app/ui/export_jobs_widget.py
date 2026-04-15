@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""ExportJobsWidget — card-based export job manager."""
+"""ExportJobsWidget — list-detail export job manager (tiles + editor pages)."""
 from __future__ import annotations
 
 import re
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -109,14 +111,224 @@ def _format_sqlglot_error(exc: Exception) -> str:
 
 
 # ---------------------------------------------------------------------------
-# ExportJobCard
+# ExportJobTile
 # ---------------------------------------------------------------------------
 
-class ExportJobCard(QWidget):
-    """Single export-job card with its own scheduler and worker thread."""
+class ExportJobTile(QFrame):
+    """Compact tile representing one export job in the list view.
+
+    The whole tile surface is clickable: click → opens the detail editor
+    via open_requested signal. The [▶] run button triggers the export
+    immediately without opening the editor. The [···] menu offers
+    Открыть / Удалить.
+    """
+
+    open_requested   = Signal(str)   # job_id
+    run_requested    = Signal(str)   # job_id
+    delete_requested = Signal(str)   # job_id
+
+    TILE_W = 280
+    TILE_H = 130
+
+    def __init__(self, job: ExportJob, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("jobTile")
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedSize(self.TILE_W, self.TILE_H)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._job_id: str = job.get("id", "") or str(uuid.uuid4())
+        self._job: ExportJob = job
+        self._build_ui()
+
+    # ------------------------------------------------------------------
+    def _build_ui(self) -> None:
+        # Tile background + hover via inline stylesheet
+        self.setStyleSheet(
+            f"#jobTile {{"
+            f"  background: {Theme.surface};"
+            f"  border: 1px solid {Theme.border};"
+            f"  border-radius: {Theme.radius_md}px;"
+            f"}}"
+            f"#jobTile:hover {{"
+            f"  border-color: {Theme.primary_400};"
+            f"  background: {Theme.primary_50};"
+            f"}}"
+        )
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 12, 12, 12)
+        layout.setSpacing(6)
+
+        # ── Top row: name + run button ──────────────────────────────
+        top = QHBoxLayout()
+        top.setSpacing(6)
+
+        name = self._job.get("name") or "Без названия"
+        self._name_lbl = QLabel(name)
+        self._name_lbl.setStyleSheet(
+            f"color: {Theme.gray_900}; "
+            f"font-size: {Theme.font_size_md}pt; "
+            f"font-weight: {Theme.font_weight_semi}; "
+            f"background: transparent;"
+        )
+        # Truncate if too long
+        self._name_lbl.setMaximumWidth(self.TILE_W - 60)
+        top.addWidget(self._name_lbl, stretch=1)
+
+        self._run_btn = QPushButton()
+        self._run_btn.setIcon(lucide("play", color=Theme.gray_900, size=12))
+        self._run_btn.setObjectName("primaryBtn")
+        self._run_btn.setFixedSize(28, 28)
+        self._run_btn.setToolTip("Запустить сейчас")
+        self._run_btn.clicked.connect(self._on_run_clicked)
+        top.addWidget(self._run_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        layout.addLayout(top)
+
+        # ── Status line: last run summary ────────────────────────────
+        status_text, status_color = self._compute_status()
+        self._status_lbl = QLabel(status_text)
+        self._status_lbl.setStyleSheet(
+            f"color: {status_color}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"background: transparent;"
+        )
+        layout.addWidget(self._status_lbl)
+
+        layout.addStretch()
+
+        # ── Bottom row: schedule info + more menu ────────────────────
+        bottom = QHBoxLayout()
+        bottom.setSpacing(6)
+
+        sched_text = self._compute_schedule_text()
+        self._sched_lbl = QLabel(sched_text)
+        self._sched_lbl.setStyleSheet(
+            f"color: {Theme.gray_500}; "
+            f"font-size: {Theme.font_size_xs}pt; "
+            f"background: transparent;"
+        )
+        bottom.addWidget(self._sched_lbl, stretch=1)
+
+        self._more_btn = QPushButton()
+        self._more_btn.setIcon(lucide("ellipsis", color=Theme.gray_500, size=14))
+        self._more_btn.setFixedSize(24, 24)
+        self._more_btn.setStyleSheet(
+            "QPushButton {"
+            "  border: 1px solid transparent;"
+            "  background: transparent;"
+            "  border-radius: 5px;"
+            "}"
+            f"QPushButton:hover {{"
+            f"  background-color: {Theme.gray_100};"
+            f"  border-color: {Theme.border};"
+            f"}}"
+        )
+        self._more_btn.setToolTip("Действия")
+        self._more_btn.clicked.connect(self._show_menu)
+        bottom.addWidget(self._more_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
+
+        layout.addLayout(bottom)
+
+    # ------------------------------------------------------------------
+    def job_id(self) -> str:
+        return self._job_id
+
+    def update_from_job(self, job: ExportJob) -> None:
+        """Refresh the tile's labels from a (possibly updated) job dict."""
+        self._job = job
+        self._name_lbl.setText(job.get("name") or "Без названия")
+        status_text, status_color = self._compute_status()
+        self._status_lbl.setText(status_text)
+        self._status_lbl.setStyleSheet(
+            f"color: {status_color}; "
+            f"font-size: {Theme.font_size_sm}pt; "
+            f"background: transparent;"
+        )
+        self._sched_lbl.setText(self._compute_schedule_text())
+
+    def _compute_status(self) -> tuple[str, str]:
+        """Return (text, color) for the status line based on history[0]."""
+        history = self._job.get("history") or []
+        if not history:
+            return "Ещё не запускалось", Theme.gray_500
+        latest = history[0]
+        ts_short = self._format_short_ts(latest.get("ts", ""))
+        if latest.get("ok"):
+            return f"✓ {latest.get('rows', 0)} строк · {ts_short}", Theme.success
+        else:
+            err = latest.get("err", "Ошибка")
+            return f"✗ {err[:40]}", Theme.error
+
+    def _compute_schedule_text(self) -> str:
+        if not self._job.get("schedule_enabled"):
+            return "Ручной запуск"
+        mode = self._job.get("schedule_mode", "daily")
+        value = self._job.get("schedule_value", "")
+        if not value:
+            return "Расписание не настроено"
+        if mode == "daily":
+            return f"Ежедневно в {value}"
+        else:
+            return f"Каждые {value} часов"
+
+    @staticmethod
+    def _format_short_ts(ts: str) -> str:
+        if not ts or len(ts) < 16:
+            return ts
+        from datetime import datetime, timedelta
+        try:
+            dt = datetime.strptime(ts[:16], "%Y-%m-%d %H:%M")
+        except ValueError:
+            return ts
+        today = datetime.now().date()
+        if dt.date() == today:
+            return f"сегодня {dt.strftime('%H:%M')}"
+        if dt.date() == today - timedelta(days=1):
+            return f"вчера {dt.strftime('%H:%M')}"
+        return dt.strftime("%d.%m %H:%M")
+
+    # ------------------------------------------------------------------
+    def _on_run_clicked(self) -> None:
+        self.run_requested.emit(self._job_id)
+
+    def _show_menu(self) -> None:
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        open_act = menu.addAction("Открыть")
+        del_act = menu.addAction("Удалить")
+        chosen = menu.exec(self._more_btn.mapToGlobal(self._more_btn.rect().bottomLeft()))
+        if chosen is open_act:
+            self.open_requested.emit(self._job_id)
+        elif chosen is del_act:
+            self.delete_requested.emit(self._job_id)
+
+    # ------------------------------------------------------------------
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        # Open the editor when the tile background is clicked, but not
+        # when one of the inner buttons is clicked (Qt routes button
+        # presses to the button, not here, so this is mostly redundant).
+        if event.button() == Qt.MouseButton.LeftButton:
+            child = self.childAt(event.pos())
+            if not isinstance(child, QPushButton):
+                self.open_requested.emit(self._job_id)
+                return
+        super().mousePressEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# ExportJobEditor  (renamed from ExportJobCard)
+# ---------------------------------------------------------------------------
+
+class ExportJobEditor(QWidget):
+    """Single export-job editor with its own scheduler and worker thread.
+
+    Previously named ExportJobCard. Now used as a full-page editor inside
+    a QScrollArea. The objectName is kept as "exportCard" so the existing
+    QSS rule in theme.qss continues to apply without changes.
+    """
 
     changed          = Signal(object)  # ExportJob — emitted on any field edit
-    delete_requested = Signal(str)     # job id
     sync_completed   = Signal(object)  # SyncResult — emitted on successful run
     history_changed  = Signal()        # emitted whenever an entry is added or deleted
 
@@ -165,6 +377,7 @@ class ExportJobCard(QWidget):
         root.addSpacing(4)
 
     def _build_ui(self) -> None:
+        # Keep "exportCard" objectName so theme.qss QWidget#exportCard rules still apply
         self.setObjectName("exportCard")
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 14, 16, 14)
@@ -216,7 +429,7 @@ class ExportJobCard(QWidget):
 
         hdr.addLayout(title_col, stretch=1)
 
-        # Right column: action buttons grouped together
+        # Right column: action buttons (Test + Run only; delete moved to toolbar)
         btn_row = QHBoxLayout()
         btn_row.setSpacing(4)
 
@@ -236,24 +449,6 @@ class ExportJobCard(QWidget):
         self._run_btn.setToolTip("Запустить выгрузку вручную")
         self._run_btn.clicked.connect(self.start_export)
         btn_row.addWidget(self._run_btn)
-
-        del_btn = QPushButton()
-        del_btn.setIcon(lucide("trash-2", color=Theme.gray_500, size=14))
-        del_btn.setFixedSize(28, 28)
-        del_btn.setStyleSheet(
-            "QPushButton {"
-            "  border: 1px solid transparent;"
-            "  background: transparent;"
-            "  border-radius: 5px;"
-            "}"
-            f"QPushButton:hover {{"
-            f"  background-color: {Theme.error_bg};"
-            f"  border-color: {Theme.error};"
-            f"}}"
-        )
-        del_btn.setToolTip("Удалить выгрузку")
-        del_btn.clicked.connect(self._on_delete)
-        btn_row.addWidget(del_btn, alignment=Qt.AlignmentFlag.AlignVCenter)
 
         hdr.addLayout(btn_row)
         root.addLayout(hdr)
@@ -275,7 +470,7 @@ class ExportJobCard(QWidget):
         self._query_edit.textChanged.connect(self._on_query_changed)
         root.addWidget(self._query_edit)
 
-        # Syntax indicator only — Тест button moved to header
+        # Syntax indicator only — Тест button is in the header
         self._syntax_lbl = QLabel("")
         self._syntax_lbl.setObjectName("syntaxStatus")
         self._syntax_lbl.setStyleSheet(
@@ -472,7 +667,7 @@ class ExportJobCard(QWidget):
     # ------------------------------------------------------------------ Status summary
 
     def _update_status_summary(self, kind: str, text: str) -> None:
-        """Update the header status line beneath the card title.
+        """Update the header status line beneath the editor title.
         kind ∈ {'idle', 'ok', 'error', 'running'}
         """
         color_map = {
@@ -503,7 +698,7 @@ class ExportJobCard(QWidget):
         )
 
     def _apply_schedule(self) -> None:
-        """Start or stop this card's scheduler based on current UI settings."""
+        """Start or stop this editor's scheduler based on current UI settings."""
         self._scheduler.stop()
         if not self._sched_check.isChecked():
             return
@@ -654,7 +849,7 @@ class ExportJobCard(QWidget):
 
     @Slot()
     def _on_clear_history(self) -> None:
-        """Clear all history entries for this card after confirmation."""
+        """Clear all history entries for this editor after confirmation."""
         if not self._history:
             return
         reply = QMessageBox.question(
@@ -720,35 +915,23 @@ class ExportJobCard(QWidget):
     def _emit_changed(self) -> None:
         self.changed.emit(self.to_job())
 
-    def _on_delete(self) -> None:
-        name = self._name_edit.text().strip() or "без названия"
-        reply = QMessageBox.question(
-            self,
-            "Удалить выгрузку",
-            f"Удалить выгрузку «{name}»?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self.stop_scheduler()
-            self.delete_requested.emit(self._job_id)
-
 
 # ---------------------------------------------------------------------------
 # ExportJobsWidget
 # ---------------------------------------------------------------------------
 
 class ExportJobsWidget(QWidget):
-    """Container — card-based export job manager."""
+    """Container for export jobs: list of tiles + detail editor pages."""
 
-    sync_completed = Signal(object)  # SyncResult — bubbled up from any card
-    history_changed = Signal()       # bubbled from any card (add/delete history)
+    sync_completed  = Signal(object)  # SyncResult — bubbled up from any editor
+    history_changed = Signal()         # bubbled up from any editor
 
-    def __init__(
-        self, config: ConfigManager, parent: QWidget | None = None
-    ) -> None:
+    def __init__(self, config: ConfigManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
-        self._cards: list[ExportJobCard] = []
+        self._tiles: list[ExportJobTile] = []
+        self._editors: dict[str, ExportJobEditor] = {}
+        self._current_editor_id: str | None = None
         self._build_ui()
         self._load_jobs()
 
@@ -759,11 +942,26 @@ class ExportJobsWidget(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Top toolbar
+        self._stack = QStackedWidget()
+        root.addWidget(self._stack)
+
+        self._tiles_page = self._build_tiles_page()
+        self._editor_page = self._build_editor_page()
+        self._stack.addWidget(self._tiles_page)   # index 0
+        self._stack.addWidget(self._editor_page)  # index 1
+
+    def _build_tiles_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Toolbar
         toolbar = QWidget()
         toolbar.setObjectName("exportToolbar")
         tb = QHBoxLayout(toolbar)
         tb.setContentsMargins(16, 12, 16, 12)
+        tb.setSpacing(8)
 
         title = QLabel("Выгрузки")
         title.setStyleSheet(
@@ -774,32 +972,36 @@ class ExportJobsWidget(QWidget):
         tb.addWidget(title)
         tb.addStretch()
 
-        add_btn = QPushButton("  Добавить выгрузку")
+        add_btn = QPushButton("  Добавить")
         add_btn.setObjectName("primaryBtn")
-        add_btn.setIcon(lucide("plus", color=Theme.gray_900))
+        add_btn.setIcon(lucide("plus", color=Theme.gray_900, size=14))
+        add_btn.setFixedHeight(28)
         add_btn.clicked.connect(self._add_new_job)
         tb.addWidget(add_btn)
 
-        root.addWidget(toolbar)
+        layout.addWidget(toolbar)
+        layout.addWidget(hsep())
 
-        sep = hsep()
-        root.addWidget(sep)
-
-        # Scroll area for cards
+        # Scroll area
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
-        root.addWidget(scroll, stretch=1)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        layout.addWidget(scroll, stretch=1)
 
-        self._container = QWidget()
-        scroll.setWidget(self._container)
+        self._grid_container = QWidget()
+        self._grid_container.setStyleSheet("background: transparent;")
+        scroll.setWidget(self._grid_container)
 
-        self._cards_layout = QVBoxLayout(self._container)
-        self._cards_layout.setContentsMargins(16, 16, 16, 16)
-        self._cards_layout.setSpacing(12)
+        # Use QGridLayout; reflow handled in eventFilter
+        self._grid_layout = QGridLayout(self._grid_container)
+        self._grid_layout.setContentsMargins(16, 16, 16, 16)
+        self._grid_layout.setSpacing(12)
+        self._grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
 
+        # Empty state placed in row 0, col 0
         self._empty_lbl = QLabel(
-            "Нет настроенных выгрузок.\nНажмите «Добавить выгрузку» для начала."
+            "Нет настроенных выгрузок.\nНажмите «Добавить» чтобы создать первую."
         )
         self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_lbl.setStyleSheet(
@@ -807,10 +1009,107 @@ class ExportJobsWidget(QWidget):
             f"font-size: {Theme.font_size_md}pt; "
             f"padding: 48px 0;"
         )
-        self._cards_layout.addWidget(self._empty_lbl)
-        self._cards_layout.addStretch()
+        self._grid_layout.addWidget(self._empty_lbl, 0, 0)
 
-    # ------------------------------------------------------------------ Jobs
+        # Reflow on resize
+        scroll.viewport().installEventFilter(self)
+        self._grid_scroll = scroll
+
+        return page
+
+    def _build_editor_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # Editor toolbar with back button
+        toolbar = QWidget()
+        toolbar.setObjectName("exportToolbar")
+        tb = QHBoxLayout(toolbar)
+        tb.setContentsMargins(8, 8, 16, 8)
+        tb.setSpacing(8)
+
+        back_btn = QPushButton("  Назад к списку")
+        back_btn.setIcon(lucide("arrow-left", color=Theme.gray_700, size=14))
+        back_btn.setFixedHeight(28)
+        back_btn.setStyleSheet(
+            "QPushButton {"
+            f"  border: 1px solid transparent;"
+            f"  background: transparent;"
+            f"  color: {Theme.gray_700};"
+            f"  padding: 0 10px;"
+            f"  border-radius: 5px;"
+            "}"
+            f"QPushButton:hover {{"
+            f"  background-color: {Theme.gray_100};"
+            f"}}"
+        )
+        back_btn.clicked.connect(self._show_tiles)
+        tb.addWidget(back_btn)
+        tb.addStretch()
+
+        # Delete button on the right of the editor toolbar
+        del_btn = QPushButton("  Удалить выгрузку")
+        del_btn.setIcon(lucide("trash-2", color=Theme.error, size=14))
+        del_btn.setFixedHeight(28)
+        del_btn.setStyleSheet(
+            "QPushButton {"
+            f"  border: 1px solid transparent;"
+            f"  background: transparent;"
+            f"  color: {Theme.error};"
+            f"  padding: 0 10px;"
+            f"  border-radius: 5px;"
+            "}"
+            f"QPushButton:hover {{"
+            f"  background-color: {Theme.error_bg};"
+            f"  border-color: {Theme.error};"
+            f"}}"
+        )
+        del_btn.clicked.connect(self._delete_current_editor)
+        tb.addWidget(del_btn)
+
+        layout.addWidget(toolbar)
+        layout.addWidget(hsep())
+
+        # Scroll area for the editor content
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        layout.addWidget(scroll, stretch=1)
+
+        self._editor_container = QWidget()
+        self._editor_container.setStyleSheet("background: transparent;")
+        self._editor_layout = QVBoxLayout(self._editor_container)
+        self._editor_layout.setContentsMargins(16, 16, 16, 16)
+        scroll.setWidget(self._editor_container)
+
+        return page
+
+    # ------------------------------------------------------------------ Reflow
+
+    def eventFilter(self, obj, event):  # noqa: N802
+        if obj is self._grid_scroll.viewport() and event.type() == event.Type.Resize:
+            self._reflow_tiles()
+        return super().eventFilter(obj, event)
+
+    def _reflow_tiles(self) -> None:
+        """Re-position tiles in a grid based on container width."""
+        if not self._tiles:
+            return
+        viewport_w = self._grid_scroll.viewport().width()
+        # Minus container margins (16 left + 16 right)
+        avail = viewport_w - 32
+        cols = max(1, (avail + self._grid_layout.spacing()) // (ExportJobTile.TILE_W + self._grid_layout.spacing()))
+        # Remove all tiles from grid (leave empty label in place)
+        for tile in self._tiles:
+            self._grid_layout.removeWidget(tile)
+        # Re-add at proper grid positions
+        for idx, tile in enumerate(self._tiles):
+            r, c = divmod(idx, int(cols))
+            self._grid_layout.addWidget(tile, r, c)
+
+    # ------------------------------------------------------------------ Jobs CRUD
 
     def _load_jobs(self) -> None:
         cfg = self._config.load()
@@ -824,15 +1123,28 @@ class ExportJobsWidget(QWidget):
                 schedule_enabled=bool(raw.get("schedule_enabled", False)),
                 schedule_mode=raw.get("schedule_mode", "daily"),
                 schedule_value=raw.get("schedule_value", ""),
-                history=list(raw.get("history") or []),  # type: ignore[typeddict-unknown-key]
+                history=list(raw.get("history") or []),  # type: ignore[typeddict-item]
             )
-            self._add_card(job)
+            self._add_tile(job)
+            # Pre-create the editor so the scheduler runs even when not in
+            # the editor view — same as the old ExportJobCard which lived
+            # in the layout permanently.
+            self._editors[job["id"]] = self._create_editor(job)
         self._refresh_empty()
+        self._reflow_tiles()
 
     def _save_jobs(self) -> None:
         cfg = self._config.load()
-        cfg["export_jobs"] = [c.to_job() for c in self._cards]  # type: ignore[typeddict-unknown-key]
+        # Save the live state from each editor (which is the source of truth)
+        cfg["export_jobs"] = [ed.to_job() for ed in self._editors.values()]  # type: ignore[typeddict-unknown-key]
         self._config.save(cfg)
+        # Refresh the corresponding tile labels
+        for ed in self._editors.values():
+            job = ed.to_job()
+            for tile in self._tiles:
+                if tile.job_id() == job.get("id"):
+                    tile.update_from_job(job)
+                    break
 
     def _add_new_job(self) -> None:
         job = ExportJob(
@@ -845,38 +1157,125 @@ class ExportJobsWidget(QWidget):
             schedule_value="",
             history=[],  # type: ignore[typeddict-unknown-key]
         )
-        self._add_card(job)
+        self._add_tile(job)
+        self._editors[job["id"]] = self._create_editor(job)
         self._save_jobs()
         self._refresh_empty()
+        self._reflow_tiles()
+        # Open the editor immediately so the user can fill in the name/SQL
+        self._show_editor(job["id"])
 
-    def _add_card(self, job: ExportJob) -> None:
-        card = ExportJobCard(job, self._config, self)
-        card.changed.connect(lambda _j: self._save_jobs())
-        card.delete_requested.connect(self._remove_card)
-        card.sync_completed.connect(self.sync_completed)
-        card.history_changed.connect(self.history_changed)
-        self._cards.append(card)
-        # Insert before trailing stretch
-        self._cards_layout.insertWidget(self._cards_layout.count() - 1, card)
+    def _add_tile(self, job: ExportJob) -> None:
+        tile = ExportJobTile(job, self)
+        tile.open_requested.connect(self._show_editor)
+        tile.run_requested.connect(self._run_job)
+        tile.delete_requested.connect(self._on_tile_delete)
+        self._tiles.append(tile)
+        # Initial position; _reflow_tiles will fix placement
+        self._grid_layout.addWidget(tile, len(self._tiles) - 1, 0)
+
+    def _create_editor(self, job: ExportJob) -> ExportJobEditor:
+        editor = ExportJobEditor(job, self._config, self)
+        editor.changed.connect(lambda _j: self._save_jobs())
+        editor.history_changed.connect(self.history_changed)
+        editor.history_changed.connect(self._save_jobs)
+        editor.sync_completed.connect(self.sync_completed)
+        return editor
 
     @Slot(str)
-    def _remove_card(self, job_id: str) -> None:
-        for card in list(self._cards):
-            if card.job_id() == job_id:
-                self._cards.remove(card)
-                self._cards_layout.removeWidget(card)
-                card.deleteLater()
+    def _show_editor(self, job_id: str) -> None:
+        editor = self._editors.get(job_id)
+        if editor is None:
+            return
+        # Clear existing editor from the scroll container
+        while self._editor_layout.count():
+            item = self._editor_layout.takeAt(0)
+            w = item.widget() if item else None
+            if w is not None:
+                w.setParent(None)
+                w.setParent(self)
+                w.hide()
+        self._editor_layout.addWidget(editor)
+        editor.show()
+        self._editor_layout.addStretch()
+        self._current_editor_id = job_id
+        self._stack.setCurrentIndex(1)
+
+    @Slot()
+    def _show_tiles(self) -> None:
+        self._current_editor_id = None
+        # Detach the editor from the layout so it's not parented to the
+        # container while hidden (it stays in self._editors and continues
+        # to run its scheduler).
+        while self._editor_layout.count():
+            item = self._editor_layout.takeAt(0)
+            w = item.widget() if item else None
+            if w is not None:
+                w.setParent(None)
+                # Re-parent back to self so the editor stays alive
+                w.setParent(self)
+                w.hide()
+        self._stack.setCurrentIndex(0)
+        # Refresh tile labels to reflect any edits made in the editor
+        for ed in self._editors.values():
+            job = ed.to_job()
+            for tile in self._tiles:
+                if tile.job_id() == job.get("id"):
+                    tile.update_from_job(job)
+                    break
+
+    @Slot()
+    def _delete_current_editor(self) -> None:
+        if self._current_editor_id is None:
+            return
+        self._on_tile_delete(self._current_editor_id)
+
+    @Slot(str)
+    def _run_job(self, job_id: str) -> None:
+        editor = self._editors.get(job_id)
+        if editor is not None:
+            editor.start_export()
+
+    @Slot(str)
+    def _on_tile_delete(self, job_id: str) -> None:
+        editor = self._editors.get(job_id)
+        name = "без названия"
+        if editor is not None:
+            name = editor.to_job().get("name") or "без названия"
+        reply = QMessageBox.question(
+            self,
+            "Удалить выгрузку",
+            f"Удалить выгрузку «{name}»?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        # Stop scheduler, remove editor + tile
+        if editor is not None:
+            editor.stop_scheduler()
+            editor.deleteLater()
+            del self._editors[job_id]
+        for tile in list(self._tiles):
+            if tile.job_id() == job_id:
+                self._tiles.remove(tile)
+                self._grid_layout.removeWidget(tile)
+                tile.deleteLater()
                 break
+        # If the deleted job was the one currently shown in the editor,
+        # navigate back to the tiles list
+        if self._current_editor_id == job_id:
+            self._show_tiles()
         self._save_jobs()
         self._refresh_empty()
+        self._reflow_tiles()
         self.history_changed.emit()
 
     def _refresh_empty(self) -> None:
-        self._empty_lbl.setVisible(len(self._cards) == 0)
+        self._empty_lbl.setVisible(len(self._tiles) == 0)
 
     # ------------------------------------------------------------------ Public
 
     def stop_all_schedulers(self) -> None:
-        """Stop all per-card schedulers — call on app shutdown."""
-        for card in self._cards:
-            card.stop_scheduler()
+        """Stop all per-job schedulers — call on app shutdown."""
+        for editor in self._editors.values():
+            editor.stop_scheduler()
