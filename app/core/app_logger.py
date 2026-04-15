@@ -6,7 +6,7 @@ import logging
 
 from PySide6.QtCore import QObject, Signal
 
-_FMT  = "%(asctime)s [%(levelname)-7s] %(name)s: %(message)s"
+_FMT  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DFMT = "%H:%M:%S"
 _BUFFER_SIZE = 500
 

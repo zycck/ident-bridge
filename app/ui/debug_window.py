@@ -1,6 +1,8 @@
 """DebugWindow — floating log panel for development."""
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
@@ -18,14 +20,52 @@ from app.core.app_logger import get_handler
 
 _STYLE_LOG = (
     "QPlainTextEdit {"
-    "  background: #080A0E;"
-    "  color: #A1A1AA;"
+    "  background: #0B0D12;"
+    "  color: #D4D4D8;"
     "  border: 1px solid #1E1E24;"
     "  border-radius: 6px;"
-    "  font-family: Consolas, 'Courier New', monospace;"
+    "  font-family: Cascadia Code, Consolas, 'Courier New', monospace;"
     "  font-size: 9pt;"
     "}"
 )
+
+# Per-level colors for the dark debug viewer.
+_LEVEL_COLORS: dict[str, str] = {
+    "DEBUG":    "#71717A",   # zinc-500 — muted
+    "INFO":     "#22D3EE",   # cyan-400
+    "WARNING":  "#FBBF24",   # amber-400
+    "ERROR":    "#F87171",   # red-400
+    "CRITICAL": "#EF4444",   # red-500 + bold
+}
+
+# Parses lines produced by the formatter:
+#   "HH:MM:SS [LEVEL] logger.name: message"
+_LINE_RE = re.compile(r"^(\d{2}:\d{2}:\d{2}) \[(\w+)\] ([^:]+): (.*)$")
+
+
+def _esc(s: str) -> str:
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _format_line(text: str) -> str:
+    """Colorize a log line into HTML for the dark debug viewer."""
+    m = _LINE_RE.match(text)
+    if not m:
+        # Unknown format — render as-is in default text color.
+        return f'<span style="color:#D4D4D8">{_esc(text)}</span>'
+
+    ts, level, logger, msg = m.groups()
+    level_color = _LEVEL_COLORS.get(level, "#A1A1AA")
+    weight = "700" if level == "CRITICAL" else "600"
+
+    return (
+        f'<span style="color:#52525B">{_esc(ts)}</span> '
+        f'<span style="color:{level_color}; font-weight:{weight}">'
+        f'[{_esc(level)}]</span> '
+        f'<span style="color:#A78BFA">{_esc(logger)}</span>'
+        f'<span style="color:#52525B">:</span> '
+        f'<span style="color:#D4D4D8">{_esc(msg)}</span>'
+    )
 
 
 class DebugWindow(QDialog):
@@ -53,7 +93,7 @@ class DebugWindow(QDialog):
         self._log.setReadOnly(True)
         self._log.setMaximumBlockCount(self._MAX_BLOCKS)
         self._log.setStyleSheet(_STYLE_LOG)
-        font = QFont("Consolas", 9)
+        font = QFont("Cascadia Code", 9)
         font.setStyleHint(QFont.StyleHint.Monospace)
         self._log.setFont(font)
 
@@ -105,24 +145,9 @@ class DebugWindow(QDialog):
     # ------------------------------------------------------------------
     @Slot(str)
     def _on_message(self, text: str) -> None:
-        if "[ERROR  ]" in text or "[CRITICAL]" in text:
-            text = f'<span style="color:#F87171">{_esc(text)}</span>'
-            self._log.appendHtml(text)
-        elif "[WARNING]" in text:
-            text = f'<span style="color:#FCD34D">{_esc(text)}</span>'
-            self._log.appendHtml(text)
-        elif "[DEBUG  ]" in text:
-            text = f'<span style="color:#52525B">{_esc(text)}</span>'
-            self._log.appendHtml(text)
-        else:
-            self._log.appendPlainText(text)
-
+        self._log.appendHtml(_format_line(text))
         sb = self._log.verticalScrollBar()
         sb.setValue(sb.maximum())
 
     def _copy_all(self) -> None:
         QApplication.clipboard().setText(self._log.toPlainText())
-
-
-def _esc(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
