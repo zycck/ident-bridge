@@ -115,16 +115,22 @@ class ConfigManager:
             return self._cfg
 
         for key in ENCRYPTED_KEYS:
-            if key in data:
-                try:
-                    encrypted_bytes = base64.b64decode(data[key])
-                    data[key] = dpapi.decrypt(encrypted_bytes)
-                except Exception:
-                    import logging
-                    logging.getLogger(__name__).warning(
-                        "Не удалось расшифровать поле '%s' — требуется повторный ввод", key
-                    )
-                    data[key] = ""
+            raw = data.get(key)
+            if not raw:
+                # Field missing or empty — normal for Trusted Connection mode
+                # (Windows authentication on a local SQL Server), no warning.
+                continue
+            try:
+                encrypted_bytes = base64.b64decode(raw)
+                data[key] = dpapi.decrypt(encrypted_bytes)
+            except Exception:
+                # Real corruption: blob present but unreadable (e.g. DPAPI
+                # master key changed because the user moved profiles).
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Не удалось расшифровать поле '%s' — требуется повторный ввод", key
+                )
+                data[key] = ""
 
         # Backward-compat migration: trigger "auto" → "scheduled"
         for job in data.get("export_jobs") or []:
