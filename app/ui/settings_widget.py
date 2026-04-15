@@ -596,11 +596,35 @@ class SettingsWidget(QWidget):
     # App settings
     # ------------------------------------------------------------------
 
+    @Slot(bool)
     def _on_startup_toggled(self, checked: bool) -> None:
+        _log.info("=" * 60)
+        _log.info(
+            "User toggled 'Запускать с Windows' → %s",
+            "ВКЛ" if checked else "ВЫКЛ",
+        )
         if checked:
             ok, err = StartupManager.register()
+            if ok:
+                _log.info(
+                    "Автозапуск ВКЛЮЧЁН — приложение запустится при следующем входе в Windows"
+                )
+            else:
+                _log.error("Не удалось включить автозапуск: %s", err)
         else:
             ok, err = StartupManager.unregister()
+            if ok:
+                _log.info("Автозапуск ВЫКЛЮЧЕН")
+            else:
+                _log.error("Не удалось выключить автозапуск: %s", err)
+
+        # Verify the actual current state and log it
+        actual = StartupManager.is_registered()
+        _log.info(
+            "Автозапуск — текущее состояние реестра: %s",
+            "ЗАРЕГИСТРИРОВАН" if actual else "НЕ ЗАРЕГИСТРИРОВАН",
+        )
+        _log.info("=" * 60)
 
         if not ok:
             self._startup_check.blockSignals(True)
