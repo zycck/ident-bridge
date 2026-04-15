@@ -17,6 +17,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.title_bar import CustomTitleBar
+
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
 from app.core.constants import NAV_SIDEBAR_W
@@ -68,6 +70,10 @@ class MainWindow(QMainWindow):
 
         _log.info("iDentBridge %s started", current_version)
         self.setWindowTitle("iDentBridge")
+        self.setWindowFlags(
+            self.windowFlags()
+            | Qt.WindowType.FramelessWindowHint
+        )
         self.resize(900, 600)
 
     # ------------------------------------------------------------------
@@ -78,7 +84,20 @@ class MainWindow(QMainWindow):
         central = QWidget()
         self.setCentralWidget(central)
 
-        root = QHBoxLayout(central)
+        outer = QVBoxLayout(central)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Custom title bar
+        self._title_bar = CustomTitleBar("iDentBridge", self)
+        self._title_bar.minimize_clicked.connect(self.showMinimized)
+        self._title_bar.maximize_clicked.connect(self._toggle_maximize)
+        self._title_bar.close_clicked.connect(self.close)
+        outer.addWidget(self._title_bar)
+
+        # Body: sidebar + stack
+        body = QWidget()
+        root = QHBoxLayout(body)
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
@@ -145,6 +164,8 @@ class MainWindow(QMainWindow):
         root.addWidget(sidebar)
         root.addWidget(self._stack, stretch=1)
 
+        outer.addWidget(body, stretch=1)
+
         # Wire update_requested signal from dashboard
         self._dashboard.update_requested.connect(self._on_update_requested)
 
@@ -153,6 +174,24 @@ class MainWindow(QMainWindow):
         self._export_jobs.history_changed.connect(self._dashboard.refresh_activity)
 
         self.navigate(0)
+
+    # ------------------------------------------------------------------
+    # Maximize toggle
+    # ------------------------------------------------------------------
+
+    @Slot()
+    def _toggle_maximize(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+        self._title_bar.update_max_icon(self.isMaximized())
+
+    def changeEvent(self, event) -> None:  # type: ignore[override]
+        if event.type() == event.Type.WindowStateChange:
+            if hasattr(self, "_title_bar"):
+                self._title_bar.update_max_icon(self.isMaximized())
+        super().changeEvent(event)
 
     # ------------------------------------------------------------------
     # Shortcuts
