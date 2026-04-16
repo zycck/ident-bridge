@@ -7,8 +7,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QMenu,
-    QMessageBox,
     QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
@@ -26,6 +24,10 @@ from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import install_global_handler
 from app.ui.export_jobs_widget import ExportJobsWidget
 from app.ui.lucide_icons import lucide
+from app.ui.main_window_lifecycle import (
+    MainWindowLifecycleController,
+    build_tray,
+)
 from app.ui.settings_widget import SettingsWidget
 from app.ui.theme import Theme
 from app.ui.update_flow_coordinator import UpdateFlowCoordinator
@@ -53,6 +55,14 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._build_tray()
+        self._lifecycle = MainWindowLifecycleController(
+            window=self,
+            config=self._config,
+            tray=self._tray,
+            export_jobs=self._export_jobs,
+            dashboard=self._dashboard,
+            close_debug_window=self._close_debug_window,
+        )
         self._install_exception_hook()
         self._setup_shortcuts()
 
@@ -216,28 +226,16 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_tray(self) -> None:
-        app_icon = QApplication.instance().windowIcon()  # type: ignore[union-attr]
-        if app_icon.isNull():
-            # Fallback — shouldn't happen if main._load_app_icon ran first
-            app_icon = QIcon()
-        self._tray = QSystemTrayIcon(app_icon, self)
-        self._tray.setToolTip("iDentBridge")
-
-        menu = QMenu()
-        menu.addAction("Открыть", self._show_window)
-        menu.addSeparator()
-        menu.addAction("Проверить обновление", self._run_update_check_silently)
-        menu.addSeparator()
-        menu.addAction("Выход", self._quit)
-
-        self._tray.setContextMenu(menu)
-        self._tray.activated.connect(self._on_tray_activated)
-        self._tray.show()
+        self._tray = build_tray(
+            self,
+            on_open=self._show_window,
+            on_check_update=self._run_update_check_silently,
+            on_quit=self._quit,
+            on_activated=self._on_tray_activated,
+        )
 
     def show_tray_message(self, title: str, msg: str) -> None:
-        self._tray.showMessage(
-            title, msg, QSystemTrayIcon.MessageIcon.Information, 8000
-        )
+        self._lifecycle.show_tray_message(title, msg)
 
     # ------------------------------------------------------------------
     # Navigation
@@ -301,47 +299,25 @@ class MainWindow(QMainWindow):
     # Window / tray events
     # ------------------------------------------------------------------
 
+    def _close_debug_window(self) -> None:
+        if self._debug_window is not None:
+            self._debug_window.close()
+
     def _show_window(self) -> None:
-        self.showNormal()
-        self.raise_()
-        self.activateWindow()
+        self._lifecycle.show_window()
 
     @Slot(QSystemTrayIcon.ActivationReason)
     def _on_tray_activated(
         self, reason: QSystemTrayIcon.ActivationReason
     ) -> None:
-        if reason in (
-            QSystemTrayIcon.ActivationReason.DoubleClick,
-            QSystemTrayIcon.ActivationReason.Trigger,
-        ):
-            self._show_window()
+        self._lifecycle.on_tray_activated(reason)
 
     def _quit(self) -> None:
-        QApplication.quit()
+        self._lifecycle.quit()
 
     @Slot()
     def _cleanup(self) -> None:
-        """Called by aboutToQuit — stop background services before exit."""
-        _log.info("Shutting down…")
-        self._export_jobs.stop_all_schedulers()
-        self._dashboard.stop()
-        if self._debug_window is not None:
-            self._debug_window.close()
+        self._lifecycle.cleanup()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
-        if self._tray.isVisible():
-            cfg = self._config.load()
-            if not cfg.get("tray_notice_shown"):
-                self._tray.showMessage(
-                    "iDentBridge свёрнут в трей",
-                    "Приложение продолжает работать в фоне. "
-                    "Кликните по иконке в системном трее, чтобы вернуться.",
-                    QSystemTrayIcon.MessageIcon.Information,
-                    6000,
-                )
-                self._config.update(tray_notice_shown=True)
-            self.hide()
-            event.ignore()
-        else:
-            event.accept()
-            QApplication.quit()
+        self._lifecycle.handle_close_event(event)
