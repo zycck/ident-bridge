@@ -1,22 +1,13 @@
 # -*- coding: utf-8 -*-
-"""
-HistoryRow — compact one-line widget for a single export-job run.
-
-Layout: [colored-border-left] [trigger icon] [timestamp] [status text] [× delete]
-
-Trigger types are visually distinguished by:
-- left border color
-- icon color (matches the border)
-- icon glyph (mouse-pointer-click / clock / flask-conical)
-"""
-from datetime import datetime, timedelta
+"""Compact one-line widget for a single export-job run."""
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont, QFontMetrics
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
-from app.config import ExportHistoryEntry, TriggerType
+from app.config import ExportHistoryEntry
 from app.core.constants import HISTORY_ROW_HEIGHT
+from app.ui.history_row_presenter import build_history_row_display
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
 
@@ -26,14 +17,6 @@ def _make_small_font(point_size: float = 8.5) -> QFont:
     f = QFont()  # picks up QApplication default
     f.setPointSizeF(point_size)
     return f
-
-
-# Each trigger gets: (lucide icon name, accent color, human label)
-_TRIGGER_META: dict[TriggerType, tuple[str, str, str]] = {
-    TriggerType.MANUAL:    ("mouse-pointer-click", Theme.info,        "Вручную"),
-    TriggerType.SCHEDULED: ("clock",               Theme.primary_500, "Авто"),
-    TriggerType.TEST:      ("flask-conical",       Theme.gray_500,    "Тест"),
-}
 
 
 class HistoryRow(QWidget):
@@ -53,21 +36,12 @@ class HistoryRow(QWidget):
         super().__init__(parent)
         self._index = index
         self.setFixedHeight(HISTORY_ROW_HEIGHT)
-
-        trigger_str = entry.get("trigger", "manual")
-        # Backward-compat: legacy "auto" value maps to scheduled
-        if trigger_str == "auto":
-            trigger_str = "scheduled"
-        try:
-            trigger = TriggerType(trigger_str)
-        except ValueError:
-            trigger = TriggerType.MANUAL
-        icon_name, accent, label = _TRIGGER_META[trigger]
+        display = build_history_row_display(entry)
 
         # Colored left border via stylesheet
         self.setStyleSheet(
             f"HistoryRow {{"
-            f"  border-left: 3px solid {accent};"
+            f"  border-left: 3px solid {display.accent_color};"
             f"  background: transparent;"
             f"}}"
         )
@@ -78,14 +52,16 @@ class HistoryRow(QWidget):
 
         # ── Trigger icon ──────────────────────────────────────────────
         ico_lbl = QLabel()
-        ico_lbl.setPixmap(lucide(icon_name, color=accent, size=12).pixmap(12, 12))
+        ico_lbl.setPixmap(
+            lucide(display.icon_name, color=display.accent_color, size=12).pixmap(12, 12)
+        )
         ico_lbl.setFixedWidth(14)
-        ico_lbl.setToolTip(label)
+        ico_lbl.setToolTip(display.trigger_label)
         ico_lbl.setStyleSheet("background: transparent;")
         layout.addWidget(ico_lbl)
 
         # ── Timestamp ─────────────────────────────────────────────────
-        ts_lbl = QLabel(self._format_ts(entry.get("ts", "")))
+        ts_lbl = QLabel(display.timestamp_text)
         ts_lbl.setStyleSheet(f"color: {Theme.gray_500}; background: transparent;")
         small_font = _make_small_font(8.5)
         ts_lbl.setFont(small_font)
@@ -111,22 +87,11 @@ class HistoryRow(QWidget):
             layout.addWidget(name_lbl)
 
         # ── Status text ──────────────────────────────────────────────
-        if entry.get("ok"):
-            rows = entry.get("rows", 0)
-            text = f"✓  {rows} строк"
-            color = Theme.success
-            tooltip = ""
-        else:
-            err = entry.get("err", "Ошибка")
-            text = f"✗  {err[:55]}"
-            color = Theme.error
-            tooltip = err
-
-        st_lbl = QLabel(text)
-        st_lbl.setStyleSheet(f"color: {color}; background: transparent;")
+        st_lbl = QLabel(display.status_text)
+        st_lbl.setStyleSheet(f"color: {display.status_color}; background: transparent;")
         st_lbl.setFont(_make_small_font(8.5))
-        if tooltip:
-            st_lbl.setToolTip(tooltip)
+        if display.status_tooltip:
+            st_lbl.setToolTip(display.status_tooltip)
         layout.addWidget(st_lbl, stretch=1)
 
         # ── Delete (×) button ────────────────────────────────────────
@@ -147,36 +112,3 @@ class HistoryRow(QWidget):
             del_btn.setToolTip("Удалить запись")
             del_btn.clicked.connect(lambda: self.delete_requested.emit(self._index))
             layout.addWidget(del_btn)
-
-    @staticmethod
-    def _format_ts(ts: str) -> str:
-        """
-        Format the stored ts string for display.
-        Today          → "Сегодня HH:MM:SS"
-        Yesterday      → "Вчера HH:MM:SS"
-        Earlier this y → "DD.MM HH:MM:SS"
-        Older          → "DD.MM.YY HH:MM:SS"
-        Handles both 19-char (new, with seconds) and 16-char (legacy) timestamps.
-        """
-        if not ts or len(ts) < 16:
-            return ts
-        dt = None
-        for fmt, length in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
-            if len(ts) >= length:
-                try:
-                    dt = datetime.strptime(ts[:length], fmt)
-                    break
-                except ValueError:
-                    pass
-        if dt is None:
-            return ts
-        now = datetime.now()
-        today = now.date()
-        time_str = dt.strftime("%H:%M:%S")
-        if dt.date() == today:
-            return f"Сегодня {time_str}"
-        if dt.date() == today - timedelta(days=1):
-            return f"Вчера {time_str}"
-        if dt.year == now.year:
-            return f"{dt.strftime('%d.%m')} {time_str}"
-        return f"{dt.strftime('%d.%m.%y')} {time_str}"
