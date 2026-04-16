@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from app.config import ConfigManager
 from app.ui.dashboard_activity import refresh_dashboard_activity
+from app.ui.dashboard_activity_store import clear_job_histories
 from app.ui.theme import Theme
 
 
@@ -100,7 +101,7 @@ class DashboardActivityPanel(QFrame):
     def clear_all_history(self) -> bool:
         cfg = self._config.load()
         jobs = cfg.get("export_jobs") or []  # type: ignore[assignment]
-        total = sum(len(job.get("history") or []) for job in jobs)
+        total, cleared_jobs = clear_job_histories(jobs)
         if total == 0:
             return False
         reply = QMessageBox.question(
@@ -111,10 +112,7 @@ class DashboardActivityPanel(QFrame):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return False
-        for job in jobs:
-            if "history" in job:
-                job["history"] = []
-        cfg["export_jobs"] = jobs  # type: ignore[typeddict-unknown-key]
+        cfg["export_jobs"] = cleared_jobs  # type: ignore[typeddict-unknown-key]
         self._config.save(cfg)
         self.refresh_activity()
         return True

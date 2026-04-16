@@ -6,7 +6,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QMainWindow,
-    QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
@@ -16,9 +15,7 @@ from app.ui.title_bar import CustomTitleBar
 
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
-from app.ui.dashboard_widget import DashboardWidget
 from app.ui.error_dialog import install_global_handler
-from app.ui.export_jobs_widget import ExportJobsWidget
 from app.ui.main_window_debug import DebugWindowCoordinator
 from app.ui.main_window_lifecycle import (
     MainWindowLifecycleController,
@@ -28,8 +25,8 @@ from app.ui.main_window_navigation import (
     MainWindowNavigationController,
     build_navigation_sidebar,
 )
+from app.ui.main_window_pages import build_main_window_pages
 from app.ui.main_window_signal_router import MainWindowSignalRouter
-from app.ui.settings_widget import SettingsWidget
 from app.ui.update_flow_coordinator import UpdateFlowCoordinator
 
 _log = get_logger(__name__)
@@ -118,21 +115,16 @@ class MainWindow(QMainWindow):
             on_debug=self._toggle_debug_window,
         )
 
-        # Stacked pages
-        self._stack = QStackedWidget()
-        self._dashboard = DashboardWidget(self._config, self)
-        self._export_jobs = ExportJobsWidget(self._config, self)
-        self._settings_widget = SettingsWidget(
-            self._config, self._current_version, self
-        )
+        pages = build_main_window_pages(self._config, self._current_version, self)
+        self._stack = pages.stack
+        self._dashboard = pages.dashboard
+        self._export_jobs = pages.export_jobs
+        self._settings_widget = pages.settings_widget
         self._update_flow = UpdateFlowCoordinator(
             self,
             self._dashboard,
             current_version=self._current_version,
         )
-        self._stack.addWidget(self._dashboard)        # index 0
-        self._stack.addWidget(self._export_jobs)      # index 1
-        self._stack.addWidget(self._settings_widget)  # index 2
         self._navigation = MainWindowNavigationController(
             stack=self._stack,
             buttons=self._nav_btns,
