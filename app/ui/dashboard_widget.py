@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -12,59 +12,11 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import ConfigManager, SyncResult
-from app.core.app_logger import get_logger
 from app.core.constants import PING_INTERVAL_MS
-from app.core.sql_client import SqlClient
-from app.ui.history_row import HistoryRow
+from app.ui.dashboard_activity import refresh_dashboard_activity
+from app.ui.dashboard_ping_coordinator import DashboardPingCoordinator
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
-from app.ui.threading import run_worker
-
-_log = get_logger(__name__)
-
-
-class _PingWorker(QObject):
-    result = Signal(object)  # bool | None; None = instance not configured
-    finished = Signal()
-
-    def __init__(self, instance: str, database: str, user: str, password: str, trust_cert: bool) -> None:
-        super().__init__()
-        self._instance = instance
-        self._database = database
-        self._user = user
-        self._password = password
-        self._trust_cert = trust_cert
-
-    @Slot()
-    def run(self) -> None:
-        from app.config import AppConfig
-        try:
-            if not self._instance:
-                _log.debug("DB ping skipped: instance not configured")
-                self.result.emit(None)
-                return
-
-            cfg = AppConfig(
-                sql_instance=self._instance,
-                sql_database=self._database,
-                sql_user=self._user,
-                sql_password=self._password,
-                sql_trust_cert=self._trust_cert,
-            )
-            client = SqlClient(cfg)
-            try:
-                client.connect()
-                alive = client.is_alive()
-            except Exception as exc:
-                _log.debug("DB ping failed: %s", exc)
-                alive = False
-            finally:
-                client.disconnect()
-
-            _log.debug("DB ping: %s", "alive" if alive else "unreachable")
-            self.result.emit(alive)
-        finally:
-            self.finished.emit()
 
 
 class DashboardWidget(QWidget):
@@ -78,8 +30,7 @@ class DashboardWidget(QWidget):
         super().__init__(parent)
         self._config = config
         self._update_url: str = ""
-        self._ping_running = False
-        self._ping_worker: _PingWorker | None = None  # strong ref to prevent GC
+        self._ping = DashboardPingCoordinator(self, config, self.set_connected)
 
         self._build_ui()
         self._start_ping_timer()
@@ -286,6 +237,7 @@ class DashboardWidget(QWidget):
         """Stop the periodic ping timer. Called on app shutdown."""
         if hasattr(self, "_ping_timer") and self._ping_timer is not None:
             self._ping_timer.stop()
+        self._ping.stop()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self.stop()
@@ -317,87 +269,19 @@ class DashboardWidget(QWidget):
 
     def refresh_activity(self) -> None:
         """Re-aggregate history from all export jobs and rebuild the list."""
-        cfg = self._config.load()
-        jobs: list = cfg.get("export_jobs") or []  # type: ignore[assignment]
-
-        # Flatten: list of (entry, job_name) tuples
-        all_entries: list[tuple[dict, str]] = []
-        for job in jobs:
-            job_name = job.get("name", "") or "(без названия)"
-            for entry in (job.get("history") or []):
-                all_entries.append((entry, job_name))
-
-        # Sort by ts desc (string sort works because ts format is YYYY-MM-DD HH:MM)
-        all_entries.sort(key=lambda x: x[0].get("ts", ""), reverse=True)
-
-        # Cap to most recent 100
-        all_entries = all_entries[:100]
-
-        # Clear existing rows
-        while self._activity_layout.count():
-            item = self._activity_layout.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
-
-        # Populate
-        if not all_entries:
-            self._activity_empty = QLabel(
-                "Нет запусков. Запустите выгрузку на вкладке «Выгрузки»."
-            )
-            self._activity_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._activity_empty.setStyleSheet(
-                f"color: {Theme.gray_400}; "
-                f"font-size: {Theme.font_size_sm}pt; "
-                f"padding: 24px 0;"
-            )
-            self._activity_layout.addWidget(self._activity_empty)
-        else:
-            for i, (entry, job_name) in enumerate(all_entries):
-                row = HistoryRow(
-                    entry, i, self, job_name=job_name, show_delete=False
-                )
-                self._activity_layout.addWidget(row)
-            self._activity_layout.addStretch()
-
-        self._activity_count.setText(str(len(all_entries)))
+        count = refresh_dashboard_activity(
+            self._activity_layout,
+            self,
+            self._config.load().get("export_jobs") or [],  # type: ignore[arg-type]
+        )
+        self._activity_count.setText(str(count))
 
     # ------------------------------------------------------------------
     # Private slots
     # ------------------------------------------------------------------
 
     def _ping_db(self) -> None:
-        if self._ping_running:
-            return
-        # Capture config snapshot on the main thread before spawning the worker
-        cfg = self._config.load()
-        self._ping_running = True
-
-        worker = _PingWorker(
-            instance=cfg.get("sql_instance") or "",
-            database=cfg.get("sql_database") or "master",
-            user=cfg.get("sql_user") or "",
-            password=cfg.get("sql_password") or "",
-            trust_cert=cfg.get("sql_trust_cert") if cfg.get("sql_trust_cert") is not None else True,
-        )
-        thread = run_worker(
-            self,
-            worker,
-            pin_attr="_ping_worker",
-            on_finished=self._on_ping_finished,
-        )
-        worker.result.connect(self._on_ping_result)
-        worker.result.connect(thread.quit)
-
-    @Slot(object)
-    def _on_ping_result(self, alive) -> None:
-        self._ping_running = False
-        self.set_connected(alive)
-
-    @Slot()
-    def _on_ping_finished(self) -> None:
-        # Defensive reset in case a fast worker finished before a result handler
-        # had a chance to run or exited early with no connectivity update.
-        self._ping_running = False
+        self._ping.ping_db()
 
     def _on_update_clicked(self) -> None:
         self.update_requested.emit(self._update_url)

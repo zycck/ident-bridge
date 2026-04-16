@@ -15,11 +15,15 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import AppConfig, ConfigManager, SqlInstance
-from app.core import startup as StartupManager
 from app.core.app_logger import get_logger
 
 from app.core.updater import GITHUB_REPO
 from app.ui.lucide_icons import lucide
+from app.ui.settings_actions import (
+    SettingsUpdateCoordinator,
+    apply_startup_toggle,
+    is_startup_enabled,
+)
 from app.ui.settings_persistence import (
     build_connection_config,
     build_settings_payload,
@@ -34,7 +38,6 @@ from app.ui.settings_workers import (
     instance_from_text,
 )
 from app.ui.widgets import labeled_row, section, set_status, status_label, style_combo_popup
-from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
 
@@ -58,7 +61,6 @@ class SettingsWidget(QWidget):
         self._scan_running = False
         self._dblist_running = False
         self._test_conn_running = False
-        self._update_running = False
 
         # If instance changes while a db-list fetch is in-flight, store the new
         # target here and re-fetch as soon as the current fetch finishes/errors.
@@ -69,7 +71,10 @@ class SettingsWidget(QWidget):
         self._scan_worker: InstanceScanWorker | None = None
         self._dblist_worker: DatabaseListWorker | None = None
         self._test_conn_worker: TestConnectionWorker | None = None
-        self._update_worker: object | None = None
+        self._update_actions = SettingsUpdateCoordinator(
+            self,
+            current_version=self._current_version,
+        )
 
         # Запоминает выбор БД в памяти — не зависит от того, сохранён ли конфиг на диск
         self._selected_db: str = ""
@@ -266,7 +271,7 @@ class SettingsWidget(QWidget):
             self._on_instance_changed(target_idx)
 
         self._startup_check.blockSignals(True)
-        self._startup_check.setChecked(StartupManager.is_registered())
+        self._startup_check.setChecked(is_startup_enabled())
         self._startup_check.blockSignals(False)
         self._auto_update_check.setChecked(bool(cfg.get("auto_update_check", True)))
 
@@ -527,81 +532,27 @@ class SettingsWidget(QWidget):
 
     @Slot(bool)
     def _on_startup_toggled(self, checked: bool) -> None:
-        _log.info("=" * 60)
-        _log.info(
-            "User toggled 'Запускать с Windows' → %s",
-            "ВКЛ" if checked else "ВЫКЛ",
-        )
-        if checked:
-            ok, err = StartupManager.register()
-            if ok:
-                _log.info(
-                    "Автозапуск ВКЛЮЧЁН — приложение запустится при следующем входе в Windows"
-                )
-            else:
-                _log.error("Не удалось включить автозапуск: %s", err)
-        else:
-            ok, err = StartupManager.unregister()
-            if ok:
-                _log.info("Автозапуск ВЫКЛЮЧЕН")
-            else:
-                _log.error("Не удалось выключить автозапуск: %s", err)
-
-        # Verify the actual current state and log it
-        actual = StartupManager.is_registered()
-        _log.info(
-            "Автозапуск — текущее состояние реестра: %s",
-            "ЗАРЕГИСТРИРОВАН" if actual else "НЕ ЗАРЕГИСТРИРОВАН",
-        )
-        _log.info("=" * 60)
-
-        if not ok:
+        result = apply_startup_toggle(checked)
+        if not result.ok:
             self._startup_check.blockSignals(True)
             self._startup_check.setChecked(not checked)
             self._startup_check.blockSignals(False)
             QMessageBox.warning(
                 self, "Автозапуск",
-                f"Не удалось изменить запись в реестре:\n{err}",
+                f"Не удалось изменить запись в реестре:\n{result.error}",
             )
 
     def _check_update(self) -> None:
-        if self._update_running:
-            return
-        self._update_running = True
-
-        worker = UpdateWorker(
-            current_version=self._current_version,
-            repo=GITHUB_REPO,
-        )
-        thread = run_worker(
-            self,
-            worker,
-            pin_attr="_update_worker",
-            entry="check",
-            on_error=self._on_update_error,
-        )
-        worker.update_available.connect(self._on_update_available)
-        worker.no_update.connect(self._on_no_update)
-        worker.update_available.connect(thread.quit)
-        worker.no_update.connect(thread.quit)
+        self._update_actions.check()
 
     @Slot(str, str)
     def _on_update_available(self, tag: str, download_url: str) -> None:
-        self._update_running = False
-        QMessageBox.information(
-            self, "Доступно обновление",
-            f"Новая версия {tag} доступна.\n\nСсылка: {download_url}",
-        )
+        self._update_actions._on_update_available(tag, download_url)
 
     @Slot()
     def _on_no_update(self) -> None:
-        self._update_running = False
-        QMessageBox.information(
-            self, "Обновлений нет",
-            f"Установлена актуальная версия ({self._current_version}).",
-        )
+        self._update_actions._on_no_update()
 
     @Slot(str)
     def _on_update_error(self, message: str) -> None:
-        self._update_running = False
-        QMessageBox.warning(self, "Ошибка проверки обновлений", message)
+        self._update_actions._on_update_error(message)
