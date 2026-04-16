@@ -27,6 +27,7 @@ from app.core.constants import (
 )
 from app.core.scheduler import SyncScheduler
 from app.ui.export_editor_header import ExportEditorHeader
+from app.ui.export_execution_controller import ExportExecutionController
 from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_job_tile import ExportJobTile
 from app.ui.export_jobs_pages import ExportJobsEditorPage, ExportJobsTilesPage
@@ -79,8 +80,6 @@ class ExportJobEditor(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._config = config
         self._job_id: str = job.get("id", "")
-        self._running = False
-        self._worker: ExportWorker | None = None
         self._runtime = ExportEditorRuntimeState()
 
         self._scheduler = SyncScheduler(self)
@@ -99,6 +98,20 @@ class ExportJobEditor(QWidget):
         self._syntax_timer.timeout.connect(self._refresh_sql_syntax)
 
         self._build_ui()
+        self._execution = ExportExecutionController(
+            runtime=self._runtime,
+            load_config=self._config.load,
+            build_job=self.to_job,
+            create_worker=lambda cfg, current_job: ExportWorker(cfg, current_job),
+            start_worker=self._start_worker,
+            set_run_enabled=self._header.set_run_enabled,
+            set_progress_text=self._schedule_panel.set_progress_text,
+            set_status=self._header.set_status,
+            add_history_entry=self._add_history_entry,
+            emit_sync_completed=self.sync_completed.emit,
+            emit_failure_alert=self.failure_alert.emit,
+            failure_alert_threshold=_FAILURE_ALERT_THRESHOLD,
+        )
         self._load_job(job)
         self._apply_schedule()
 
@@ -246,80 +259,44 @@ class ExportJobEditor(QWidget):
     @Slot()
     def _auto_trigger(self) -> None:
         """Called by scheduler — marks trigger as scheduled then fires export."""
-        self._runtime.mark_scheduled_trigger()
-        if not self._running:
-            self._start_export()
+        self._execution.start_scheduled()
 
     def start_export(self) -> None:
         """Public API — manual trigger; idempotent."""
-        if not self._running:
-            self._runtime.mark_manual_trigger()
-            self._start_export()
+        self._execution.start_manual()
 
     def _start_export(self) -> None:
-        if self._running:
-            return
-        self._running = True
-        status_kind, status_text = self._runtime.begin_run()
-        self._header.set_run_enabled(False)
-        self._schedule_panel.set_progress_text("Запуск…")
-        self._header.set_status(status_kind, status_text)
+        self._execution.start_manual()
 
-        job = self.to_job()
-        base_cfg = self._config.load()
-
-        worker = ExportWorker(base_cfg, job)
+    def _start_worker(
+        self,
+        worker: ExportWorker,
+        on_finished,
+        on_error,
+        on_progress,
+    ) -> None:
         run_worker(
             self,
             worker,
             pin_attr="_worker",
-            on_finished=self._on_finished,
-            on_error=self._on_error,
+            on_finished=on_finished,
+            on_error=on_error,
         )
-        # `progress` is a streaming signal — wired manually (run_worker only
-        # handles the terminal finished/error signals).
-        worker.progress.connect(self._on_progress)
+        worker.progress.connect(on_progress)
 
     # ------------------------------------------------------------------ Worker slots
 
     @Slot(int, str)
     def _on_progress(self, _step: int, description: str) -> None:
-        self._schedule_panel.set_progress_text(description)
-        self._header.set_status("running", description)
+        self._execution.on_progress(_step, description)
 
     @Slot(object)
     def _on_finished(self, result: SyncResult) -> None:
-        self._running = False
-        self._header.set_run_enabled(True)
-        self._schedule_panel.set_progress_text("")
-        if result.success:
-            status_kind, status_text, entry = self._runtime.on_success(result)
-            self._header.set_status(status_kind, status_text)
-            self._add_history_entry(entry)
-            self.sync_completed.emit(result)
-        else:
-            # Failure accounting happens in _on_error() because the worker
-            # emits error -> finished(success=False) for the same failed run.
-            # Keeping the counter update in one place avoids double-counting.
-            pass
+        self._execution.on_finished(result)
 
     @Slot(str)
     def _on_error(self, msg: str) -> None:
-        self._running = False
-        self._header.set_run_enabled(True)
-        self._schedule_panel.set_progress_text("")
-        update = self._runtime.on_error(
-            msg,
-            now=datetime.now(),
-            alert_threshold=_FAILURE_ALERT_THRESHOLD,
-        )
-        self._header.set_status(update.status_kind, update.status_text)
-        self._add_history_entry(update.entry)
-        if update.alert_count is not None:
-            self.failure_alert.emit(
-                self.to_job().get("name") or "Без названия",
-                update.alert_count,
-            )
+        self._execution.on_error(msg)
 
     # ------------------------------------------------------------------ History data
 
@@ -343,13 +320,7 @@ class ExportJobEditor(QWidget):
     @Slot(bool, int, str)
     def _on_test_completed(self, ok: bool, rows: int, err: str) -> None:
         """Record a TestRunDialog run as a TEST-trigger history entry."""
-        entry = self._runtime.build_test_entry(
-            ok=ok,
-            rows=rows,
-            err=err,
-            now=datetime.now(),
-        )
-        self._add_history_entry(entry)
+        self._execution.record_test_completed(ok=ok, rows=rows, err=err)
 
     # ------------------------------------------------------------------ Signals
 
@@ -359,7 +330,12 @@ class ExportJobEditor(QWidget):
     @property
     def _consecutive_failures(self) -> int:
         """Compatibility shim for existing tests during the decomposition wave."""
-        return self._runtime.consecutive_failures
+        return self._execution.consecutive_failures
+
+    @property
+    def _running(self) -> bool:
+        """Compatibility shim for callers that still probe the editor directly."""
+        return self._execution.running
 
 
 # ---------------------------------------------------------------------------

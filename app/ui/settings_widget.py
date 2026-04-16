@@ -29,6 +29,11 @@ from app.ui.settings_persistence import (
     build_settings_payload,
     resolve_autosave_database,
 )
+from app.ui.settings_sql_presenters import (
+    build_database_items,
+    build_instance_items,
+    next_instance_index,
+)
 from app.ui.settings_sql_flow import SettingsSqlFlowState
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
@@ -339,7 +344,6 @@ class SettingsWidget(QWidget):
     def _on_scan_finished(self, instances: list[SqlInstance]) -> None:
         self._sql_flow.finish_scan()
 
-        target_idx = 0
         try:
             self._instance_combo.blockSignals(True)
             self._instance_combo.setEnabled(True)
@@ -351,14 +355,12 @@ class SettingsWidget(QWidget):
 
             cfg = self._config.load()
             saved = cfg.get("sql_instance", "")
-
-            for inst in instances:
-                self._instance_combo.addItem(inst.display, userData=inst)
-
-            if saved:
-                idx = self._instance_combo.findText(saved)
-                if idx >= 0:
-                    target_idx = idx
+            items, target_idx = build_instance_items(
+                instances,
+                saved_instance=saved,
+            )
+            for label, inst in items:
+                self._instance_combo.addItem(label, userData=inst)
         finally:
             self._instance_combo.blockSignals(False)
 
@@ -420,25 +422,16 @@ class SettingsWidget(QWidget):
         restore, pending = self._sql_flow.finish_database_fetch(
             saved_database=self._config.load().get("sql_database", "") or "",
         )
+        items, final_idx = build_database_items(databases, restore=restore)
 
         self._db_combo.blockSignals(True)
         self._db_combo.clear()
         self._db_combo.setEnabled(True)
 
-        if not databases:
-            if restore:
-                self._db_combo.addItem(restore)
-        else:
-            for db in databases:
-                self._db_combo.addItem(db)
+        for db in items:
+            self._db_combo.addItem(db)
 
         self._db_combo.blockSignals(False)
-
-        final_idx = 0
-        if restore:
-            idx = self._db_combo.findText(restore)
-            if idx >= 0:
-                final_idx = idx
 
         if self._db_combo.count() > 0:
             if self._db_combo.currentIndex() != final_idx:
@@ -461,8 +454,11 @@ class SettingsWidget(QWidget):
             self._fetch_databases(pending)
         else:
             cur = self._instance_combo.currentIndex()
-            nxt = cur + 1
-            if nxt < self._instance_combo.count():
+            nxt = next_instance_index(
+                current_index=cur,
+                total_count=self._instance_combo.count(),
+            )
+            if nxt is not None:
                 next_inst = self._instance_combo.itemData(nxt)
                 if next_inst is not None:
                     _log.debug("Auto-advancing to next instance: %s", next_inst.display)
