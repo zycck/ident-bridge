@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app.config import AppConfig, ConfigManager, SqlInstance
+from app.config import ConfigManager
 from app.core.app_logger import get_logger
 
 from app.core.updater import GITHUB_REPO
@@ -25,25 +25,16 @@ from app.ui.settings_actions import (
     is_startup_enabled,
 )
 from app.ui.settings_persistence import (
-    build_connection_config,
     build_settings_payload,
     resolve_autosave_database,
 )
-from app.ui.settings_sql_presenters import (
-    build_database_items,
-    build_instance_items,
-    next_instance_index,
-)
+from app.ui.settings_sql_controller import SettingsSqlController
 from app.ui.settings_sql_flow import SettingsSqlFlowState
 from app.ui.theme import Theme
-from app.ui.threading import run_worker
 from app.ui.settings_workers import (
-    DatabaseListWorker,
-    InstanceScanWorker,
-    TestConnectionWorker,
     instance_from_text,
 )
-from app.ui.widgets import labeled_row, section, set_status, status_label, style_combo_popup
+from app.ui.widgets import labeled_row, section, status_label, style_combo_popup
 
 _log = get_logger(__name__)
 
@@ -64,18 +55,22 @@ class SettingsWidget(QWidget):
         self._config = config
         self._current_version = current_version
         self._sql_flow = SettingsSqlFlowState()
-
-        # Strong Python references — prevents GC from deleting workers while
-        # the underlying QThread is still running (PySide6 doesn't keep them alive)
-        self._scan_worker: InstanceScanWorker | None = None
-        self._dblist_worker: DatabaseListWorker | None = None
-        self._test_conn_worker: TestConnectionWorker | None = None
         self._update_actions = SettingsUpdateCoordinator(
             self,
             current_version=self._current_version,
         )
 
         self._build_ui()
+        self._sql_controller = SettingsSqlController(
+            self,
+            instance_combo=self._instance_combo,
+            db_combo=self._db_combo,
+            login_edit=self._login_edit,
+            password_edit=self._password_edit,
+            conn_status=self._conn_status,
+            flow=self._sql_flow,
+            load_config=self._config.load,
+        )
         self._connect_auto_save()
         self._load_fields()
 
@@ -320,184 +315,21 @@ class SettingsWidget(QWidget):
         _log.debug("Auto-saved settings")
 
     # ------------------------------------------------------------------
-    # SQL Server — instance scan
+    # SQL Server — controller delegates
     # ------------------------------------------------------------------
 
-    def _scan_instances(self) -> None:
-        if not self._sql_flow.begin_scan():
-            return
+    def _scan_instances(self) -> bool:
+        return self._sql_controller.scan_instances()
 
-        self._instance_combo.clear()
-        self._instance_combo.addItem("Сканирование…")
-        self._instance_combo.setEnabled(False)
+    @Slot(int)
+    def _on_instance_changed(self, idx: int) -> bool:
+        return self._sql_controller.handle_instance_changed(idx)
 
-        worker = InstanceScanWorker()
-        run_worker(
-            self,
-            worker,
-            pin_attr="_scan_worker",
-            on_finished=self._on_scan_finished,
-            on_error=self._on_scan_error,
-        )
+    def _refresh_databases(self) -> bool:
+        return self._sql_controller.refresh_databases()
 
-    @Slot(list)
-    def _on_scan_finished(self, instances: list[SqlInstance]) -> None:
-        self._sql_flow.finish_scan()
-
-        try:
-            self._instance_combo.blockSignals(True)
-            self._instance_combo.setEnabled(True)
-            self._instance_combo.clear()
-
-            if not instances:
-                self._instance_combo.addItem("Нет экземпляров")
-                return
-
-            cfg = self._config.load()
-            saved = cfg.get("sql_instance", "")
-            items, target_idx = build_instance_items(
-                instances,
-                saved_instance=saved,
-            )
-            for label, inst in items:
-                self._instance_combo.addItem(label, userData=inst)
-        finally:
-            self._instance_combo.blockSignals(False)
-
-        self._instance_combo.setCurrentIndex(target_idx)
-        self._on_instance_changed(target_idx)
-
-    @Slot(str)
-    def _on_scan_error(self, message: str) -> None:
-        self._sql_flow.fail_scan()
-        self._instance_combo.setEnabled(True)
-        self._instance_combo.clear()
-        self._instance_combo.addItem("Ошибка сканирования")
-        set_status(self._conn_status, "error", f"Сканирование: {message}")
-
-    # ------------------------------------------------------------------
-    # SQL Server — database list
-    # ------------------------------------------------------------------
-
-    def _on_instance_changed(self, idx: int) -> None:
-        inst = self._instance_combo.itemData(idx)
-        if inst is None:
-            inst = instance_from_text(self._instance_combo.itemText(idx))
-            if inst is None:
-                return
-            self._instance_combo.setItemData(idx, inst)
-        self._fetch_databases(inst)
-
-    def _refresh_databases(self) -> None:
-        idx = self._instance_combo.currentIndex()
-        inst = self._instance_combo.itemData(idx)
-        if inst is None:
-            inst = instance_from_text(self._instance_combo.currentText())
-        if inst is None:
-            return
-        self._fetch_databases(inst)
-
-    def _fetch_databases(self, inst: SqlInstance) -> None:
-        if not self._sql_flow.begin_database_fetch(inst):
-            return
-
-        self._db_combo.clear()
-        self._db_combo.addItem("Загрузка…")
-        self._db_combo.setEnabled(False)
-
-        user = self._login_edit.text().strip()
-        password = self._password_edit.text()
-
-        worker = DatabaseListWorker(inst, user, password)
-        run_worker(
-            self,
-            worker,
-            pin_attr="_dblist_worker",
-            on_finished=self._on_dblist_finished,
-            on_error=self._on_dblist_error,
-        )
-
-    @Slot(list)
-    def _on_dblist_finished(self, databases: list[str]) -> None:
-        restore, pending = self._sql_flow.finish_database_fetch(
-            saved_database=self._config.load().get("sql_database", "") or "",
-        )
-        items, final_idx = build_database_items(databases, restore=restore)
-
-        self._db_combo.blockSignals(True)
-        self._db_combo.clear()
-        self._db_combo.setEnabled(True)
-
-        for db in items:
-            self._db_combo.addItem(db)
-
-        self._db_combo.blockSignals(False)
-
-        if self._db_combo.count() > 0:
-            if self._db_combo.currentIndex() != final_idx:
-                self._db_combo.setCurrentIndex(final_idx)
-            else:
-                self._on_db_changed(final_idx)
-
-        if pending is not None:
-            self._fetch_databases(pending)
-
-    @Slot(str)
-    def _on_dblist_error(self, message: str) -> None:
-        pending = self._sql_flow.fail_database_fetch()
-
-        self._db_combo.clear()
-        self._db_combo.setEnabled(True)
-        set_status(self._conn_status, "error", f"Список БД: {message}")
-
-        if pending is not None:
-            self._fetch_databases(pending)
-        else:
-            cur = self._instance_combo.currentIndex()
-            nxt = next_instance_index(
-                current_index=cur,
-                total_count=self._instance_combo.count(),
-            )
-            if nxt is not None:
-                next_inst = self._instance_combo.itemData(nxt)
-                if next_inst is not None:
-                    _log.debug("Auto-advancing to next instance: %s", next_inst.display)
-                    self._instance_combo.blockSignals(True)
-                    self._instance_combo.setCurrentIndex(nxt)
-                    self._instance_combo.blockSignals(False)
-                    self._fetch_databases(next_inst)
-
-    # ------------------------------------------------------------------
-    # SQL Server — test connection
-    # ------------------------------------------------------------------
-
-    def _test_connection(self) -> None:
-        if not self._sql_flow.begin_connection_test():
-            return
-
-        cfg = build_connection_config(
-            sql_instance=self._instance_combo.currentText().strip(),
-            sql_database=self._db_combo.currentText().strip(),
-            sql_user=self._login_edit.text().strip(),
-            sql_password=self._password_edit.text(),
-        )
-        set_status(self._conn_status, "neutral", "Проверка подключения…")
-
-        worker = TestConnectionWorker(cfg)
-        run_worker(
-            self,
-            worker,
-            pin_attr="_test_conn_worker",
-            on_finished=self._on_test_conn_finished,
-        )
-
-    @Slot(bool, str)
-    def _on_test_conn_finished(self, ok: bool, message: str) -> None:
-        self._sql_flow.finish_connection_test()
-        if ok:
-            set_status(self._conn_status, "ok", message or "Подключение успешно")
-        else:
-            set_status(self._conn_status, "error", message or "Ошибка подключения")
+    def _test_connection(self) -> bool:
+        return self._sql_controller.test_connection()
 
     # ------------------------------------------------------------------
     # App settings
