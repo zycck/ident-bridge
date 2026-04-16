@@ -2,14 +2,9 @@
 """MainWindow — top-level application shell for iDentBridge."""
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
-    QHBoxLayout,
     QMainWindow,
     QSystemTrayIcon,
-    QVBoxLayout,
-    QWidget,
 )
-
-from app.ui.title_bar import CustomTitleBar
 
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
@@ -20,11 +15,9 @@ from app.ui.main_window_lifecycle import (
     MainWindowLifecycleController,
     build_tray,
 )
-from app.ui.main_window_navigation import (
-    MainWindowNavigationController,
-    build_navigation_sidebar,
-)
+from app.ui.main_window_navigation import MainWindowNavigationController
 from app.ui.main_window_pages import build_main_window_pages
+from app.ui.main_window_shell import MainWindowShell
 from app.ui.main_window_signal_router import MainWindowSignalRouter
 from app.ui.update_flow_coordinator import UpdateFlowCoordinator
 
@@ -87,40 +80,21 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        central = QWidget()
-        self.setCentralWidget(central)
-
-        outer = QVBoxLayout(central)
-        outer.setContentsMargins(0, 0, 0, 0)
-        outer.setSpacing(0)
-
-        # Custom title bar
-        self._title_bar = CustomTitleBar("iDentBridge", self)
-        outer.addWidget(self._title_bar)
-
-        # Body: sidebar + stack
-        body = QWidget()
-        root = QHBoxLayout(body)
-        root.setContentsMargins(0, 0, 0, 0)
-        root.setSpacing(0)
-
-        (
-            sidebar,
-            self._nav_btns,
-            nav_icons_normal,
-            nav_icons_active,
-        ) = build_navigation_sidebar(
-            body,
-            current_version=self._current_version,
-            on_navigate=self.navigate,
-            on_debug=self._toggle_debug_window,
-        )
-
         pages = build_main_window_pages(self._config, self._current_version, self)
         self._stack = pages.stack
         self._dashboard = pages.dashboard
         self._export_jobs = pages.export_jobs
         self._settings_widget = pages.settings_widget
+        self._shell = MainWindowShell(
+            current_version=self._current_version,
+            stack=self._stack,
+            on_navigate=self.navigate,
+            on_debug=self._toggle_debug_window,
+            parent=self,
+        )
+        self.setCentralWidget(self._shell)
+        self._title_bar = self._shell.title_bar()
+        self._nav_btns = self._shell.nav_buttons()
         self._update_flow = UpdateFlowCoordinator(
             self,
             self._dashboard,
@@ -129,14 +103,9 @@ class MainWindow(QMainWindow):
         self._navigation = MainWindowNavigationController(
             stack=self._stack,
             buttons=self._nav_btns,
-            normal_icons=nav_icons_normal,
-            active_icons=nav_icons_active,
+            normal_icons=self._shell.normal_icons(),
+            active_icons=self._shell.active_icons(),
         )
-
-        root.addWidget(sidebar)
-        root.addWidget(self._stack, stretch=1)
-
-        outer.addWidget(body, stretch=1)
 
         self.navigate(0)
 
