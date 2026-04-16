@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **199 test functions / 200 collected test items** covering the scheduler engine,
+The fastest sanity check. **202 test functions / 203 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **199 tests**. Keep this number in
+The current tree actually contains **202 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-200 passed in X.XXs
+203 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -115,6 +115,7 @@ closed cleanly.
 | `tests/test_settings_form_controller.py` | extracted settings form controller: load/save/autosave flow, DB tracking, config-preserving save | 5 |
 | `tests/test_settings_sql_controller.py` | extracted settings SQL controller: scan orchestration, pending DB replay, auto-advance fallback, connection-test gating, scan error recovery | 6 |
 | `tests/test_settings_sql_flow.py` | extracted settings SQL flow: scan/db-list/test state transitions and restore behavior | 4 |
+| `tests/test_settings_sql_panel.py` | extracted settings SQL panel: stable widget accessors, scan/refresh/test button signals, control defaults | 3 |
 | `tests/test_settings_sql_presenters.py` | extracted settings SQL presenters: instance/database list rendering and next-instance selection | 3 |
 | `tests/test_main_window_lifecycle.py` | extracted main-window lifecycle: tray activation, close-to-tray notice, quit path, shutdown cleanup | 4 |
 | `tests/test_main_window_navigation.py` | extracted main-window navigation: page order, button routing, active state/icon switching | 4 |
@@ -655,7 +656,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 199 test functions, but the
+- The repository tree currently reports 202 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

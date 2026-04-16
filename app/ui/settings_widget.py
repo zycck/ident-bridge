@@ -1,14 +1,10 @@
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
-    QComboBox,
     QFrame,
     QHBoxLayout,
-    QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -27,8 +23,8 @@ from app.ui.settings_actions import (
 from app.ui.settings_form_controller import SettingsFormController
 from app.ui.settings_sql_controller import SettingsSqlController
 from app.ui.settings_sql_flow import SettingsSqlFlowState
+from app.ui.settings_sql_panel import SettingsSqlPanel
 from app.ui.theme import Theme
-from app.ui.widgets import labeled_row, section, status_label, style_combo_popup
 
 _log = get_logger(__name__)
 
@@ -101,74 +97,17 @@ class SettingsWidget(QWidget):
         layout.setSpacing(12)
         layout.setContentsMargins(12, 12, 12, 12)
 
-        # ── Section 1: SQL Server ─────────────────────────────────────
-        sql_box, sql_lay = section("SQL Server")
-
-        # Instance row
-        self._instance_combo = QComboBox()
-        style_combo_popup(self._instance_combo)
-        self._instance_combo.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self._instance_combo.setEditable(True)
+        self._sql_panel = SettingsSqlPanel(self)
+        self._instance_combo = self._sql_panel.instance_combo()
+        self._db_combo = self._sql_panel.database_combo()
+        self._login_edit = self._sql_panel.login_edit()
+        self._password_edit = self._sql_panel.password_edit()
+        self._conn_status = self._sql_panel.conn_status()
         self._instance_combo.currentIndexChanged.connect(self._on_instance_changed)
-
-        scan_btn = QPushButton("  Сканировать")
-        scan_btn.setIcon(lucide('search', color=Theme.gray_700, size=14))
-        scan_btn.clicked.connect(self._scan_instances)
-
-        inst_row = QHBoxLayout()
-        inst_row.setSpacing(6)
-        inst_lbl = QLabel("SQL Instance")
-        inst_lbl.setFixedWidth(100)
-        inst_lbl.setStyleSheet("color: #9CA3AF;")
-        inst_row.addWidget(inst_lbl)
-        inst_row.addWidget(self._instance_combo, stretch=1)
-        inst_row.addWidget(scan_btn)
-        sql_lay.addLayout(inst_row)
-
-        # Database row
-        self._db_combo = QComboBox()
-        style_combo_popup(self._db_combo)
-        self._db_combo.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-
-        refresh_db_btn = QPushButton()
-        refresh_db_btn.setIcon(lucide('refresh-cw', color=Theme.gray_700, size=14))
-        refresh_db_btn.setFixedWidth(28)
-        refresh_db_btn.setToolTip("Обновить список баз данных")
-        refresh_db_btn.clicked.connect(self._refresh_databases)
-
-        db_row = QHBoxLayout()
-        db_row.setSpacing(6)
-        db_lbl = QLabel("База данных")
-        db_lbl.setFixedWidth(100)
-        db_lbl.setStyleSheet("color: #9CA3AF;")
-        db_row.addWidget(db_lbl)
-        db_row.addWidget(self._db_combo, stretch=1)
-        db_row.addWidget(refresh_db_btn)
-        sql_lay.addLayout(db_row)
-
-        self._login_edit = QLineEdit()
-        self._login_edit.setPlaceholderText("sa")
-        sql_lay.addLayout(labeled_row("Логин", self._login_edit))
-
-        self._password_edit = QLineEdit()
-        self._password_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._password_edit.setPlaceholderText("••••••")
-        sql_lay.addLayout(labeled_row("Пароль", self._password_edit))
-
-        test_conn_btn = QPushButton("  Тест подключения")
-        test_conn_btn.setObjectName("primaryBtn")
-        test_conn_btn.setIcon(lucide('zap', color=Theme.gray_900, size=14))
-        test_conn_btn.clicked.connect(self._test_connection)
-        sql_lay.addWidget(test_conn_btn)
-
-        self._conn_status = status_label()
-        sql_lay.addWidget(self._conn_status)
-
-        layout.addWidget(sql_box)
+        self._sql_panel.scan_requested.connect(self._scan_instances)
+        self._sql_panel.refresh_databases_requested.connect(self._refresh_databases)
+        self._sql_panel.test_connection_requested.connect(self._test_connection)
+        layout.addWidget(self._sql_panel)
 
         self._app_panel = SettingsAppPanel(self._current_version, self)
         self._startup_check = self._app_panel.startup_check()
