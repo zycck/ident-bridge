@@ -20,10 +20,10 @@ from app.config import ConfigManager
 from app.core.app_logger import get_logger
 from app.core.constants import NAV_SIDEBAR_W
 from app.ui.dashboard_widget import DashboardWidget
-from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import install_global_handler
 from app.ui.export_jobs_widget import ExportJobsWidget
 from app.ui.lucide_icons import lucide
+from app.ui.main_window_debug import DebugWindowCoordinator
 from app.ui.main_window_lifecycle import (
     MainWindowLifecycleController,
     build_tray,
@@ -49,9 +49,7 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self._config = config
         self._current_version = current_version
-
-        # Debug window — created lazily on first Ctrl+D press
-        self._debug_window: DebugWindow | None = None
+        self._debug = DebugWindowCoordinator(self)
 
         self._build_ui()
         self._build_tray()
@@ -213,13 +211,7 @@ class MainWindow(QMainWindow):
         debug_shortcut.activated.connect(self._toggle_debug_window)
 
     def _toggle_debug_window(self) -> None:
-        if self._debug_window is None:
-            self._debug_window = DebugWindow(parent=None)
-        if self._debug_window.isVisible():
-            self._debug_window.hide()
-        else:
-            self._debug_window.show()
-            self._debug_window.raise_()
+        self._debug.toggle()
 
     # ------------------------------------------------------------------
     # System tray
@@ -300,8 +292,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _close_debug_window(self) -> None:
-        if self._debug_window is not None:
-            self._debug_window.close()
+        self._debug.close()
 
     def _show_window(self) -> None:
         self._lifecycle.show_window()
