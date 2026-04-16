@@ -1,6 +1,5 @@
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QFrame,
     QHBoxLayout,
@@ -19,6 +18,7 @@ from app.core.app_logger import get_logger
 
 from app.core.updater import GITHUB_REPO
 from app.ui.lucide_icons import lucide
+from app.ui.settings_app_panel import SettingsAppPanel
 from app.ui.settings_actions import (
     SettingsUpdateCoordinator,
     apply_startup_toggle,
@@ -170,26 +170,12 @@ class SettingsWidget(QWidget):
 
         layout.addWidget(sql_box)
 
-        # ── Section 2: Приложение ─────────────────────────────────────
-        app_box, app_lay = section("Приложение")
-
-        self._startup_check = QCheckBox("Запускать с Windows")
-        self._startup_check.toggled.connect(self._on_startup_toggled)
-        app_lay.addWidget(self._startup_check)
-
-        self._auto_update_check = QCheckBox("Проверять обновления при запуске")
-        app_lay.addWidget(self._auto_update_check)
-
-        version_lbl = QLabel(f"Версия: {self._current_version}")
-        version_lbl.setStyleSheet("color: #3F3F46; font-size: 9pt;")
-        app_lay.addWidget(version_lbl)
-
-        check_update_btn = QPushButton("  Проверить обновление")
-        check_update_btn.setIcon(lucide('download-cloud', color=Theme.gray_700, size=14))
-        check_update_btn.clicked.connect(self._check_update)
-        app_lay.addWidget(check_update_btn)
-
-        layout.addWidget(app_box)
+        self._app_panel = SettingsAppPanel(self._current_version, self)
+        self._startup_check = self._app_panel.startup_check()
+        self._auto_update_check = self._app_panel.auto_update_check()
+        self._app_panel.startup_toggled.connect(self._on_startup_toggled)
+        self._app_panel.check_update_requested.connect(self._check_update)
+        layout.addWidget(self._app_panel)
 
         # ── Bottom buttons ────────────────────────────────────────────
         btn_row = QHBoxLayout()
@@ -283,15 +269,3 @@ class SettingsWidget(QWidget):
 
     def _check_update(self) -> None:
         self._update_actions.check()
-
-    @Slot(str, str)
-    def _on_update_available(self, tag: str, download_url: str) -> None:
-        self._update_actions._on_update_available(tag, download_url)
-
-    @Slot()
-    def _on_no_update(self) -> None:
-        self._update_actions._on_no_update()
-
-    @Slot(str)
-    def _on_update_error(self, message: str) -> None:
-        self._update_actions._on_update_error(message)
