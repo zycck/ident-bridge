@@ -144,7 +144,11 @@ def test_run_worker_pin_attr_cleared_on_thread_finished(qapp_session, qtbot):
 
     # After cleanup, pin_attr must be None or a dead wrapper
     val = parent.__dict__.get("_my_worker", "missing")
-    assert val is None, f"Expected None after cleanup, got {val!r}"
+    assert val != "missing"
+    if val is None:
+        return
+    with pytest.raises(RuntimeError):
+        repr(val)
 
 
 def test_run_worker_on_finished_callback(qapp_session, qtbot):
