@@ -6,17 +6,10 @@ from datetime import datetime
 
 from PySide6.QtCore import QTimer, Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
     QFrame,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
     QLineEdit,
     QMessageBox,
-    QPushButton,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -35,19 +28,18 @@ from app.core.constants import (
     DEBOUNCE_SYNTAX_MS,
 )
 from app.core.scheduler import SyncScheduler
+from app.ui.export_editor_header import ExportEditorHeader
 from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_job_tile import ExportJobTile
+from app.ui.export_jobs_pages import ExportJobsEditorPage, ExportJobsTilesPage
 from app.ui.export_schedule_panel import (
     ExportSchedulePanel,
     schedule_value_is_valid,
 )
-from app.ui.export_sql import format_sql_for_tsql_editor, validate_sql
-from app.ui.lucide_icons import lucide
-from app.ui.sql_editor import SqlEditor
+from app.ui.export_sql_panel import ExportSqlPanel
 from app.ui.test_run_dialog import TestRunDialog
-from app.ui.theme import Theme
 from app.ui.threading import run_worker
-from app.ui.widgets import HeaderLabel, hsep, style_combo_popup
+from app.ui.widgets import HeaderLabel, hsep
 from app.workers.export_worker import ExportWorker
 
 _log = get_logger(__name__)
@@ -102,7 +94,7 @@ class ExportJobEditor(QWidget):
         self._syntax_timer = QTimer(self)
         self._syntax_timer.setSingleShot(True)
         self._syntax_timer.setInterval(DEBOUNCE_SYNTAX_MS)
-        self._syntax_timer.timeout.connect(self._check_syntax)
+        self._syntax_timer.timeout.connect(self._refresh_sql_syntax)
 
         self._build_ui()
         self._load_job(job)
@@ -135,107 +127,17 @@ class ExportJobEditor(QWidget):
 
     def _build_header(self, root: QVBoxLayout) -> None:
         """Header row: title + status summary + Тест/Запустить buttons."""
-        hdr = QHBoxLayout()
-        hdr.setSpacing(10)
-
-        # Left column: name (title-style) + status summary
-        title_col = QVBoxLayout()
-        title_col.setSpacing(2)
-        title_col.setContentsMargins(0, 0, 0, 0)
-
-        self._name_edit = QLineEdit()
-        self._name_edit.setObjectName("cardTitle")
-        self._name_edit.setPlaceholderText("Без названия")
-        self._name_edit.setStyleSheet(
-            f"QLineEdit#cardTitle {{"
-            f"  background: transparent;"
-            f"  border: 1px solid transparent;"
-            f"  padding: 2px 4px;"
-            f"  font-size: {Theme.font_size_md}pt;"
-            f"  font-weight: {Theme.font_weight_semi};"
-            f"  color: {Theme.gray_900};"
-            f"  min-height: 22px;"
-            f"}}"
-            f"QLineEdit#cardTitle:hover {{"
-            f"  background: {Theme.gray_50};"
-            f"  border-radius: 4px;"
-            f"}}"
-            f"QLineEdit#cardTitle:focus {{"
-            f"  background: {Theme.surface};"
-            f"  border: 1px solid {Theme.border_strong};"
-            f"  border-radius: 4px;"
-            f"}}"
-        )
-        self._name_edit.editingFinished.connect(self._emit_changed)
-        title_col.addWidget(self._name_edit)
-
-        self._status_summary = QLabel("Ещё не запускалось")
-        self._status_summary.setStyleSheet(
-            f"color: {Theme.gray_500}; "
-            f"font-size: {Theme.font_size_md}pt; "
-            f"background: transparent; "
-            f"padding-left: 4px;"
-        )
-        title_col.addWidget(self._status_summary)
-
-        hdr.addLayout(title_col, stretch=1)
-
-        # Right column: action buttons (Test + Run only; delete moved to toolbar)
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(4)
-
-        self._test_btn = QPushButton("  Тест")
-        self._test_btn.setIcon(lucide("terminal", color=Theme.gray_700, size=12))
-        self._test_btn.setFixedHeight(28)
-        self._test_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self._test_btn.setToolTip("Выполнить SQL запрос в тестовом окне")
-        self._test_btn.clicked.connect(self._open_test_dialog)
-        btn_row.addWidget(self._test_btn)
-
-        self._run_btn = QPushButton("  Запустить")
-        self._run_btn.setIcon(lucide("play", color=Theme.gray_900, size=12))
-        self._run_btn.setObjectName("primaryBtn")
-        self._run_btn.setFixedHeight(28)
-        self._run_btn.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        self._run_btn.setToolTip("Запустить выгрузку вручную")
-        self._run_btn.clicked.connect(self.start_export)
-        btn_row.addWidget(self._run_btn)
-
-        hdr.addLayout(btn_row)
-        root.addLayout(hdr)
+        self._header = ExportEditorHeader(self)
+        self._header.changed.connect(self._emit_changed)
+        self._header.test_requested.connect(self._open_test_dialog)
+        self._header.run_requested.connect(self.start_export)
+        root.addWidget(self._header)
 
     def _build_sql_section(self, root: QVBoxLayout) -> None:
         """SQL editor + syntax indicator."""
-        root.addWidget(HeaderLabel("SQL запрос"))
-
-        self._query_edit = SqlEditor()
-        self._query_edit.setPlaceholderText("SELECT … FROM …")
-        self._query_edit.setMinimumHeight(200)
-        # NO maximumHeight — let it expand to fill available space
-        self._query_edit.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
-        )
-        self._query_edit.textChanged.connect(self._on_query_changed)
-        self._query_edit.expand_requested.connect(self._open_sql_in_window)
-        root.addWidget(self._query_edit, stretch=1)   # stretch=1 so it takes available space
-
-        # Syntax indicator row (label only — Format/Expand buttons removed)
-        syntax_row = QHBoxLayout()
-        syntax_row.setSpacing(8)
-
-        self._syntax_lbl = QLabel("")
-        self._syntax_lbl.setObjectName("syntaxStatus")
-        self._syntax_lbl.setStyleSheet(
-            f"color: {Theme.gray_500}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent; "
-            f"padding-top: 2px;"
-        )
-        syntax_row.addWidget(self._syntax_lbl)
-        syntax_row.addStretch()
-
-        root.addLayout(syntax_row)
+        self._sql_panel = ExportSqlPanel(self)
+        self._sql_panel.changed.connect(self._on_query_changed)
+        root.addWidget(self._sql_panel, stretch=1)
 
     def _build_webhook_section(self, root: QVBoxLayout) -> None:
         """Webhook URL label + input."""
@@ -266,8 +168,8 @@ class ExportJobEditor(QWidget):
     def to_job(self) -> ExportJob:
         return ExportJob(
             id=self._job_id,
-            name=self._name_edit.text().strip(),
-            sql_query=self._query_edit.toPlainText().strip(),
+            name=self._header.job_name(),
+            sql_query=self._sql_panel.sql_text(),
             webhook_url=self._webhook_edit.text().strip(),
             schedule_enabled=self._schedule_panel.schedule_enabled(),
             schedule_mode=self._schedule_panel.schedule_mode(),
@@ -276,14 +178,9 @@ class ExportJobEditor(QWidget):
         )
 
     def _load_job(self, job: ExportJob) -> None:
-        # Block all signals during programmatic load to avoid spurious saves
-        for w in (
-            self._query_edit, self._name_edit, self._webhook_edit,
-        ):
-            w.blockSignals(True)
-
-        self._name_edit.setText(job.get("name", ""))
-        self._query_edit.setPlainText(job.get("sql_query", ""))
+        self._header.set_job_name(job.get("name", ""))
+        self._sql_panel.set_sql_text(job.get("sql_query", ""))
+        self._webhook_edit.blockSignals(True)
         self._webhook_edit.setText(job.get("webhook_url", ""))
         self._schedule_panel.set_schedule(
             bool(job.get("schedule_enabled", False)),
@@ -291,11 +188,7 @@ class ExportJobEditor(QWidget):
             job.get("schedule_value", ""),
         )
         self._history_panel.set_history(list(job.get("history") or []))
-
-        for w in (
-            self._query_edit, self._name_edit, self._webhook_edit,
-        ):
-            w.blockSignals(False)
+        self._webhook_edit.blockSignals(False)
 
         latest = self._history_panel.latest_entry()
         # Restore status summary from most recent history entry (if any)
@@ -308,36 +201,15 @@ class ExportJobEditor(QWidget):
                     ts_short = _ts[11:16]
                 else:
                     ts_short = _ts
-                self._update_status_summary(
+                self._header.set_status(
                     "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}"
                 )
             else:
-                self._update_status_summary(
+                self._header.set_status(
                     "error", f"✗ {latest.get('err', 'Ошибка')[:70]}"
                 )
         # Trigger syntax check after layout settles
-        QTimer.singleShot(0, self._check_syntax)
-
-    # ------------------------------------------------------------------ Status summary
-
-    def _update_status_summary(self, kind: str, text: str) -> None:
-        """Update the header status line beneath the editor title.
-        kind ∈ {'idle', 'ok', 'error', 'running'}
-        """
-        color_map = {
-            "idle":    Theme.gray_500,
-            "ok":      Theme.success,
-            "error":   Theme.error,
-            "running": Theme.info,
-        }
-        color = color_map.get(kind, Theme.gray_500)
-        self._status_summary.setStyleSheet(
-            f"color: {color}; "
-            f"font-size: {Theme.font_size_md}pt; "
-            f"background: transparent; "
-            f"padding-left: 4px;"
-        )
-        self._status_summary.setText(text)
+        QTimer.singleShot(0, self._refresh_sql_syntax)
 
     # ------------------------------------------------------------------ Schedule
 
@@ -358,7 +230,7 @@ class ExportJobEditor(QWidget):
         self._scheduler.start()
         _log.debug(
             "Job '%s': scheduler started (%s %s)",
-            self._name_edit.text().strip() or self._job_id, mode, value,
+            self._header.job_name() or self._job_id, mode, value,
         )
 
     def stop_scheduler(self) -> None:
@@ -377,42 +249,8 @@ class ExportJobEditor(QWidget):
         self._query_timer.start()
         self._syntax_timer.start()
 
-    def _check_syntax(self) -> None:
-        sql = self._query_edit.toPlainText().strip()
-        if not sql:
-            self._syntax_lbl.setText("")
-            return
-        ok, msg = validate_sql(sql)
-        if ok:
-            self._syntax_lbl.setStyleSheet(
-                f"color: {Theme.success}; "
-                f"font-size: {Theme.font_size_xs}pt; "
-                f"background: transparent;"
-            )
-            self._syntax_lbl.setText("✓ SQL")
-            self._syntax_lbl.setToolTip("")
-        else:
-            self._syntax_lbl.setStyleSheet(
-                f"color: {Theme.error}; "
-                f"font-size: {Theme.font_size_xs}pt; "
-                f"background: transparent;"
-            )
-            short = msg if len(msg) <= 36 else msg[:33] + "…"
-            self._syntax_lbl.setText(f"✗ {short}")
-            self._syntax_lbl.setToolTip(msg)
-
-    @Slot()
-    def _open_sql_in_window(self) -> None:
-        """Open the SQL editor in a large standalone dialog."""
-        from app.ui.sql_editor import SqlEditorDialog
-
-        dialog = SqlEditorDialog(
-            self._query_edit.toPlainText(),
-            parent=self,
-            on_format=format_sql_for_tsql_editor,
-        )
-        if dialog.exec() == dialog.DialogCode.Accepted:
-            self._query_edit.setPlainText(dialog.text())
+    def _refresh_sql_syntax(self) -> None:
+        self._sql_panel.refresh_syntax()
 
     # ------------------------------------------------------------------ Export
 
@@ -434,9 +272,9 @@ class ExportJobEditor(QWidget):
             return
         self._running = True
         self._current_trigger = self._last_trigger  # capture for history entry
-        self._run_btn.setEnabled(False)
+        self._header.set_run_enabled(False)
         self._schedule_panel.set_progress_text("Запуск…")
-        self._update_status_summary("running", "Запуск…")
+        self._header.set_status("running", "Запуск…")
 
         job = self.to_job()
         base_cfg = self._config.load()
@@ -458,18 +296,18 @@ class ExportJobEditor(QWidget):
     @Slot(int, str)
     def _on_progress(self, _step: int, description: str) -> None:
         self._schedule_panel.set_progress_text(description)
-        self._update_status_summary("running", description)
+        self._header.set_status("running", description)
 
     @Slot(object)
     def _on_finished(self, result: SyncResult) -> None:
         self._running = False
-        self._run_btn.setEnabled(True)
+        self._header.set_run_enabled(True)
         self._schedule_panel.set_progress_text("")
         if result.success:
             self._consecutive_failures = 0
             ts_clock = result.timestamp.strftime("%H:%M:%S")
             ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-            self._update_status_summary(
+            self._header.set_status(
                 "ok", f"✓ {result.rows_synced} строк · {ts_clock}"
             )
             self._add_history_entry(ok=True, rows=result.rows_synced, ts=ts_full)
@@ -483,9 +321,9 @@ class ExportJobEditor(QWidget):
     @Slot(str)
     def _on_error(self, msg: str) -> None:
         self._running = False
-        self._run_btn.setEnabled(True)
+        self._header.set_run_enabled(True)
         self._schedule_panel.set_progress_text("")
-        self._update_status_summary("error", f"✗ {msg[:70]}")
+        self._header.set_status("error", f"✗ {msg[:70]}")
         ts_full = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._add_history_entry(ok=False, err=msg, ts=ts_full)
         self._consecutive_failures += 1
@@ -512,7 +350,7 @@ class ExportJobEditor(QWidget):
     # ------------------------------------------------------------------ Test dialog
 
     def _open_test_dialog(self) -> None:
-        sql = self._query_edit.toPlainText().strip()
+        sql = self._sql_panel.sql_text()
         cfg = self._config.load()
         dialog = TestRunDialog(
             cfg,
@@ -554,7 +392,6 @@ class ExportJobsWidget(QWidget):
     def __init__(self, config: ConfigManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
-        self._tiles: list[ExportJobTile] = []
         self._editors: dict[str, ExportJobEditor] = {}
         self._current_editor_id: str | None = None
         self._build_ui()
@@ -570,162 +407,13 @@ class ExportJobsWidget(QWidget):
         self._stack = QStackedWidget()
         root.addWidget(self._stack)
 
-        self._tiles_page = self._build_tiles_page()
-        self._editor_page = self._build_editor_page()
+        self._tiles_page = ExportJobsTilesPage(self)
+        self._tiles_page.add_requested.connect(self._add_new_job)
+        self._editor_page = ExportJobsEditorPage(self)
+        self._editor_page.back_requested.connect(self._show_tiles)
+        self._editor_page.delete_requested.connect(self._delete_current_editor)
         self._stack.addWidget(self._tiles_page)   # index 0
         self._stack.addWidget(self._editor_page)  # index 1
-
-    def _build_tiles_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        # Toolbar
-        toolbar = QWidget()
-        toolbar.setObjectName("exportToolbar")
-        tb = QHBoxLayout(toolbar)
-        tb.setContentsMargins(16, 12, 16, 12)
-        tb.setSpacing(8)
-
-        title = QLabel("Выгрузки")
-        title.setStyleSheet(
-            f"font-size: {Theme.font_size_lg}pt; "
-            f"font-weight: {Theme.font_weight_semi}; "
-            f"color: {Theme.gray_900};"
-        )
-        tb.addWidget(title)
-        tb.addStretch()
-
-        add_btn = QPushButton("  Добавить")
-        add_btn.setObjectName("primaryBtn")
-        add_btn.setIcon(lucide("plus", color=Theme.gray_900, size=14))
-        add_btn.setFixedHeight(28)
-        add_btn.clicked.connect(self._add_new_job)
-        tb.addWidget(add_btn)
-
-        layout.addWidget(toolbar)
-        layout.addWidget(hsep())
-
-        # Scroll area
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        layout.addWidget(scroll, stretch=1)
-
-        self._grid_container = QWidget()
-        self._grid_container.setStyleSheet("background: transparent;")
-        scroll.setWidget(self._grid_container)
-
-        # Use QGridLayout; reflow handled in eventFilter
-        self._grid_layout = QGridLayout(self._grid_container)
-        self._grid_layout.setContentsMargins(16, 16, 16, 16)
-        self._grid_layout.setSpacing(12)
-        self._grid_layout.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
-
-        # Empty state placed in row 0, col 0
-        self._empty_lbl = QLabel(
-            "Нет настроенных выгрузок.\nНажмите «Добавить» чтобы создать первую."
-        )
-        self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_lbl.setStyleSheet(
-            f"color: {Theme.gray_400}; "
-            f"font-size: {Theme.font_size_md}pt; "
-            f"padding: 48px 0;"
-        )
-        self._grid_layout.addWidget(self._empty_lbl, 0, 0)
-
-        # Reflow on resize
-        scroll.viewport().installEventFilter(self)
-        self._grid_scroll = scroll
-
-        return page
-
-    def _build_editor_page(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        # Editor toolbar with back button
-        toolbar = QWidget()
-        toolbar.setObjectName("exportToolbar")
-        tb = QHBoxLayout(toolbar)
-        tb.setContentsMargins(8, 8, 16, 8)
-        tb.setSpacing(8)
-
-        back_btn = QPushButton("  Назад к списку")
-        back_btn.setIcon(lucide("arrow-left", color=Theme.gray_700, size=14))
-        back_btn.setFixedHeight(28)
-        back_btn.setStyleSheet(
-            "QPushButton {"
-            f"  border: 1px solid transparent;"
-            f"  background: transparent;"
-            f"  color: {Theme.gray_700};"
-            f"  padding: 0 10px;"
-            f"  border-radius: 5px;"
-            "}"
-            f"QPushButton:hover {{"
-            f"  background-color: {Theme.gray_100};"
-            f"}}"
-        )
-        back_btn.clicked.connect(self._show_tiles)
-        tb.addWidget(back_btn)
-        tb.addStretch()
-
-        # Delete button on the right of the editor toolbar
-        del_btn = QPushButton("  Удалить выгрузку")
-        del_btn.setIcon(lucide("trash-2", color=Theme.error, size=14))
-        del_btn.setFixedHeight(28)
-        del_btn.setStyleSheet(
-            "QPushButton {"
-            f"  border: 1px solid transparent;"
-            f"  background: transparent;"
-            f"  color: {Theme.error};"
-            f"  padding: 0 10px;"
-            f"  border-radius: 5px;"
-            "}"
-            f"QPushButton:hover {{"
-            f"  background-color: {Theme.error_bg};"
-            f"  border-color: {Theme.error};"
-            f"}}"
-        )
-        del_btn.clicked.connect(self._delete_current_editor)
-        tb.addWidget(del_btn)
-
-        layout.addWidget(toolbar)
-        layout.addWidget(hsep())
-
-        # Internal QStackedWidget — one page per editor (no re-parenting)
-        self._editor_stack = QStackedWidget()
-        self._editor_scrolls: dict[str, QScrollArea] = {}
-        layout.addWidget(self._editor_stack, stretch=1)
-
-        return page
-
-    # ------------------------------------------------------------------ Reflow
-
-    def eventFilter(self, obj, event):  # noqa: N802
-        if obj is self._grid_scroll.viewport() and event.type() == event.Type.Resize:
-            self._reflow_tiles()
-        return super().eventFilter(obj, event)
-
-    def _reflow_tiles(self) -> None:
-        """Re-position tiles in a grid based on container width."""
-        if not self._tiles:
-            return
-        viewport_w = self._grid_scroll.viewport().width()
-        # Minus container margins (16 left + 16 right)
-        avail = viewport_w - 32
-        cols = max(1, (avail + self._grid_layout.spacing()) // (ExportJobTile.TILE_W + self._grid_layout.spacing()))
-        # Remove all tiles from grid (leave empty label in place)
-        for tile in self._tiles:
-            self._grid_layout.removeWidget(tile)
-        # Re-add at proper grid positions
-        for idx, tile in enumerate(self._tiles):
-            r, c = divmod(idx, int(cols))
-            self._grid_layout.addWidget(tile, r, c)
 
     # ------------------------------------------------------------------ Jobs CRUD
 
@@ -748,8 +436,8 @@ class ExportJobsWidget(QWidget):
             # the editor view — same as the old ExportJobCard which lived
             # in the layout permanently.
             self._editors[job["id"]] = self._create_editor(job)
-        self._refresh_empty()
-        self._reflow_tiles()
+        self._tiles_page.refresh_empty()
+        self._tiles_page.reflow_tiles()
 
     def _save_jobs(self) -> None:
         cfg = self._config.load()
@@ -759,7 +447,7 @@ class ExportJobsWidget(QWidget):
         # Refresh the corresponding tile labels
         for ed in self._editors.values():
             job = ed.to_job()
-            for tile in self._tiles:
+            for tile in self._tiles_page.tiles():
                 if tile.job_id() == job.get("id"):
                     tile.update_from_job(job)
                     break
@@ -778,8 +466,8 @@ class ExportJobsWidget(QWidget):
         self._add_tile(job)
         self._editors[job["id"]] = self._create_editor(job)
         self._save_jobs()
-        self._refresh_empty()
-        self._reflow_tiles()
+        self._tiles_page.refresh_empty()
+        self._tiles_page.reflow_tiles()
         # Open the editor immediately so the user can fill in the name/SQL
         self._show_editor(job["id"])
 
@@ -788,9 +476,7 @@ class ExportJobsWidget(QWidget):
         tile.open_requested.connect(self._show_editor)
         tile.run_requested.connect(self._run_job)
         tile.delete_requested.connect(self._on_tile_delete)
-        self._tiles.append(tile)
-        # Initial position; _reflow_tiles will fix placement
-        self._grid_layout.addWidget(tile, len(self._tiles) - 1, 0)
+        self._tiles_page.add_tile(tile)
 
     def _create_editor(self, job: ExportJob) -> ExportJobEditor:
         editor = ExportJobEditor(job, self._config, self)
@@ -815,8 +501,7 @@ class ExportJobsWidget(QWidget):
         scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
         scroll.setWidget(container)
 
-        self._editor_stack.addWidget(scroll)
-        self._editor_scrolls[job.get("id", "")] = scroll
+        self._editor_page.add_editor(job.get("id", ""), scroll)
 
         return editor
 
@@ -825,10 +510,8 @@ class ExportJobsWidget(QWidget):
         editor = self._editors.get(job_id)
         if editor is None:
             return
-        scroll = self._editor_scrolls.get(job_id)
-        if scroll is None:
+        if not self._editor_page.show_editor(job_id):
             return
-        self._editor_stack.setCurrentWidget(scroll)
         self._current_editor_id = job_id
         self._stack.setCurrentIndex(1)
 
@@ -839,7 +522,7 @@ class ExportJobsWidget(QWidget):
         # Refresh tile labels to reflect any edits made in the editor
         for ed in self._editors.values():
             job = ed.to_job()
-            for tile in self._tiles:
+            for tile in self._tiles_page.tiles():
                 if tile.job_id() == job.get("id"):
                     tile.update_from_job(job)
                     break
@@ -881,29 +564,22 @@ class ExportJobsWidget(QWidget):
         if editor is not None:
             editor.stop_scheduler()
             editor.stop_timers()         # stop debounce timers before deleteLater()
-            scroll = self._editor_scrolls.pop(job_id, None)
+            scroll = self._editor_page.remove_editor(job_id)
             if scroll is not None:
-                self._editor_stack.removeWidget(scroll)
                 scroll.deleteLater()
             editor.deleteLater()
             del self._editors[job_id]
-        for tile in list(self._tiles):
-            if tile.job_id() == job_id:
-                self._tiles.remove(tile)
-                self._grid_layout.removeWidget(tile)
-                tile.deleteLater()
-                break
+        tile = self._tiles_page.remove_tile(job_id)
+        if tile is not None:
+            tile.deleteLater()
         # If the deleted job was the one currently shown in the editor,
         # navigate back to the tiles list
         if self._current_editor_id == job_id:
             self._show_tiles()
         self._save_jobs()
-        self._refresh_empty()
-        self._reflow_tiles()
+        self._tiles_page.refresh_empty()
+        self._tiles_page.reflow_tiles()
         self.history_changed.emit()
-
-    def _refresh_empty(self) -> None:
-        self._empty_lbl.setVisible(len(self._tiles) == 0)
 
     # ------------------------------------------------------------------ Public
 
