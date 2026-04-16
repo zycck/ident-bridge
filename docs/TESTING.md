@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **233 test functions / 234 collected test items** covering the scheduler engine,
+The fastest sanity check. **238 test functions / 239 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **233 tests**. Keep this number in
+The current tree actually contains **238 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-234 passed in X.XXs
+239 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -96,6 +96,8 @@ closed cleanly.
 | `tests/test_sql_client.py` | escaped DSN building, missing-pyodbc behavior, query materialization, clearer connection-failure reporting | 5 |
 | `tests/test_updater.py` | release asset selection, download helper, apply helper exit path | 4 |
 | `tests/test_update_apply_worker.py` | extracted update apply worker: off-GUI apply handoff, applied/error/finished signals | 2 |
+| `tests/test_error_dialog_controller.py` | extracted error hook/controller: traceback formatting, logging, dialog display gating | 3 |
+| `tests/test_debug_window_log_controller.py` | extracted debug log bridge: history replay, idempotent connect, live disconnect | 2 |
 | `tests/test_export_failure_alerts.py` | export failure counter thresholding and reset-after-success behavior | 2 |
 | `tests/test_dashboard_activity_panel.py` | extracted dashboard activity panel: aggregated count, empty clear no-op, clear cancel/confirm behavior | 4 |
 | `tests/test_dashboard_activity_store.py` | extracted dashboard activity store: pure history clearing and payload preservation | 2 |
@@ -658,7 +660,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 233 test functions, but the
+- The repository tree currently reports 238 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

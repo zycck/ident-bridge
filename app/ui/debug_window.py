@@ -15,8 +15,8 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.constants import DEBUG_LOG_BLOCK_LIMIT
-from app.core.app_logger import get_handler
 
+from app.ui.debug_window_log_controller import DebugWindowLogController
 from app.ui.debug_window_formatting import format_log_line_html
 
 _STYLE_LOG = (
@@ -39,10 +39,12 @@ class DebugWindow(QDialog):
         self.setWindowTitle("Debug — iDentBridge")
         self.resize(1000, 560)
         self.setWindowFlag(Qt.WindowType.Window, True)
-        self._connected = False
-        self._history_loaded = False
         self._build_ui()
-        self._connect_log()
+        self._log_controller = DebugWindowLogController(
+            on_message=self._append_message,
+            parent=self,
+        )
+        self._log_controller.connect()
 
     # ------------------------------------------------------------------
     def _build_ui(self) -> None:
@@ -79,33 +81,17 @@ class DebugWindow(QDialog):
         root.addWidget(self._log, stretch=1)
 
     # ------------------------------------------------------------------
-    def _connect_log(self) -> None:
-        if not self._connected:
-            handler = get_handler()
-            if not self._history_loaded:
-                # Replay buffered history before connecting live feed
-                for line in handler.history:
-                    self._on_message(line)
-                self._history_loaded = True
-            handler.message.connect(self._on_message)
-            self._connected = True
-
-    def _disconnect_log(self) -> None:
-        if self._connected:
-            get_handler().message.disconnect(self._on_message)
-            self._connected = False
-
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
-        self._connect_log()
+        self._log_controller.connect()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
-        self._disconnect_log()
+        self._log_controller.disconnect()
         event.accept()
 
     # ------------------------------------------------------------------
     @Slot(str)
-    def _on_message(self, text: str) -> None:
+    def _append_message(self, text: str) -> None:
         self._log.appendHtml(format_log_line_html(text))
         sb = self._log.verticalScrollBar()
         sb.setValue(sb.maximum())

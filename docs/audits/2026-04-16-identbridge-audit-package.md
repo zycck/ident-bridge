@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `233` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `238` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`234 passed`) plus a clean `python main.py` smoke-run.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`239 passed`) plus a clean `python main.py` smoke-run.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -71,6 +71,8 @@ Interpretation:
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates startup-toggle and manual update-check side effects to [app/ui/settings_app_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_app_controller.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates shell signal wiring and pass-through orchestration to [app/ui/settings_widget_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget_controller.py:1).
   - [app/ui/threading.py](/mnt/d/ProjectLocal/identa report/app/ui/threading.py:1) now exposes an explicit pre-start `connect_signals` contract, and the fast-path ping/test/update callers use it instead of late wiring after `run_worker()`.
+  - [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1) now delegates traceback formatting and global exception-hook installation to [app/ui/error_dialog_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog_controller.py:1).
+  - [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1) now delegates history replay and live log subscription to [app/ui/debug_window_log_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window_log_controller.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates tray visibility, close-to-tray, and shutdown cleanup behavior to [app/ui/main_window_lifecycle.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_lifecycle.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates lazy debug-window lifetime and toggling to [app/ui/main_window_debug.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_debug.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates navigation state and sidebar shell wiring to [app/ui/main_window_navigation.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_navigation.py:1).
@@ -93,7 +95,7 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `234 passed in 2.27s`
+  - `python -m pytest tests/ -q` → `239 passed in 2.41s`
   - `python main.py` on Windows 11 / Python 3.14.4 → started and closed cleanly (`Exited=True`)
   - `python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean` → built `build/dist/iDentSync.exe`
   - `build/dist/iDentSync.exe` → started and closed cleanly (`Exited=True`)
@@ -147,7 +149,7 @@ Interpretation:
    - [build.spec](/mnt/d/ProjectLocal/identa report/build.spec:1)
    - [VERSIONING.md](/mnt/d/ProjectLocal/identa report/VERSIONING.md:1)
    - [app/core/updater.py](/mnt/d/ProjectLocal/identa report/app/core/updater.py:33)
-   - [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:100)
+   - [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1)
    Impact:
    - One missed edit can produce mismatched artifact names, updater paths, log locations, or release metadata.
    Recommended action:
@@ -238,9 +240,9 @@ Interpretation:
 | [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) | `medium` | Smaller after lifecycle, debug, and navigation extraction, but page construction/wiring and remaining top-level shell orchestration are still mixed together. |
 | [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1) | `high` | Highlighter, editor behavior, overlay UI, and dialog shell are all fused. |
 | [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) | `high` | Styling, event filtering, drag logic, and host-window behavior are tightly coupled. |
-| [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1) | `high` | Error UI, logging, rotation, and global hook management in one module. |
+| [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1) | `medium` | The global hook and traceback formatting are now extracted, but the dialog still owns its full UI composition directly. |
 | [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:1) | `medium` | Worker wiring is now safer, but the result table still eagerly materializes and renders large result sets. |
-| [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1) | `medium` | Hard dependency on current logger format and live handler API. |
+| [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1) | `medium` | Live log subscription is extracted now, but the window still depends on current log HTML formatting and view-specific behavior. |
 | [app/ui/history_row.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row.py:1) | `medium` | Data normalization, timestamp formatting, and rendering all in-widget. |
 | [app/ui/lucide_icons.py](/mnt/d/ProjectLocal/identa report/app/ui/lucide_icons.py:1) | `medium` | Rendering, recolor, cache policy, and resource-layout knowledge mixed together. |
 | [app/ui/threading.py](/mnt/d/ProjectLocal/identa report/app/ui/threading.py:1) | `low` | Good helper overall; it now provides an explicit pre-start `connect_signals` hook for fast-path callers. |
