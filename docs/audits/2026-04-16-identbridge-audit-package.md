@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `213` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `215` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`214 passed`) plus a clean `python main.py` smoke-run.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`216 passed`) plus a clean `python main.py` smoke-run.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -72,6 +72,7 @@ Interpretation:
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates remaining cross-widget update/export routing and tray failure alerts to [app/ui/main_window_signal_router.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_signal_router.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates stacked page construction and page-order assembly to [app/ui/main_window_pages.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_pages.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates title-bar signal wiring, maximize/restore behavior, and window-state icon sync to [app/ui/main_window_chrome.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_chrome.py:1).
+  - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates startup bootstrap wiring (exception hook, debug shortcut, about-to-quit cleanup hookup, initial silent auto-update check) to [app/ui/main_window_bootstrap.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_bootstrap.py:1).
   - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) now also delegates aggregated activity/history rendering and clear-confirm behavior to [app/ui/dashboard_activity_panel.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_activity_panel.py:1).
   - [app/ui/dashboard_activity_panel.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_activity_panel.py:1) now also delegates pure history-clearing payload mutation to [app/ui/dashboard_activity_store.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_activity_store.py:1).
   - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) now also delegates periodic ping timer setup, deferred first ping, and stop lifecycle to [app/ui/dashboard_ping_timer.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_ping_timer.py:1).
@@ -84,7 +85,7 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `214 passed in 3.71s`
+  - `python -m pytest tests/ -q` → `216 passed in 2.23s`
   - `python main.py` on Windows 11 / Python 3.14.4 → started and closed cleanly (`Exited=True`)
   - `python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean` → built `build/dist/iDentSync.exe`
   - `build/dist/iDentSync.exe` → started and closed cleanly (`Exited=True`)

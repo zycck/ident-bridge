@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 """MainWindow — top-level application shell for iDentBridge."""
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication,
     QHBoxLayout,
     QMainWindow,
     QSystemTrayIcon,
@@ -15,7 +13,7 @@ from app.ui.title_bar import CustomTitleBar
 
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
-from app.ui.error_dialog import install_global_handler
+from app.ui.main_window_bootstrap import MainWindowBootstrapController
 from app.ui.main_window_chrome import MainWindowChromeController
 from app.ui.main_window_debug import DebugWindowCoordinator
 from app.ui.main_window_lifecycle import (
@@ -67,14 +65,14 @@ class MainWindow(QMainWindow):
             dashboard=self._dashboard,
             close_debug_window=self._close_debug_window,
         )
-        self._install_exception_hook()
-        self._setup_shortcuts()
-
-        # Connect app-level quit signal for proper cleanup
-        QApplication.instance().aboutToQuit.connect(self._cleanup)  # type: ignore[union-attr]
-
-        if config.get("auto_update_check"):
-            self._run_update_check_silently()
+        self._bootstrap = MainWindowBootstrapController(
+            window=self,
+            config=self._config,
+            toggle_debug_window=self._toggle_debug_window,
+            cleanup=self._cleanup,
+            run_update_check=self._run_update_check_silently,
+        )
+        self._bootstrap.wire()
 
         _log.info("iDentBridge %s started", current_version)
         self.setWindowTitle("iDentBridge")
@@ -151,15 +149,6 @@ class MainWindow(QMainWindow):
             self._chrome.handle_change_event(event)
         super().changeEvent(event)
 
-    # ------------------------------------------------------------------
-    # Shortcuts
-    # ------------------------------------------------------------------
-
-    def _setup_shortcuts(self) -> None:
-        debug_shortcut = QShortcut(QKeySequence("Ctrl+D"), self)
-        debug_shortcut.setContext(Qt.ShortcutContext.ApplicationShortcut)
-        debug_shortcut.activated.connect(self._toggle_debug_window)
-
     def _toggle_debug_window(self) -> None:
         self._debug.toggle()
 
@@ -192,13 +181,6 @@ class MainWindow(QMainWindow):
 
     def _run_update_check_silently(self) -> None:
         self._update_flow.run_silent_check()
-
-    # ------------------------------------------------------------------
-    # Error hook
-    # ------------------------------------------------------------------
-
-    def _install_exception_hook(self) -> None:
-        install_global_handler()
 
     # ------------------------------------------------------------------
     # Window / tray events
