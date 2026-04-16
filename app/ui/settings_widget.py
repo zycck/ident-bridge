@@ -8,10 +8,10 @@ from app.config import ConfigManager
 from app.core.app_logger import get_logger
 
 from app.core.updater import GITHUB_REPO
+from app.ui.settings_app_controller import SettingsAppController
 from app.ui.settings_shell import SettingsShell
 from app.ui.settings_actions import (
     SettingsUpdateCoordinator,
-    apply_startup_toggle,
     is_startup_enabled,
 )
 from app.ui.settings_form_controller import SettingsFormController
@@ -65,6 +65,10 @@ class SettingsWidget(QWidget):
             github_repo=GITHUB_REPO,
             is_startup_enabled_fn=is_startup_enabled,
             on_instance_selected=self._sql_controller.handle_instance_changed,
+        )
+        self._app_controller = SettingsAppController(
+            startup_check=self._startup_check,
+            update_coordinator=self._update_actions,
         )
         self._connect_auto_save()
         self._load_fields()
@@ -165,15 +169,7 @@ class SettingsWidget(QWidget):
 
     @Slot(bool)
     def _on_startup_toggled(self, checked: bool) -> None:
-        result = apply_startup_toggle(checked)
-        if not result.ok:
-            self._startup_check.blockSignals(True)
-            self._startup_check.setChecked(not checked)
-            self._startup_check.blockSignals(False)
-            QMessageBox.warning(
-                self, "Автозапуск",
-                f"Не удалось изменить запись в реестре:\n{result.error}",
-            )
+        self._app_controller.handle_startup_toggled(checked)
 
-    def _check_update(self) -> None:
-        self._update_actions.check()
+    def _check_update(self) -> bool:
+        return self._app_controller.check_update()
