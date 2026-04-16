@@ -114,6 +114,20 @@ behaviour are not meaningful from WSL/Linux.
 2. Close + reopen the app
 3. **Verify:** the instance is remembered
 
+## 11. Packaged build smoke
+1. Build the packaged app:
+   ```cmd
+   python -m PyInstaller build.spec --noconfirm --distpath build\dist --workpath build\work --clean
+   ```
+2. Start the packaged executable:
+   ```cmd
+   build\dist\iDentSync.exe
+   ```
+3. **Verify:** the app starts without an import/runtime crash
+4. **Verify:** the window or tray process appears as expected
+5. Close the packaged app
+6. **Verify:** the process exits cleanly
+
 ---
 
 ## Cleanup after verification

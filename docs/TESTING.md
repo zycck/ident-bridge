@@ -25,6 +25,7 @@ App identity constants live in `app/core/constants.py`.
 |---|---|---|
 | Automated test suite | `python -m pytest tests/` | ~1 sec |
 | Headless smoke | one-liner (see §2) | 5 sec |
+| Packaged build smoke | `python -m PyInstaller build.spec --noconfirm ...` | ~1-2 min |
 | Live tray + scheduler | manual with FAST\_TRIGGER | ~1 min |
 | Background execution | manual | ~2 min |
 | Manual trigger (▶) | manual | 30 sec |
@@ -33,6 +34,7 @@ App identity constants live in `app/core/constants.py`.
 | Failure notifications | manual | ~1 min |
 | Settings persistence | manual | 1 min |
 | Debug console | manual | 30 sec |
+| Performance smoke | `python tools/perf_smoke.py --scenario all --cycles 5` | ~10 sec |
 | Full release checklist | `docs/VERIFICATION.md` | 15 min |
 
 ---
@@ -68,6 +70,16 @@ Expected output:
 If anything fails, the test name + assertion message tells you exactly
 which feature regressed. **Do not proceed with manual testing until
 the automated suite is fully green.**
+
+For packaged smoke on the same validated stack:
+
+```bash
+python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean
+build\dist\iDentSync.exe
+```
+
+Expected result: the `.exe` is produced successfully, starts, and can be
+closed cleanly.
 
 ### Coverage map
 

@@ -59,6 +59,8 @@ Interpretation:
 - Fresh Windows validation evidence after these changes:
   - `python -m pytest tests/ -q` → `122 passed in 1.81s`
   - `python main.py` on Windows 11 / Python 3.14.4 → started and closed cleanly (`Exited=True`)
+  - `python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean` → built `build/dist/iDentSync.exe`
+  - `build/dist/iDentSync.exe` → started and closed cleanly (`Exited=True`)
 - Remaining findings below should be read as the original audit baseline plus any items that still remain open after the first modernization/decomposition wave.
 
 ## Executive Summary
@@ -75,9 +77,9 @@ Interpretation:
 | Scalability | `orange` | `fetchall()`, full UI rebuilds, and full config rewrites will become noticeable under larger data volumes. |
 | Cleanliness | `yellow` | Codebase is readable overall, but naming drift, duplication, inline styles, and broad catches remain visible. |
 | Technical Debt | `orange` | Debt is now mapped and localized, but several areas already impede safe refactoring. |
-| Testability | `orange` | Good core test coverage exists and the Windows 3.14.4 automated gate is now green, but widget integration and packaged runtime still need more evidence. |
+| Testability | `yellow` | Good core test coverage exists, the Windows 3.14.4 automated gate is green, and packaged build smoke now works; deeper GUI/manual coverage still remains. |
 | Dependency Hygiene | `orange` | The stack is current enough, but `>=` floors without a lock/constraints file make reproduction and upgrades non-deterministic. |
-| Python 3.14.4 Readiness | `yellow` | Automated Windows validation is now green, but full packaged/manual verification still remains. |
+| Python 3.14.4 Readiness | `yellow` | Source and packaged smoke now validate on Windows 11 / Python 3.14.4, but broader long-run/manual verification still remains. |
 
 ## Findings By Severity
 ### Critical
