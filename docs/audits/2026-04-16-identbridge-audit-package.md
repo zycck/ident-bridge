@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `226` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `230` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`227 passed`) plus a clean `python main.py` smoke-run.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`231 passed`) plus a clean `python main.py` smoke-run.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -58,6 +58,7 @@ Interpretation:
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates the stateful delete transaction (running guard, confirmation, editor/tile removal, save/reflow/history emit) to [app/ui/export_jobs_delete_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_delete_controller.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates the editor view composition, webhook field, and view-level helpers to [app/ui/export_editor_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/export_editor_shell.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now keeps only list/detail container duties, while the per-job editor lifecycle lives in [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1).
+  - [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1) now also delegates scheduler/timer/test-dialog lifecycle wiring to [app/ui/export_editor_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_editor_controller.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates job loading, save synchronization, tile/editor wiring, and “new job” creation to [app/ui/export_jobs_collection_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_collection_controller.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now delegates worker/helper logic to [app/ui/settings_workers.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_workers.py:1), [app/ui/settings_persistence.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_persistence.py:1), and [app/ui/settings_actions.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_actions.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates non-visual SQL discovery/test state to [app/ui/settings_sql_flow.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_sql_flow.py:1).
@@ -121,7 +122,7 @@ Interpretation:
 ### High
 1. Worker signal wiring is race-prone in multiple fast-path flows.
    Evidence:
-   - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:358)
+   - [app/ui/dashboard_ping_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_ping_coordinator.py:99)
    - [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:168)
    Impact:
    - Fast workers can emit terminal signals before handlers are attached.
@@ -140,7 +141,7 @@ Interpretation:
 
 3. Primary UI orchestration is concentrated in god-modules.
    Evidence:
-   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1)
+   - [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1)
    - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1)
    Impact:
    - Refactoring risk is high because UI, persistence, orchestration, and worker control are tightly coupled.
@@ -248,6 +249,7 @@ Interpretation:
 | Component | Severity | Debt summary |
 |---|---|---|
 | [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) | `medium` | Much smaller after panel/page extraction, but still owns editor orchestration, persistence wiring, and deletion flow. |
+| [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1) | `medium` | Smaller after lifecycle controller extraction, but worker callbacks and final execution wiring still live beside the widget shell. |
 | [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) | `medium` | Now mostly a shell over extracted panels and controllers; remaining debt is limited to final composition and controller ownership boundaries. |
 | [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) | `medium` | Smaller after ping/activity and banner extraction, but history mutation, status-card composition, and remaining widget orchestration are still mixed together. |
 | [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) | `medium` | Smaller after lifecycle, debug, and navigation extraction, but page construction/wiring and remaining top-level shell orchestration are still mixed together. |

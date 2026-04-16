@@ -5,18 +5,16 @@ from PySide6.QtCore import QTimer, Qt, Signal, Slot
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from app.config import ConfigManager, ExportHistoryEntry, ExportJob, SyncResult
-from app.core.app_logger import get_logger
 from app.core.constants import DEBOUNCE_SAVE_MS, DEBOUNCE_SYNTAX_MS
 from app.core.scheduler import SyncScheduler
+from app.ui.export_editor_controller import ExportEditorController
 from app.ui.export_editor_runtime import ExportEditorRuntimeState
 from app.ui.export_editor_shell import ExportEditorShell
 from app.ui.export_execution_controller import ExportExecutionController
-from app.ui.export_schedule_panel import schedule_value_is_valid
 from app.ui.test_run_dialog import TestRunDialog
 from app.ui.threading import run_worker
 from app.workers.export_worker import ExportWorker
 
-_log = get_logger(__name__)
 _FAILURE_ALERT_THRESHOLD = 3
 
 
@@ -41,18 +39,12 @@ class ExportJobEditor(QWidget):
         self._runtime = ExportEditorRuntimeState()
 
         self._scheduler = SyncScheduler(self)
-        self._scheduler.trigger.connect(self._auto_trigger)
-
         self._query_timer = QTimer(self)
         self._query_timer.setSingleShot(True)
         self._query_timer.setInterval(DEBOUNCE_SAVE_MS)
-        self._query_timer.timeout.connect(self._emit_changed)
-
         self._syntax_timer = QTimer(self)
         self._syntax_timer.setSingleShot(True)
         self._syntax_timer.setInterval(DEBOUNCE_SYNTAX_MS)
-        self._syntax_timer.timeout.connect(self._refresh_sql_syntax)
-
         self._build_ui()
         self._execution = ExportExecutionController(
             runtime=self._runtime,
@@ -68,8 +60,21 @@ class ExportJobEditor(QWidget):
             emit_failure_alert=self.failure_alert.emit,
             failure_alert_threshold=_FAILURE_ALERT_THRESHOLD,
         )
-        self._load_job(job)
-        self._apply_schedule()
+        self._controller = ExportEditorController(
+            shell=self._shell,
+            scheduler=self._scheduler,
+            query_timer=self._query_timer,
+            syntax_timer=self._syntax_timer,
+            load_config=self._config.load,
+            emit_changed=self._emit_changed,
+            emit_history_changed=self.history_changed.emit,
+            run_manual_export=self._execution.start_manual,
+            run_scheduled_export=self._execution.start_scheduled,
+            record_test_completed=self._execution.record_test_completed,
+            create_test_dialog=self._create_test_dialog,
+        )
+        self._controller.wire()
+        self._controller.load_job(job)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -82,12 +87,6 @@ class ExportJobEditor(QWidget):
         self._webhook_edit = self._shell._webhook_edit
         self._schedule_panel = self._shell._schedule_panel
         self._history_panel = self._shell._history_panel
-        self._shell.changed.connect(self._emit_changed)
-        self._shell.query_changed.connect(self._on_query_changed)
-        self._shell.schedule_changed.connect(self._on_sched_changed)
-        self._shell.history_changed.connect(self._on_history_changed)
-        self._shell.test_requested.connect(self._open_test_dialog)
-        self._shell.run_requested.connect(self.start_export)
         root.addWidget(self._shell)
 
     def job_id(self) -> str:
@@ -105,69 +104,33 @@ class ExportJobEditor(QWidget):
             history=self._shell.history(),
         )
 
-    def _load_job(self, job: ExportJob) -> None:
-        self._shell.set_job_name(job.get("name", ""))
-        self._shell.set_sql_text(job.get("sql_query", ""))
-        self._shell.set_webhook_url(job.get("webhook_url", ""))
-        self._shell.set_schedule(
-            bool(job.get("schedule_enabled", False)),
-            job.get("schedule_mode", "daily"),
-            job.get("schedule_value", ""),
-        )
-        self._shell.set_history(list(job.get("history") or []))
-
-        latest = self._shell.latest_history_entry()
-        if latest is not None:
-            kind, text = self._runtime.status_from_latest_entry(latest)
-            self._shell.set_status(kind, text)
-        QTimer.singleShot(0, self._refresh_sql_syntax)
-
     def _on_sched_changed(self) -> None:
-        self._apply_schedule()
-        self._emit_changed()
+        self._controller.handle_schedule_changed()
 
     def _apply_schedule(self) -> None:
-        self._scheduler.stop()
-        if not self._shell.schedule_enabled():
-            return
-        mode = self._shell.schedule_mode()
-        value = self._shell.schedule_value()
-        if not schedule_value_is_valid(mode, value):
-            return
-        self._scheduler.configure(mode, value)  # type: ignore[arg-type]
-        self._scheduler.start()
-        _log.debug(
-            "Job '%s': scheduler started (%s %s)",
-            self._shell.job_name() or self._job_id,
-            mode,
-            value,
-        )
+        self._controller.apply_schedule()
 
     def stop_scheduler(self) -> None:
-        self._scheduler.stop()
+        self._controller.stop_scheduler()
 
     def stop_timers(self) -> None:
-        if hasattr(self, "_query_timer") and self._query_timer is not None:
-            self._query_timer.stop()
-        if hasattr(self, "_syntax_timer") and self._syntax_timer is not None:
-            self._syntax_timer.stop()
+        self._controller.stop_timers()
 
     def _on_query_changed(self) -> None:
-        self._query_timer.start()
-        self._syntax_timer.start()
+        self._controller.handle_query_changed()
 
     def _refresh_sql_syntax(self) -> None:
-        self._shell.refresh_sql_syntax()
+        self._controller.refresh_sql_syntax()
 
     @Slot()
     def _auto_trigger(self) -> None:
-        self._execution.start_scheduled()
+        self._controller.start_scheduled_export()
 
     def start_export(self) -> None:
-        self._execution.start_manual()
+        self._controller.start_export()
 
     def _start_export(self) -> None:
-        self._execution.start_manual()
+        self._controller.start_export()
 
     def _start_worker(
         self,
@@ -176,6 +139,7 @@ class ExportJobEditor(QWidget):
         on_error,
         on_progress,
     ) -> None:
+        worker.progress.connect(on_progress)
         run_worker(
             self,
             worker,
@@ -183,7 +147,6 @@ class ExportJobEditor(QWidget):
             on_finished=on_finished,
             on_error=on_error,
         )
-        worker.progress.connect(on_progress)
 
     @Slot(int, str)
     def _on_progress(self, _step: int, description: str) -> None:
@@ -201,16 +164,7 @@ class ExportJobEditor(QWidget):
         self._shell.prepend_history_entry(entry)
 
     def _open_test_dialog(self) -> None:
-        sql = self._shell.sql_text()
-        cfg = self._config.load()
-        dialog = TestRunDialog(
-            cfg,
-            initial_sql=sql,
-            auto_run=bool(sql),
-            parent=self,
-        )
-        dialog.test_completed.connect(self._on_test_completed)
-        dialog.exec()
+        self._controller.open_test_dialog()
 
     @Slot(bool, int, str)
     def _on_test_completed(self, ok: bool, rows: int, err: str) -> None:
@@ -220,8 +174,7 @@ class ExportJobEditor(QWidget):
         self.changed.emit(self.to_job())
 
     def _on_history_changed(self) -> None:
-        self._emit_changed()
-        self.history_changed.emit()
+        self._controller.handle_history_changed()
 
     @property
     def _consecutive_failures(self) -> int:
@@ -230,3 +183,11 @@ class ExportJobEditor(QWidget):
     @property
     def _running(self) -> bool:
         return self._execution.running
+
+    def _create_test_dialog(self, cfg: dict, sql: str) -> TestRunDialog:
+        return TestRunDialog(
+            cfg,
+            initial_sql=sql,
+            auto_run=bool(sql),
+            parent=self,
+        )
