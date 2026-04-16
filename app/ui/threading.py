@@ -11,7 +11,7 @@ from __future__ import annotations
 import weakref
 from typing import Any, Callable
 
-from PySide6.QtCore import QObject, QThread
+from PySide6.QtCore import QObject, QThread, QTimer
 
 
 def run_worker(
@@ -34,6 +34,11 @@ def run_worker(
     Workers with `finished` and/or `error` signals get those wired to
     `thread.quit` automatically. Optional `on_finished` / `on_error` callbacks
     let callers handle results without manual wiring.
+
+    The actual thread start is deferred to the next event-loop turn via
+    `QTimer.singleShot(0, ...)`. This gives callers a safe window to attach
+    additional non-terminal signals after `run_worker()` returns, which avoids
+    late-connect races for fast workers.
 
     For workers whose entry-point method is not named `run`, pass a different
     name via `entry`. If the method does not exist, the helper silently skips
@@ -83,5 +88,7 @@ def run_worker(
 
         thread.finished.connect(_clear)
 
-    thread.start()
+    # Start on the next event-loop turn so callers can safely connect extra
+    # signals after `run_worker()` returns.
+    QTimer.singleShot(0, thread.start)
     return thread

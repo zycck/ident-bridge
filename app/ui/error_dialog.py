@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from app.core.constants import CONFIG_DIR_NAME
 from app.ui.theme import Theme
 
 # Note: INotifier integration removed in Phase 1 refactor — re-introduce via
@@ -99,7 +100,7 @@ def install_global_handler() -> None:
         # -- Append to error log -------------------------------------------
         appdata = os.environ.get("APPDATA", "")
         if appdata:
-            log_dir = Path(appdata) / "iDentSync"
+            log_dir = Path(appdata) / CONFIG_DIR_NAME
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / "errors.log"
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

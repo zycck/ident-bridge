@@ -124,6 +124,18 @@ def test_sync_path_no_crash_when_not_registered(mock_winreg):
         pytest.fail(f"sync_path raised when not registered: {e}")
 
 
+def test_windows_autostart_is_safe_when_winreg_missing(monkeypatch):
+    """The module should remain import-safe and no-op off Windows."""
+    monkeypatch.setattr(startup, "winreg", None, raising=False)
+
+    assert startup.is_registered() is False
+    assert startup.register() == (False, "Windows autostart is unavailable on this platform")
+    assert startup.unregister() == (False, "Windows autostart is unavailable on this platform")
+
+    # sync_path should simply return without raising
+    startup.sync_path()
+
+
 # ── MainWindow tray close-to-tray ─────────────────────────────────────
 
 @pytest.fixture

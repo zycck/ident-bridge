@@ -6,9 +6,43 @@ import sys
 import tempfile
 import time
 import urllib.request
+from collections.abc import Callable
 from pathlib import Path
 
-from app.core.constants import GITHUB_API_URL, GITHUB_REPO, MIN_DOWNLOAD_BYTES
+from app.core.constants import (
+    EXE_NAME,
+    GITHUB_API_URL,
+    GITHUB_REPO,
+    MIN_DOWNLOAD_BYTES,
+    USER_AGENT,
+)
+
+_DETACHED_FLAGS = (
+    getattr(subprocess, "DETACHED_PROCESS", 0)
+    | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+)
+
+
+def _pick_download_url(release_data: dict) -> str | None:
+    """Choose the most appropriate packaged update asset from a release."""
+    assets = release_data.get("assets", [])
+    if not assets:
+        return None
+
+    expected_name = f"{EXE_NAME}.exe".lower()
+    for asset in assets:
+        name = str(asset.get("name") or "").lower()
+        url = asset.get("browser_download_url")
+        if name == expected_name and url:
+            return url
+
+    for asset in assets:
+        name = str(asset.get("name") or "").lower()
+        url = asset.get("browser_download_url")
+        if name.endswith(".exe") and url:
+            return url
+
+    return None
 
 
 def _parse_version(version: str) -> tuple[int, ...]:
@@ -31,8 +65,8 @@ def get_exe_path() -> str:
 
 
 def cleanup_old_exe() -> None:
-    """Remove leftover iDentSync_old.exe from a previous self-update."""
-    old_exe = os.path.join(os.path.dirname(get_exe_path()), "iDentSync_old.exe")
+    """Remove leftover self-update artifacts from a previous run."""
+    old_exe = os.path.join(os.path.dirname(get_exe_path()), f"{EXE_NAME}_old.exe")
     for attempt in range(5):
         try:
             if os.path.exists(old_exe):
@@ -45,29 +79,30 @@ def cleanup_old_exe() -> None:
 
 def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
     url = GITHUB_API_URL.format(repo=repo)
-    headers = {"User-Agent": "iDentBridge/0.0.1"}
+    headers = {"User-Agent": USER_AGENT}
     request = urllib.request.Request(url, headers=headers)
     ssl_ctx = ssl.create_default_context()
     try:
         with urllib.request.urlopen(request, context=ssl_ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-        assets = data.get("assets", [])
-        if not assets:
+        download_url = _pick_download_url(data)
+        if not download_url:
             return None
-        return (data["tag_name"], assets[0]["browser_download_url"])
+        return (data["tag_name"], download_url)
     except Exception:
         return None
 
 
-def download_and_apply(download_url: str) -> None:
-    exe_path = get_exe_path()
-    new_exe = os.path.join(tempfile.gettempdir(), "iDentSync_new.exe")
+def download_update(download_url: str) -> str:
+    """Download the update payload to a temporary file and return its path."""
+    new_exe = os.path.join(tempfile.gettempdir(), f"{EXE_NAME}_new.exe")
 
     ssl_ctx = ssl.create_default_context()
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl_ctx)
     )
-    with opener.open(download_url, timeout=120) as resp, open(new_exe, "wb") as fh:
+    request = urllib.request.Request(download_url, headers={"User-Agent": USER_AGENT})
+    with opener.open(request, timeout=120) as resp, open(new_exe, "wb") as fh:
         fh.write(resp.read())
 
     if os.path.getsize(new_exe) <= MIN_DOWNLOAD_BYTES:
@@ -75,8 +110,25 @@ def download_and_apply(download_url: str) -> None:
             f"Downloaded file is too small ({os.path.getsize(new_exe)} bytes); "
             "aborting update to avoid replacing the app with a corrupt file."
         )
+    return new_exe
 
-    old_exe = os.path.join(os.path.dirname(exe_path), "iDentSync_old.exe")
+
+def apply_downloaded_update(
+    downloaded_path: str,
+    *,
+    exit_hook: Callable[[], None] | None = None,
+) -> None:
+    """
+    Launch the updater helper for an already-downloaded payload.
+
+    This lets callers move the expensive network download off the GUI thread
+    while keeping the fast script-generation + process-launch phase on the
+    main thread.
+    """
+    exe_path = get_exe_path()
+    new_exe = downloaded_path
+
+    old_exe = os.path.join(os.path.dirname(exe_path), f"{EXE_NAME}_old.exe")
     # Write script next to the exe (not world-writable tempdir) to prevent TOCTOU attacks.
     script_dir = os.path.dirname(exe_path) if getattr(sys, "frozen", False) else tempfile.gettempdir()
 
@@ -97,7 +149,7 @@ def download_and_apply(download_url: str) -> None:
             fh.write(script)
         subprocess.Popen(
             ["cmd.exe", "/c", script_path],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            creationflags=_DETACHED_FLAGS,
             close_fds=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -123,11 +175,18 @@ def download_and_apply(download_url: str) -> None:
             fh.write(script)
         subprocess.Popen(
             [sys.executable, script_path],
-            creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+            creationflags=_DETACHED_FLAGS,
             close_fds=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
 
-    sys.exit(0)
+    if exit_hook is None:
+        sys.exit(0)
+    exit_hook()
+
+
+def download_and_apply(download_url: str) -> None:
+    downloaded_path = download_update(download_url)
+    apply_downloaded_update(downloaded_path)

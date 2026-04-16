@@ -2,6 +2,13 @@
 """Single source of truth for SQL Server ODBC connection strings."""
 from __future__ import annotations
 
+from app.core.constants import APP_NAME
+
+
+def _odbc_escape(value: str) -> str:
+    """Wrap an ODBC value in braces and escape closing braces inside it."""
+    return "{" + value.replace("}", "}}") + "}"
+
 
 def build_sql_connection_string(
     *,
@@ -20,14 +27,18 @@ def build_sql_connection_string(
     `trust_cert=True` accepts self-signed/untrusted server certs (common in
     LAN deployments). `timeout` is the TCP connect timeout in seconds.
     """
-    auth = f"UID={user};PWD={password};" if user else "Trusted_Connection=yes;"
-    db   = f"Database={database};" if database else ""
+    auth = (
+        f"UID={_odbc_escape(user)};PWD={_odbc_escape(password)};"
+        if user
+        else "Trusted_Connection=yes;"
+    )
+    db = f"Database={_odbc_escape(database)};" if database else ""
     return (
-        f"Driver={{{driver}}};"
-        f"Server={server};"
+        f"Driver={_odbc_escape(driver)};"
+        f"Server={_odbc_escape(server)};"
         f"{db}"
         f"{auth}"
-        f"APP=iDentBridge;"
+        f"APP={_odbc_escape(APP_NAME)};"
         f"TrustServerCertificate={'yes' if trust_cert else 'no'};"
         f"Connect Timeout={timeout};"
     )

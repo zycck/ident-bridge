@@ -1,8 +1,23 @@
+from __future__ import annotations
+
 import logging
-import winreg
 import subprocess
 
-import pyodbc
+try:
+    import winreg
+except Exception as exc:  # pragma: no cover - depends on OS
+    winreg = None
+    _WINREG_IMPORT_ERROR = exc
+else:
+    _WINREG_IMPORT_ERROR = None
+
+try:
+    import pyodbc
+except Exception as exc:  # pragma: no cover - runtime availability differs by OS
+    pyodbc = None
+    _PYODBC_IMPORT_ERROR = exc
+else:
+    _PYODBC_IMPORT_ERROR = None
 
 from app.config import SqlInstance
 from app.core.connection import build_sql_connection_string
@@ -12,8 +27,18 @@ _INSTANCES_KEY = r"SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL"
 _log = logging.getLogger(__name__)
 
 
+def _require_pyodbc() -> None:
+    if pyodbc is None:
+        raise RuntimeError(
+            "pyodbc is unavailable; install pyodbc and the native ODBC runtime"
+        ) from _PYODBC_IMPORT_ERROR
+
+
 def scan_local() -> list[SqlInstance]:
     results: list[SqlInstance] = []
+    if winreg is None:
+        _log.debug("scan_local: winreg unavailable, skipping registry scan")
+        return results
     try:
         key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, _INSTANCES_KEY)
     except OSError:
@@ -47,6 +72,13 @@ def scan_network() -> list[SqlInstance]:
             text=True,
             timeout=3,
         )
+        if proc.returncode != 0 and not (proc.stdout or "").strip():
+            stderr = (proc.stderr or "").strip()
+            if stderr:
+                _log.debug("scan_network: sqlcmd exited with %d: %s", proc.returncode, stderr)
+            else:
+                _log.debug("scan_network: sqlcmd exited with %d", proc.returncode)
+            return []
         results: list[SqlInstance] = []
         for line in proc.stdout.splitlines():
             stripped = line.strip()
@@ -87,6 +119,7 @@ def scan_all() -> list[SqlInstance]:
 
 
 def list_databases(instance: SqlInstance, user: str, password: str) -> list[str]:
+    _require_pyodbc()
     driver = best_driver()
     conn_str = build_sql_connection_string(
         driver=driver,
@@ -97,14 +130,14 @@ def list_databases(instance: SqlInstance, user: str, password: str) -> list[str]
         trust_cert=True,
         timeout=3,
     )
-    conn: pyodbc.Connection | None = None
+    conn: object | None = None
     try:
         conn = pyodbc.connect(conn_str, autocommit=True, timeout=3)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT name FROM sys.databases WHERE state_desc = 'ONLINE' ORDER BY name"
         )
-        return [row[0] for row in cursor.fetchall()]
+        return [row[0] for row in cursor]
     finally:
         if conn is not None:
             try:

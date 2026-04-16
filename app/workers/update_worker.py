@@ -10,7 +10,7 @@ Usage:
 """
 from PySide6.QtCore import QObject, Signal, Slot
 
-from app.core.updater import check_latest, is_newer
+from app.core.updater import check_latest, download_update, is_newer
 
 
 class UpdateWorker(QObject):
@@ -46,5 +46,27 @@ class UpdateWorker(QObject):
                     self.no_update.emit()
             except Exception as exc:  # noqa: BLE001
                 self.error.emit(str(exc))
+        finally:
+            self.finished.emit()
+
+
+class UpdateDownloadWorker(QObject):
+    """Downloads the update payload off the GUI thread."""
+
+    downloaded: Signal = Signal(str)
+    error: Signal = Signal(str)
+    finished: Signal = Signal()
+
+    def __init__(self, download_url: str) -> None:
+        super().__init__()
+        self._download_url = download_url
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            path = download_update(self._download_url)
+            self.downloaded.emit(path)
+        except Exception as exc:  # noqa: BLE001
+            self.error.emit(str(exc))
         finally:
             self.finished.emit()

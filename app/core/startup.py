@@ -1,15 +1,24 @@
-import winreg
-import sys
 import os
+import sys
 from pathlib import Path
 
 from app.core.app_logger import get_logger
+from app.core.constants import APP_NAME
 
 _log = get_logger(__name__)
 
-REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
-APP_NAME = "iDentBridge"
+if sys.platform == "win32":
+    import winreg
+else:  # pragma: no cover - exercised indirectly via import-safe tests
+    winreg = None  # type: ignore[assignment]
 
+REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def _require_winreg():
+    if winreg is None:
+        return None
+    return winreg
 
 def get_exe_path() -> str:
     if getattr(sys, "frozen", False):
@@ -20,17 +29,24 @@ def get_exe_path() -> str:
 
 def _read_value() -> str:
     """Read the current registry value (raises FileNotFoundError if missing)."""
-    with winreg.OpenKey(
-        winreg.HKEY_CURRENT_USER,
+    reg = _require_winreg()
+    if reg is None:
+        raise OSError("Windows registry autostart is unavailable on this platform")
+
+    with reg.OpenKey(
+        reg.HKEY_CURRENT_USER,
         REG_PATH,
         0,
-        winreg.KEY_READ,
+        reg.KEY_READ,
     ) as key:
-        value, _type = winreg.QueryValueEx(key, APP_NAME)
+        value, _type = reg.QueryValueEx(key, APP_NAME)
         return value
 
 
 def is_registered() -> bool:
+    if winreg is None:
+        return False
+
     try:
         _read_value()
         return True
@@ -42,16 +58,22 @@ def is_registered() -> bool:
 
 
 def register() -> tuple[bool, str]:
+    if winreg is None:
+        return False, "Windows autostart is unavailable on this platform"
+
     exe_path = get_exe_path()
     _log.info("Autostart register: writing exe path -> %s", exe_path)
     try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
+        reg = _require_winreg()
+        assert reg is not None
+
+        with reg.OpenKey(
+            reg.HKEY_CURRENT_USER,
             REG_PATH,
             0,
-            winreg.KEY_SET_VALUE,
+            reg.KEY_SET_VALUE,
         ) as key:
-            winreg.SetValueEx(key, APP_NAME, 0, winreg.REG_SZ, exe_path)
+            reg.SetValueEx(key, APP_NAME, 0, reg.REG_SZ, exe_path)
     except Exception as exc:
         _log.error("Autostart register FAILED: %s", exc)
         return False, str(exc)
@@ -83,16 +105,22 @@ def register() -> tuple[bool, str]:
 
 
 def unregister() -> tuple[bool, str]:
+    if winreg is None:
+        return False, "Windows autostart is unavailable on this platform"
+
     _log.info("Autostart unregister: removing entry %s", APP_NAME)
     try:
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
+        reg = _require_winreg()
+        assert reg is not None
+
+        with reg.OpenKey(
+            reg.HKEY_CURRENT_USER,
             REG_PATH,
             0,
-            winreg.KEY_SET_VALUE,
+            reg.KEY_SET_VALUE,
         ) as key:
             try:
-                winreg.DeleteValue(key, APP_NAME)
+                reg.DeleteValue(key, APP_NAME)
                 _log.info("Autostart unregister: registry entry removed")
             except FileNotFoundError:
                 _log.info("Autostart unregister: entry was already absent (no-op)")
@@ -119,9 +147,15 @@ def unregister() -> tuple[bool, str]:
 
 
 def sync_path() -> None:
+    if winreg is None:
+        return
+
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, REG_PATH, 0, winreg.KEY_READ) as key:
-            current_value, _ = winreg.QueryValueEx(key, APP_NAME)
+        reg = _require_winreg()
+        assert reg is not None
+
+        with reg.OpenKey(reg.HKEY_CURRENT_USER, REG_PATH, 0, reg.KEY_READ) as key:
+            current_value, _ = reg.QueryValueEx(key, APP_NAME)
     except Exception:
         return
 

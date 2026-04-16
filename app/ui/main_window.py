@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMenu,
+    QMessageBox,
     QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
@@ -22,7 +23,7 @@ from app.ui.title_bar import CustomTitleBar
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
 from app.core.constants import NAV_SIDEBAR_W
-from app.core.updater import GITHUB_REPO, download_and_apply
+from app.core.updater import GITHUB_REPO, apply_downloaded_update
 from app.ui.dashboard_widget import DashboardWidget
 from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import install_global_handler
@@ -31,7 +32,7 @@ from app.ui.lucide_icons import lucide
 from app.ui.settings_widget import SettingsWidget
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
-from app.workers.update_worker import UpdateWorker
+from app.workers.update_worker import UpdateDownloadWorker, UpdateWorker
 
 _log = get_logger(__name__)
 
@@ -53,6 +54,8 @@ class MainWindow(QMainWindow):
 
         # Strong ref to update worker — GC kills workers without explicit Python reference
         self._update_worker: object | None = None
+        self._update_download_worker: object | None = None
+        self._update_download_running = False
 
         # Debug window — created lazily on first Ctrl+D press
         self._debug_window: DebugWindow | None = None
@@ -275,7 +278,44 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_update_requested(self, url: str) -> None:
-        download_and_apply(url)
+        if self._update_download_running:
+            return
+
+        self._update_download_running = True
+        self._dashboard.set_update_in_progress(True)
+
+        worker = UpdateDownloadWorker(url)
+        run_worker(
+            self,
+            worker,
+            pin_attr="_update_download_worker",
+            on_finished=self._on_update_download_finished,
+            on_error=self._on_update_download_error,
+        )
+        worker.downloaded.connect(self._on_update_downloaded)
+
+    @Slot(str)
+    def _on_update_downloaded(self, downloaded_path: str) -> None:
+        try:
+            apply_downloaded_update(downloaded_path, exit_hook=QApplication.quit)
+        except Exception as exc:  # noqa: BLE001
+            self._update_download_running = False
+            self._dashboard.set_update_in_progress(False)
+            QMessageBox.warning(self, "Ошибка обновления", str(exc))
+
+    @Slot()
+    def _on_update_download_finished(self) -> None:
+        # Successful update application exits the app; reaching here means we
+        # should restore the UI for non-fatal paths only.
+        if self._update_download_running:
+            self._update_download_running = False
+            self._dashboard.set_update_in_progress(False)
+
+    @Slot(str)
+    def _on_update_download_error(self, message: str) -> None:
+        self._update_download_running = False
+        self._dashboard.set_update_in_progress(False)
+        QMessageBox.warning(self, "Ошибка обновления", message)
 
     @Slot(str, int)
     def _on_export_failure_alert(self, job_name: str, count: int) -> None:

@@ -29,18 +29,11 @@ def test_configure_sets_mode_and_value(scheduler):
     scheduler.configure("hourly", "1")
 
 
-def test_configure_invalid_mode_raises_value_error(scheduler):
-    """Unknown mode raises ValueError when start() is called."""
-    scheduler.configure("garbage", "14:30")
+@pytest.mark.parametrize("mode,value", [("garbage", "14:30"), ("cron", "* * * * *")])
+def test_configure_invalid_mode_raises_value_error(scheduler, mode, value):
+    """Unsupported modes fail at configure() and never reach start()."""
     with pytest.raises(ValueError):
-        scheduler.start()
-
-
-def test_configure_cron_mode_raises_not_implemented(scheduler):
-    """Cron mode raises NotImplementedError when start() is called."""
-    scheduler.configure("cron", "* * * * *")
-    with pytest.raises(NotImplementedError):
-        scheduler.start()
+        scheduler.configure(mode, value)
 
 
 def test_stop_clears_next_run(scheduler, qtbot):

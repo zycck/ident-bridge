@@ -1,4 +1,10 @@
-import pyodbc
+try:
+    import pyodbc
+except Exception as exc:  # pragma: no cover - import availability depends on runtime
+    pyodbc = None
+    _PYODBC_IMPORT_ERROR = exc
+else:
+    _PYODBC_IMPORT_ERROR = None
 
 # Порядок важен — сначала самый новый.
 # Driver 18+ требует TrustServerCertificate=yes для серверов без доверенного сертификата
@@ -18,7 +24,16 @@ _CANDIDATES = (
 
 def best_driver() -> str:
     """Возвращает наилучший доступный ODBC-драйвер для SQL Server."""
-    available = set(pyodbc.drivers())
+    if pyodbc is None:
+        raise RuntimeError(
+            "pyodbc is not available; install pyodbc and the native ODBC runtime "
+            "to detect SQL Server drivers"
+        ) from _PYODBC_IMPORT_ERROR
+
+    try:
+        available = set(pyodbc.drivers())
+    except Exception as exc:
+        raise RuntimeError("Unable to enumerate installed ODBC drivers via pyodbc") from exc
     for candidate in _CANDIDATES:
         if candidate in available:
             return candidate

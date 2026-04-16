@@ -7,6 +7,7 @@ from typing import Literal
 from PySide6.QtCore import QObject, QTimer, Signal
 
 _log = logging.getLogger(__name__)
+_SUPPORTED_MODES = ("daily", "hourly", "minutely", "secondly")
 
 # Daily-mode scheduling uses datetime.now().astimezone() to be DST-aware.
 # When the local timezone observes DST transitions, "daily at 14:30" stays
@@ -25,11 +26,13 @@ class SyncScheduler(QObject):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._fire)
-        self._mode: Literal["daily", "hourly", "minutely", "secondly", "cron"] | None = None
+        self._mode: Literal["daily", "hourly", "minutely", "secondly"] | None = None
         self._value: str | None = None
         self._next_run: datetime | None = None
 
-    def configure(self, mode: Literal["daily", "hourly", "minutely", "secondly", "cron"], value: str) -> None:
+    def configure(self, mode: Literal["daily", "hourly", "minutely", "secondly"], value: str) -> None:
+        if mode not in _SUPPORTED_MODES:
+            raise ValueError(f"Unsupported mode: {mode!r}")
         self._mode = mode
         self._value = value
 
@@ -106,9 +109,6 @@ class SyncScheduler(QObject):
             if candidate <= now:
                 candidate += timedelta(days=1)
             base_delay = (candidate - now).total_seconds()
-
-        elif self._mode == "cron":
-            raise NotImplementedError("cron mode is not implemented")
 
         else:
             raise ValueError(f"Unknown mode: {self._mode!r}")

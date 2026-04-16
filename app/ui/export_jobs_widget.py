@@ -58,6 +58,7 @@ _log = get_logger(__name__)
 
 # Maps _mode_combo index → schedule_mode string (order must match addItems call)
 _MODE_BY_INDEX: tuple[str, ...] = ("daily", "hourly", "minutely", "secondly")
+_FAILURE_ALERT_THRESHOLD = 3
 
 
 # ---------------------------------------------------------------------------
@@ -883,12 +884,10 @@ class ExportJobEditor(QWidget):
             self._add_history_entry(ok=True, rows=result.rows_synced, ts=ts_full)
             self.sync_completed.emit(result)
         else:
-            self._consecutive_failures += 1
-            if self._consecutive_failures >= 3:
-                self.failure_alert.emit(
-                    self.to_job().get("name") or "Без названия",
-                    self._consecutive_failures,
-                )
+            # Failure accounting happens in _on_error() because the worker
+            # emits error -> finished(success=False) for the same failed run.
+            # Keeping the counter update in one place avoids double-counting.
+            pass
 
     @Slot(str)
     def _on_error(self, msg: str) -> None:
@@ -899,7 +898,7 @@ class ExportJobEditor(QWidget):
         ts_full = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._add_history_entry(ok=False, err=msg, ts=ts_full)
         self._consecutive_failures += 1
-        if self._consecutive_failures >= 3:
+        if self._consecutive_failures >= _FAILURE_ALERT_THRESHOLD:
             self.failure_alert.emit(
                 self.to_job().get("name") or "Без названия",
                 self._consecutive_failures,

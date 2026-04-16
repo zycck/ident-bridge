@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import threading
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -14,6 +15,7 @@ from pathlib import Path
 from typing import TypedDict
 
 from app.core import dpapi
+from app.core.constants import CONFIG_DIR_NAME
 
 
 # ---------------------------------------------------------------------------
@@ -88,11 +90,29 @@ class AppConfig(TypedDict, total=False):
     tray_notice_shown: bool  # shown once when app first minimises to tray
 
 
+def _default_config_dir() -> Path:
+    """Return the platform-appropriate config directory.
+
+    Windows keeps the existing %APPDATA% layout. On other platforms we
+    prefer XDG_CONFIG_HOME when available and otherwise fall back to
+    ~/.config so the module remains import-safe outside Windows.
+    """
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return Path(appdata) / CONFIG_DIR_NAME
+
+    xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
+    if xdg_config_home:
+        return Path(xdg_config_home) / CONFIG_DIR_NAME
+
+    return Path.home() / ".config" / CONFIG_DIR_NAME
+
+
 # ---------------------------------------------------------------------------
 # ConfigManager
 # ---------------------------------------------------------------------------
 
-CONFIG_DIR  = Path(os.environ["APPDATA"]) / "iDentSync"
+CONFIG_DIR  = _default_config_dir()
 CONFIG_PATH = CONFIG_DIR / "config.json"
 ENCRYPTED_KEYS: frozenset[str] = frozenset({"sql_user", "sql_password"})
 
@@ -147,16 +167,43 @@ class ConfigManager:
 
     def save(self, cfg: AppConfig) -> None:
         with self._lock:
+            valid_keys = AppConfig.__annotations__.keys()
+            self._cfg = AppConfig(
+                **{k: v for k, v in dict(cfg).items() if k in valid_keys}
+            )  # type: ignore[typeddict-item]
             out: dict = dict(cfg)
             for key in ENCRYPTED_KEYS:
                 if key in out and out[key]:
                     encrypted_bytes = dpapi.encrypt(out[key])
                     out[key] = base64.b64encode(encrypted_bytes).decode("ascii")
 
-            with CONFIG_PATH.open("w", encoding="utf-8") as fh:
-                json.dump(out, fh, indent=2, ensure_ascii=False)
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            tmp_path: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    "w",
+                    encoding="utf-8",
+                    dir=CONFIG_DIR,
+                    delete=False,
+                ) as fh:
+                    tmp_path = Path(fh.name)
+                    json.dump(out, fh, indent=2, ensure_ascii=False)
+                    fh.flush()
+                    os.fsync(fh.fileno())
 
-            os.chmod(CONFIG_PATH, 0o600)
+                os.replace(tmp_path, CONFIG_PATH)
+            finally:
+                if tmp_path is not None and tmp_path.exists():
+                    try:
+                        tmp_path.unlink()
+                    except FileNotFoundError:
+                        pass
+
+            try:
+                os.chmod(CONFIG_PATH, 0o600)
+            except OSError:
+                # Permission bits are advisory outside POSIX filesystems.
+                pass
 
     def update(self, **changes: object) -> None:
         """Atomic load → merge → save. Preserves keys not in changes."""

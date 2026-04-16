@@ -168,6 +168,16 @@ def test_run_worker_on_error_callback(qapp_session, qtbot):
     assert errors[0] == "simulated failure"
 
 
+def test_run_worker_allows_late_signal_connections(qapp_session, qtbot):
+    """Callers may connect extra signals after run_worker() returns."""
+    parent = QObject()
+    worker = _DefaultWorker()
+    observed = []
+    run_worker(parent, worker)
+    worker.finished.connect(lambda: observed.append("finished"))
+    qtbot.waitUntil(lambda: observed == ["finished"], timeout=2000)
+
+
 def test_run_worker_error_quits_thread(qapp_session, qtbot):
     """worker.error → thread.quit — thread terminates automatically."""
     parent = QObject()

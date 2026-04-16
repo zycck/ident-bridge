@@ -1,12 +1,22 @@
 import time
 import random
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 
-import pyodbc
+try:
+    import pyodbc
+except Exception as exc:  # pragma: no cover - runtime availability differs by OS
+    pyodbc = None
+    _PYODBC_IMPORT_ERROR = exc
+else:
+    _PYODBC_IMPORT_ERROR = None
 
 from app.config import AppConfig, QueryResult
 from app.core.connection import build_sql_connection_string
 from app.core.odbc_utils import best_driver
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    import pyodbc as _pyodbc
 
 _MAX_ATTEMPTS = 3
 _BASE_DELAY = 2.0   # seconds; doubles each retry
@@ -18,9 +28,16 @@ class SqlClient:
 
     def __init__(self, cfg: AppConfig) -> None:
         self._cfg = cfg
-        self._conn: pyodbc.Connection | None = None
+        self._conn: object | None = None
+
+    def _require_pyodbc(self) -> None:
+        if pyodbc is None:
+            raise ConnectionError(
+                "pyodbc is unavailable; install pyodbc and the native ODBC runtime"
+            ) from _PYODBC_IMPORT_ERROR
 
     def connect(self) -> None:
+        self._require_pyodbc()
         instance = self._cfg.get("sql_instance") or ""
         database = self._cfg.get("sql_database") or ""
         if not instance:
@@ -53,6 +70,9 @@ class SqlClient:
                 # Credentials are protected at rest via DPAPI in config.json.
                 return
 
+            except RuntimeError as exc:
+                last_exc = exc
+                break
             except pyodbc.Error as exc:
                 last_exc = exc
 
@@ -66,8 +86,11 @@ class SqlClient:
         if self._conn is not None:
             try:
                 self._conn.close()
-            except pyodbc.Error:
-                pass
+            except Exception as exc:
+                if pyodbc is not None and isinstance(exc, pyodbc.Error):
+                    pass
+                else:
+                    raise
             finally:
                 self._conn = None
 
@@ -78,8 +101,10 @@ class SqlClient:
             with self._conn.cursor() as cur:
                 cur.execute("SELECT 1")
             return True
-        except pyodbc.Error:
-            return False
+        except Exception as exc:
+            if pyodbc is not None and isinstance(exc, pyodbc.Error):
+                return False
+            raise
 
     def query(self, sql: str, params: tuple = ()) -> QueryResult:
         if self._conn is None:
@@ -88,7 +113,9 @@ class SqlClient:
         with self._conn.cursor() as cursor:
             cursor.execute(sql, params)
             columns = [d[0] for d in cursor.description]
-            rows = list(cursor.fetchall())
+            rows = cursor.fetchall()
+            if not isinstance(rows, list):
+                rows = list(rows)
         elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         return QueryResult(
             columns=columns,

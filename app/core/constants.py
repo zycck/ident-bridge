@@ -31,7 +31,13 @@ ERROR_DIALOG_MIN_H    = 400
 # ── External URLs ────────────────────────────────────────────────────
 GITHUB_REPO    = "zycck/ident-bridge"
 GITHUB_API_URL = "https://api.github.com/repos/{repo}/releases/latest"
-USER_AGENT     = "iDentBridge/{version}"
+
+# ── Identity / metadata ──────────────────────────────────────────────
+APP_NAME       = "iDentBridge"
+CONFIG_DIR_NAME = "iDentSync"
+EXE_NAME        = "iDentSync"
+APP_VERSION     = "0.0.1"
+USER_AGENT      = f"{APP_NAME}/{APP_VERSION}"
 
 # ── Misc ─────────────────────────────────────────────────────────────
 MIN_DOWNLOAD_BYTES = 1_000_000

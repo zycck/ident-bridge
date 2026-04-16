@@ -13,9 +13,16 @@ Start: `0.0.1`
 
 ## Constants
 
-- `APP_VERSION = "0.0.1"` in `main.py`
+- `app/core/constants.py` is the single source of truth for app identity and package metadata:
+  - `APP_NAME = "iDentBridge"`
+  - `CONFIG_DIR_NAME = "iDentSync"`
+  - `EXE_NAME = "iDentSync"`
+  - `APP_VERSION = "0.0.1"`
+  - `USER_AGENT = f"{APP_NAME}/{APP_VERSION}"`
+- `main.py` imports `APP_VERSION` from `app/core/constants.py`
+- `build.spec` imports `EXE_NAME` from `app/core/constants.py`
 - GitHub tag format: `v0.0.1`, `v0.1.0`, `v1.0.0`
-- GitHub Release attachment: `iDentSync.exe`
+- GitHub Release attachment: the packaged artifact name comes from `EXE_NAME` in `app/core/constants.py` (`iDentSync.exe` today)
 
 ## Commit convention
 

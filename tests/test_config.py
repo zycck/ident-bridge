@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -72,6 +73,46 @@ def test_save_writes_valid_json(tmp_config, tmp_path):
     parsed = json.loads(config_file.read_text(encoding="utf-8"))
     assert parsed["sql_instance"] == "x"
     assert parsed["sql_database"] == "y"
+
+
+def test_default_config_dir_prefers_appdata(monkeypatch, tmp_path):
+    import app.config as config_module
+
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+
+    expected = tmp_path / "appdata" / config_module.CONFIG_DIR_NAME
+    assert config_module._default_config_dir() == expected
+
+
+def test_default_config_dir_falls_back_to_xdg(monkeypatch, tmp_path):
+    import app.config as config_module
+
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    expected = tmp_path / "xdg" / config_module.CONFIG_DIR_NAME
+    assert config_module._default_config_dir() == expected
+
+
+def test_save_uses_atomic_replace(tmp_config, tmp_path, monkeypatch):
+    import app.config as config_module
+
+    replace_calls: list[tuple[Path, Path]] = []
+    original_replace = config_module.os.replace
+
+    def _recording_replace(src: os.PathLike[str] | str, dst: os.PathLike[str] | str) -> None:
+        replace_calls.append((Path(src), Path(dst)))
+        original_replace(src, dst)
+
+    monkeypatch.setattr(config_module.os, "replace", _recording_replace)
+
+    tmp_config.save(AppConfig(sql_instance="atomic"))
+
+    assert replace_calls, "save() should replace a temporary file atomically"
+    assert replace_calls[0][1] == tmp_path / "config.json"
+    assert (tmp_path / "config.json").exists()
+    assert json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))["sql_instance"] == "atomic"
 
 
 # ── update() helper (atomic load → merge → save) ──────────────────────

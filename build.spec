@@ -2,6 +2,8 @@
 # PyInstaller spec for iDentBridge — single-file windowed .exe
 # Usage: pyinstaller build.spec
 
+from app.core.constants import EXE_NAME
+
 block_cipher = None
 
 a = Analysis(
@@ -66,7 +68,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
-    name="iDentSync",
+    name=EXE_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,          # strip not supported on Windows

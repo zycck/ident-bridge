@@ -4,10 +4,17 @@ This document covers the manual end-to-end verification steps for
 iDentBridge that the automated test suite cannot fully exercise.
 Run through it before any release.
 
+Audit note: this checklist assumes a real Windows 10/11 desktop
+session. The current WSL/Linux workspace is only a negative-control
+environment and cannot substitute for tray, registry, reboot, or other
+Windows-specific validation.
+
 ## Prerequisites
 - Windows 10 or 11
 - Python 3.13 with PySide6 installed
 - Optional: a reachable MS SQL Server instance for end-to-end export tests
+- Run the automated suite from the same Windows environment before
+  relying on this checklist as a release gate.
 
 ## 1. Cold start + tray icon
 1. Run `python main.py`
@@ -56,11 +63,14 @@ window is closed-to-tray.
    ```cmd
    reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v iDentBridge
    ```
-4. **Verify:** the value points to your iDentBridge exe / python script
+4. **Verify:** the value points to the app identity defined in `app/core/constants.py` (`APP_NAME` for the Run key, `EXE_NAME.exe` for the packaged build)
 5. Reboot Windows
 6. **Verify:** after login, the app starts automatically (tray icon appears)
 7. Open the app → **Настройки** → toggle off
 8. Re-verify the registry key is gone
+
+This step must be validated on Windows; registry write/read and reboot
+behaviour are not meaningful from WSL/Linux.
 
 ## 5. Update check
 1. **Настройки** → click **Проверить обновление**
@@ -111,3 +121,8 @@ set IDENTBRIDGE_FAST_TRIGGER_SECONDS=
 ```
 
 Unset the env var so production behavior is restored.
+
+Manual-only remainder: tray visibility, close-to-tray, autostart
+registry writes, reboot persistence, and real background scheduler
+behaviour all require the Windows desktop shell and are not fully
+covered by the automated suite.
