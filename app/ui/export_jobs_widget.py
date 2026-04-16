@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """ExportJobsWidget — list-detail export job manager (tiles + editor pages)."""
-from datetime import datetime
 
 from PySide6.QtCore import QTimer, Qt, Signal, Slot
 from PySide6.QtWidgets import (
@@ -18,7 +17,6 @@ from app.config import (
     ExportHistoryEntry,
     ExportJob,
     SyncResult,
-    TriggerType,
 )
 from app.core.app_logger import get_logger
 from app.core.constants import (
@@ -30,6 +28,7 @@ from app.ui.export_editor_header import ExportEditorHeader
 from app.ui.export_execution_controller import ExportExecutionController
 from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_job_tile import ExportJobTile
+from app.ui.export_jobs_delete_controller import ExportJobsDeleteController
 from app.ui.export_jobs_pages import ExportJobsEditorPage, ExportJobsTilesPage
 from app.ui.export_editor_runtime import ExportEditorRuntimeState
 from app.ui.export_jobs_store import (
@@ -355,6 +354,19 @@ class ExportJobsWidget(QWidget):
         self._editors: dict[str, ExportJobEditor] = {}
         self._current_editor_id: str | None = None
         self._build_ui()
+        self._delete_controller = ExportJobsDeleteController(
+            tiles_page=self._tiles_page,
+            editor_page=self._editor_page,
+            save_jobs=self._save_jobs,
+            show_tiles=self._show_tiles,
+            emit_history_changed=self.history_changed.emit,
+            warn_running=lambda title, message: QMessageBox.warning(
+                self,
+                title,
+                message,
+            ),
+            confirm_delete=self._confirm_delete,
+        )
         self._load_jobs()
 
     # ------------------------------------------------------------------ UI
@@ -480,45 +492,20 @@ class ExportJobsWidget(QWidget):
 
     @Slot(str)
     def _on_tile_delete(self, job_id: str) -> None:
-        editor = self._editors.get(job_id)
-        if editor is not None and getattr(editor, "_running", False):
-            QMessageBox.warning(
-                self,
-                "Выгрузка выполняется",
-                "Дождитесь завершения выгрузки перед удалением.",
-            )
-            return
-        name = "без названия"
-        if editor is not None:
-            name = editor.to_job().get("name") or "без названия"
+        self._delete_controller.delete_job(
+            job_id=job_id,
+            editors=self._editors,
+            current_editor_id=self._current_editor_id,
+        )
+
+    def _confirm_delete(self, job_name: str) -> bool:
         reply = QMessageBox.question(
             self,
             "Удалить выгрузку",
-            f"Удалить выгрузку «{name}»?",
+            f"Удалить выгрузку «{job_name}»?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
-        if reply != QMessageBox.StandardButton.Yes:
-            return
-        # Stop scheduler, remove editor + scroll page from internal stack
-        if editor is not None:
-            editor.stop_scheduler()
-            editor.stop_timers()         # stop debounce timers before deleteLater()
-            scroll = self._editor_page.remove_editor(job_id)
-            if scroll is not None:
-                scroll.deleteLater()
-            editor.deleteLater()
-            del self._editors[job_id]
-        tile = self._tiles_page.remove_tile(job_id)
-        if tile is not None:
-            tile.deleteLater()
-        # If the deleted job was the one currently shown in the editor,
-        # navigate back to the tiles list
-        if self._current_editor_id == job_id:
-            self._show_tiles()
-        self._save_jobs()
-        self._tiles_page.refresh_empty()
-        self._tiles_page.reflow_tiles()
-        self.history_changed.emit()
+        return reply == QMessageBox.StandardButton.Yes
 
     # ------------------------------------------------------------------ Public
 

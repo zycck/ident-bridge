@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `202` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `206` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`203 passed`) plus a clean `python main.py` smoke-run.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`207 passed`) plus a clean `python main.py` smoke-run.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -55,6 +55,7 @@ Interpretation:
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now delegates trigger bookkeeping, history-entry creation, status restoration, and failure threshold logic to [app/ui/export_editor_runtime.py](/mnt/d/ProjectLocal/identa report/app/ui/export_editor_runtime.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates config-facing load/save/new-job normalization to [app/ui/export_jobs_store.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_store.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates worker/test-run orchestration to [app/ui/export_execution_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_execution_controller.py:1).
+  - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates the stateful delete transaction (running guard, confirmation, editor/tile removal, save/reflow/history emit) to [app/ui/export_jobs_delete_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_delete_controller.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now delegates worker/helper logic to [app/ui/settings_workers.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_workers.py:1), [app/ui/settings_persistence.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_persistence.py:1), and [app/ui/settings_actions.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_actions.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates non-visual SQL discovery/test state to [app/ui/settings_sql_flow.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_sql_flow.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates instance/database combo presentation logic to [app/ui/settings_sql_presenters.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_sql_presenters.py:1).
@@ -80,7 +81,7 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `203 passed in 2.20s`
+  - `python -m pytest tests/ -q` → `207 passed in 2.25s`
   - `python main.py` on Windows 11 / Python 3.14.4 → started and closed cleanly (`Exited=True`)
   - `python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean` → built `build/dist/iDentSync.exe`
   - `build/dist/iDentSync.exe` → started and closed cleanly (`Exited=True`)
