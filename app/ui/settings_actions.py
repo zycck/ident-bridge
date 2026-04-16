@@ -74,17 +74,17 @@ class SettingsUpdateCoordinator(QObject):
             current_version=self._current_version,
             repo=GITHUB_REPO,
         )
-        thread = run_worker(
+        run_worker(
             self,
             worker,
             pin_attr="_update_worker",
             entry="check",
             on_error=self._on_update_error,
+            connect_signals=lambda update_worker, _thread: (
+                update_worker.update_available.connect(self._on_update_available),
+                update_worker.no_update.connect(self._on_no_update),
+            ),
         )
-        worker.update_available.connect(self._on_update_available)
-        worker.no_update.connect(self._on_no_update)
-        worker.update_available.connect(thread.quit)
-        worker.no_update.connect(thread.quit)
         return True
 
     @Slot(str, str)

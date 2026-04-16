@@ -19,6 +19,7 @@ def run_worker(
     pin_attr: str | None = None,
     on_finished: Callable[..., Any] | None = None,
     on_error: Callable[[str], None] | None = None,
+    connect_signals: Callable[[QObject, QThread], None] | None = None,
     entry: str = "run",
 ) -> QThread:
     """
@@ -33,10 +34,15 @@ def run_worker(
     `thread.quit` automatically. Optional `on_finished` / `on_error` callbacks
     let callers handle results without manual wiring.
 
+    For extra worker/thread signal wiring that must exist before a fast worker
+    starts, pass `connect_signals`. The callback receives `(worker, thread)`
+    after the standard cleanup wiring is in place but before the deferred
+    thread start happens.
+
     The actual thread start is deferred to the next event-loop turn via
-    `QTimer.singleShot(0, ...)`. This gives callers a safe window to attach
-    additional non-terminal signals after `run_worker()` returns, which avoids
-    late-connect races for fast workers.
+    `QTimer.singleShot(0, ...)`. This still gives callers a best-effort window
+    to attach additional non-terminal signals after `run_worker()` returns, but
+    `connect_signals` is the preferred contract for critical fast-path wiring.
 
     For workers whose entry-point method is not named `run`, pass a different
     name via `entry`. If the method does not exist, the helper silently skips
@@ -85,6 +91,9 @@ def run_worker(
                     pass
 
         thread.finished.connect(_clear)
+
+    if connect_signals is not None:
+        connect_signals(worker, thread)
 
     # Start on the next event-loop turn so callers can safely connect extra
     # signals after `run_worker()` returns.

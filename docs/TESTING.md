@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **230 test functions / 231 collected test items** covering the scheduler engine,
+The fastest sanity check. **233 test functions / 234 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **230 tests**. Keep this number in
+The current tree actually contains **233 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-231 passed in X.XXs
+234 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -88,13 +88,14 @@ closed cleanly.
 | `tests/test_scheduler.py` | supported schedule modes, jitter (±5 %), DST, timezone-aware next\_run, signal emission, stop/start lifecycle, invalid-mode validation | 23 |
 | `tests/test_export_worker.py` | 4-step pipeline (connect → query → webhook → disconnect), DB errors, webhook errors, retry, SyncResult | 16 |
 | `tests/test_config.py` | DPAPI roundtrip, update/merge, migration of legacy fields, JSON corruption resilience, save/load roundtrip, atomic save, config-dir fallback | 19 |
-| `tests/test_threading.py` | `run_worker` factory, GC pin attribute, thread lifecycle, on\_error / on\_finished callbacks, late signal connection safety | 13 |
+| `tests/test_threading.py` | `run_worker` factory, GC pin attribute, thread lifecycle, on\_error / on\_finished callbacks, pre-start `connect_signals`, late signal connection safety | 14 |
 | `tests/test_tray_autostart.py` | tray close-to-tray behaviour, `register`/`unregister`/`sync_path`, registry read/write (mocked), main window construction, import-safe non-Windows autostart | 21 |
 | `tests/test_connection.py` | ODBC connection-string escaping and trusted-connection fallback | 3 |
 | `tests/test_instance_scanner.py` | registry/network instance discovery fallbacks, deduplication, database listing without hard pyodbc dependency | 6 |
 | `tests/test_odbc_utils.py` | driver detection priority and missing-pyodbc diagnostics | 3 |
 | `tests/test_sql_client.py` | escaped DSN building, missing-pyodbc behavior, query materialization, clearer connection-failure reporting | 5 |
 | `tests/test_updater.py` | release asset selection, download helper, apply helper exit path | 4 |
+| `tests/test_update_apply_worker.py` | extracted update apply worker: off-GUI apply handoff, applied/error/finished signals | 2 |
 | `tests/test_export_failure_alerts.py` | export failure counter thresholding and reset-after-success behavior | 2 |
 | `tests/test_dashboard_activity_panel.py` | extracted dashboard activity panel: aggregated count, empty clear no-op, clear cancel/confirm behavior | 4 |
 | `tests/test_dashboard_activity_store.py` | extracted dashboard activity store: pure history clearing and payload preservation | 2 |
@@ -657,7 +658,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 230 test functions, but the
+- The repository tree currently reports 233 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

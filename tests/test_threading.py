@@ -180,6 +180,32 @@ def test_run_worker_allows_late_signal_connections(qapp_session, qtbot):
     qtbot.waitUntil(lambda: observed == ["finished"], timeout=2000)
 
 
+def test_run_worker_connect_signals_wires_before_start(qapp_session, qtbot):
+    class _ProgressWorker(QObject):
+        progress = Signal(str)
+        finished = Signal()
+        error = Signal(str)
+
+        @Slot()
+        def run(self) -> None:
+            self.progress.emit("started")
+            self.finished.emit()
+
+    parent = QObject()
+    worker = _ProgressWorker()
+    observed = []
+
+    run_worker(
+        parent,
+        worker,
+        connect_signals=lambda w, _thread: w.progress.connect(
+            lambda text: observed.append(text)
+        ),
+    )
+
+    qtbot.waitUntil(lambda: observed == ["started"], timeout=2000)
+
+
 def test_run_worker_error_quits_thread(qapp_session, qtbot):
     """worker.error → thread.quit — thread terminates automatically."""
     parent = QObject()

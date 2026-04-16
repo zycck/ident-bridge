@@ -96,14 +96,15 @@ class DashboardPingCoordinator(QObject):
                 else True
             ),
         )
-        thread = run_worker(
+        run_worker(
             self,
             worker,
             pin_attr="_ping_worker",
             on_finished=self._on_ping_finished,
+            connect_signals=lambda ping_worker, _thread: ping_worker.result.connect(
+                self._on_ping_result
+            ),
         )
-        worker.result.connect(self._on_ping_result)
-        worker.result.connect(thread.quit)
 
     @Slot(object)
     def _on_ping_result(self, alive) -> None:

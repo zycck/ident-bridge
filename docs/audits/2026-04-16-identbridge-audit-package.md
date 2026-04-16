@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `230` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `233` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`231 passed`) plus a clean `python main.py` smoke-run.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`234 passed`) plus a clean `python main.py` smoke-run.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -70,6 +70,7 @@ Interpretation:
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates the top-level settings page layout and bottom action row to [app/ui/settings_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_shell.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates startup-toggle and manual update-check side effects to [app/ui/settings_app_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_app_controller.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates shell signal wiring and pass-through orchestration to [app/ui/settings_widget_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget_controller.py:1).
+  - [app/ui/threading.py](/mnt/d/ProjectLocal/identa report/app/ui/threading.py:1) now exposes an explicit pre-start `connect_signals` contract, and the fast-path ping/test/update callers use it instead of late wiring after `run_worker()`.
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates tray visibility, close-to-tray, and shutdown cleanup behavior to [app/ui/main_window_lifecycle.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_lifecycle.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates lazy debug-window lifetime and toggling to [app/ui/main_window_debug.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_debug.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates navigation state and sidebar shell wiring to [app/ui/main_window_navigation.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_navigation.py:1).
@@ -85,13 +86,14 @@ Interpretation:
   - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) now also delegates connection / last-sync status cards to [app/ui/dashboard_status_cards.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_status_cards.py:1).
   - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) now also delegates top-level dashboard layout composition to [app/ui/dashboard_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_shell.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now delegates update-flow orchestration to [app/ui/update_flow_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/update_flow_coordinator.py:1).
+  - [app/ui/update_flow_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/update_flow_coordinator.py:1) now delegates the apply step to [app/workers/update_worker.py](/mnt/d/ProjectLocal/identa report/app/workers/update_worker.py:1) via `UpdateApplyWorker`, removing the last confirmed GUI-thread update-apply hotspot.
   - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) now delegates ping/activity internals to [app/ui/dashboard_ping_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_ping_coordinator.py:1) and [app/ui/dashboard_activity.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_activity.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now delegates history UI/data handling to [app/ui/export_history_panel.py](/mnt/d/ProjectLocal/identa report/app/ui/export_history_panel.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates scheduling controls/validation to [app/ui/export_schedule_panel.py](/mnt/d/ProjectLocal/identa report/app/ui/export_schedule_panel.py:1).
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `224 passed in 2.40s`
+  - `python -m pytest tests/ -q` → `234 passed in 2.27s`
   - `python main.py` on Windows 11 / Python 3.14.4 → started and closed cleanly (`Exited=True`)
   - `python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean` → built `build/dist/iDentSync.exe`
   - `build/dist/iDentSync.exe` → started and closed cleanly (`Exited=True`)
@@ -99,7 +101,7 @@ Interpretation:
 
 ## Executive Summary
 - No confirmed `Critical` findings were reproduced in this audit wave.
-- `High` risk is concentrated in reliability/threading, top-level UI orchestration, and config/update/release coupling.
+- `High` risk is concentrated in top-level UI orchestration, config/update/release coupling, and a few still-monolithic leaf components.
 - `Medium` risk is concentrated in scalability, contract drift, dependency reproducibility, and several fragile platform/runtime assumptions.
 - `Low` risk is concentrated in portability constraints that appear intentional, plus local cleanup debt such as broad exception handling and inline UI policy.
 
@@ -107,7 +109,7 @@ Interpretation:
 | Dimension | Status | Rationale |
 |---|---|---|
 | Architecture | `orange` | Strong core helpers exist, but major UI modules still carry multiple responsibilities and high change-risk. |
-| Reliability / Threading | `red` | Confirmed late-connect worker races and synchronous update-install in the GUI thread are migration-blocking. |
+| Reliability / Threading | `yellow` | The threading helper now has a pre-start wiring contract and the known fast-path races were closed; remaining risk is mostly long-run/manual lifecycle validation. |
 | Scalability | `orange` | `fetchall()`, full UI rebuilds, and full config rewrites will become noticeable under larger data volumes. |
 | Cleanliness | `yellow` | Codebase is readable overall, but naming drift, duplication, inline styles, and broad catches remain visible. |
 | Technical Debt | `orange` | Debt is now mapped and localized, but several areas already impede safe refactoring. |
@@ -120,26 +122,7 @@ Interpretation:
 - No confirmed critical findings in this audit wave.
 
 ### High
-1. Worker signal wiring is race-prone in multiple fast-path flows.
-   Evidence:
-   - [app/ui/dashboard_ping_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_ping_coordinator.py:99)
-   - [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:168)
-   Impact:
-   - Fast workers can emit terminal signals before handlers are attached.
-   - `_ping_running` can remain stuck and disable future health checks.
-   Recommended action:
-   - Refactor all callers so terminal and streaming signals are connected before thread start, or extend `run_worker()` with an attach-before-start contract.
-
-2. Update installation still blocks the GUI thread.
-   Evidence:
-   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:276)
-   - [app/core/updater.py](/mnt/d/ProjectLocal/identa report/app/core/updater.py:62)
-   Impact:
-   - Download and file-replacement work can freeze the app during update apply.
-   Recommended action:
-   - Split "check update" from "download/apply update" and move blocking work out of the GUI thread.
-
-3. Primary UI orchestration is concentrated in god-modules.
+1. Primary UI orchestration is concentrated in god-modules.
    Evidence:
    - [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1)
    - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1)
@@ -256,11 +239,11 @@ Interpretation:
 | [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1) | `high` | Highlighter, editor behavior, overlay UI, and dialog shell are all fused. |
 | [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) | `high` | Styling, event filtering, drag logic, and host-window behavior are tightly coupled. |
 | [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1) | `high` | Error UI, logging, rotation, and global hook management in one module. |
-| [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:1) | `medium` | Late signal wiring and heavy table population path. |
+| [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:1) | `medium` | Worker wiring is now safer, but the result table still eagerly materializes and renders large result sets. |
 | [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1) | `medium` | Hard dependency on current logger format and live handler API. |
 | [app/ui/history_row.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row.py:1) | `medium` | Data normalization, timestamp formatting, and rendering all in-widget. |
 | [app/ui/lucide_icons.py](/mnt/d/ProjectLocal/identa report/app/ui/lucide_icons.py:1) | `medium` | Rendering, recolor, cache policy, and resource-layout knowledge mixed together. |
-| [app/ui/threading.py](/mnt/d/ProjectLocal/identa report/app/ui/threading.py:1) | `low` | Good helper overall; most risk lives in callers. |
+| [app/ui/threading.py](/mnt/d/ProjectLocal/identa report/app/ui/threading.py:1) | `low` | Good helper overall; it now provides an explicit pre-start `connect_signals` hook for fast-path callers. |
 | [app/ui/theme.py](/mnt/d/ProjectLocal/identa report/app/ui/theme.py:1) | `low` | Good central token layer, but consumers still bypass it and values are stringly-typed. |
 | [app/ui/widgets.py](/mnt/d/ProjectLocal/identa report/app/ui/widgets.py:1) | `low` | Useful shared helpers, but still encode UI policy in Python. |
 | [app/ui/icons_rc.py](/mnt/d/ProjectLocal/identa report/app/ui/icons_rc.py:1) | `none` | Generated artifact. |

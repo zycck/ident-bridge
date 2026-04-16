@@ -172,9 +172,15 @@ class TestRunDialog(QDialog):
         self._set_status("Выполнение…", color="")
 
         worker = _QueryWorker(self._cfg, sql)
-        run_worker(self, worker, pin_attr="_worker")
-        worker.result.connect(self._on_result)
-        worker.error.connect(self._on_error)
+        run_worker(
+            self,
+            worker,
+            pin_attr="_worker",
+            on_error=self._on_error,
+            connect_signals=lambda query_worker, _thread: query_worker.result.connect(
+                self._on_result
+            ),
+        )
 
     # ------------------------------------------------------------------
     # Slots
