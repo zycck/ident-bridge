@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for app.workers.export_worker.ExportWorker."""
-from __future__ import annotations
-
 from unittest.mock import MagicMock
 
 import pytest

@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for export failure accounting in ExportJobEditor."""
-from __future__ import annotations
-
 from datetime import datetime, timezone
 
 import pytest

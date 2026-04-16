@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for app.core.connection."""
-from __future__ import annotations
-
 from app.core.connection import _odbc_escape, build_sql_connection_string
 
 

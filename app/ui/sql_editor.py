@@ -5,8 +5,6 @@ tab-to-spaces, and explicit Cascadia Code font. Used by ExportJobEditor
 to give users a real SQL editing experience instead of a plain text
 input.
 """
-from __future__ import annotations
-
 import re
 
 from PySide6.QtCore import QRegularExpression, Qt, Signal

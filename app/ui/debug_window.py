@@ -1,6 +1,4 @@
 """DebugWindow — floating log panel for development."""
-from __future__ import annotations
-
 import re
 
 from PySide6.QtCore import Qt, Slot

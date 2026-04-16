@@ -3,7 +3,6 @@
 The module stays import-safe outside Windows, but encrypt/decrypt still
 raise a clear error if they are called on an unsupported platform.
 """
-from __future__ import annotations
 
 import ctypes
 import sys

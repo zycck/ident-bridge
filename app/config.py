@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Central configuration + shared dataclasses + TypedDicts for iDentBridge."""
-from __future__ import annotations
 
 import base64
 import json
@@ -90,6 +89,20 @@ class AppConfig(TypedDict, total=False):
     tray_notice_shown: bool  # shown once when app first minimises to tray
 
 
+_APP_CONFIG_KEYS = frozenset({
+    "sql_instance",
+    "sql_database",
+    "sql_user",
+    "sql_password",
+    "sql_trust_cert",
+    "github_repo",
+    "auto_update_check",
+    "run_on_startup",
+    "export_jobs",
+    "tray_notice_shown",
+})
+
+
 def _default_config_dir() -> Path:
     """Return the platform-appropriate config directory.
 
@@ -161,15 +174,15 @@ class ConfigManager:
                     if entry.get("trigger") == "auto":
                         entry["trigger"] = "scheduled"
 
-            valid_keys = AppConfig.__annotations__.keys()
-            self._cfg = AppConfig(**{k: v for k, v in data.items() if k in valid_keys})  # type: ignore[typeddict-item]
+            self._cfg = AppConfig(
+                **{k: v for k, v in data.items() if k in _APP_CONFIG_KEYS}
+            )  # type: ignore[typeddict-item]
             return self._cfg
 
     def save(self, cfg: AppConfig) -> None:
         with self._lock:
-            valid_keys = AppConfig.__annotations__.keys()
             self._cfg = AppConfig(
-                **{k: v for k, v in dict(cfg).items() if k in valid_keys}
+                **{k: v for k, v in dict(cfg).items() if k in _APP_CONFIG_KEYS}
             )  # type: ignore[typeddict-item]
             out: dict = dict(cfg)
             for key in ENCRYPTED_KEYS:

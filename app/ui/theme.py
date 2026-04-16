@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Design tokens — single source of truth for colors, dimensions, typography."""
-from __future__ import annotations
-
 
 class Theme:
     """All tokens are class attributes (strings) so .tokens() can collect them

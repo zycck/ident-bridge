@@ -21,8 +21,6 @@ Safe patterns used here:
 - For ``_NoSignalsWorker`` (no auto-quit), the thread stays alive so
   ``thread.isRunning()`` is safe; we quit it manually afterwards.
 """
-from __future__ import annotations
-
 import pytest
 from PySide6.QtCore import QObject, QThread, Signal, Slot
 
@@ -260,7 +258,7 @@ def test_run_worker_missing_entry_silently_skipped(qapp_session, qtbot):
     worker = _ManualWorker()
     # 'nonexistent' slot is missing — should not raise
     thread = run_worker(parent, worker, entry="nonexistent")
-    assert thread.isRunning()
+    qtbot.waitUntil(thread.isRunning, timeout=2000)
     # Quit manually; this triggers thread.finished → deleteLater
     thread.quit()
     # Wait for the thread to actually stop before we return

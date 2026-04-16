@@ -1,6 +1,4 @@
 """Thread-safe logging bridge: Python logging → Qt signal → UI."""
-from __future__ import annotations
-
 import collections
 import logging
 

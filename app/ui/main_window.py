@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """MainWindow — top-level application shell for iDentBridge."""
-from __future__ import annotations
-
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtWidgets import (

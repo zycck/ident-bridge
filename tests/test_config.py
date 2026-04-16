@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for app.config.ConfigManager + TypedDicts + TriggerType."""
-from __future__ import annotations
-
 import json
 import os
 import sys

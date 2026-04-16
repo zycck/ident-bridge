@@ -6,8 +6,6 @@ Centralizes the helpers that were file-local in settings_widget.py and the
 `_h_sep` separator that was duplicated in export_jobs_widget.py. All visual
 properties come from `app.ui.theme.Theme` — no hardcoded colors.
 """
-from __future__ import annotations
-
 from typing import Literal
 
 from PySide6.QtCore import Qt

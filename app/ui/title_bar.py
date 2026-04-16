@@ -4,8 +4,6 @@ CustomTitleBar — frameless window title bar with drag-to-move and
 minimal/maximize/close buttons. Used by MainWindow when the native
 Windows title bar is suppressed via FramelessWindowHint.
 """
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 

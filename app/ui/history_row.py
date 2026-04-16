@@ -9,8 +9,6 @@ Trigger types are visually distinguished by:
 - icon color (matches the border)
 - icon glyph (mouse-pointer-click / clock / flask-conical)
 """
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 
 from PySide6.QtCore import Signal

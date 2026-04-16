@@ -11,7 +11,7 @@ Windows-specific validation.
 
 ## Prerequisites
 - Windows 10 or 11
-- Python 3.13 with PySide6 installed
+- Python 3.14.4 with PySide6 installed
 - Optional: a reachable MS SQL Server instance for end-to-end export tests
 - Run the automated suite from the same Windows environment before
   relying on this checklist as a release gate.

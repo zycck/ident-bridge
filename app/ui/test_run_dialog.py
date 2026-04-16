@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """TestRunDialog — выполняет SQL-запрос и отображает результат в таблице."""
-from __future__ import annotations
-
 from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (

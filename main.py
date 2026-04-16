@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """iDentBridge — entry point."""
-from __future__ import annotations
 
 import signal
 import sys

@@ -7,9 +7,9 @@ changes. It answers the question: *"Как убедиться, что прило
 
 Audit note: the current tree contains 115 `test_*` functions, and this
 workspace is a WSL/Linux negative-control environment. The full gate is
-expected to be validated on Windows 10/11 with the documented Python and
-Qt stack; tray, registry, reboot, and background-run checks still need a
-real Windows desktop session.
+expected to be validated on Windows 11 with Python 3.14.4 and the
+documented Qt stack; tray, registry, reboot, and background-run checks
+still need a real Windows desktop session.
 
 The short answer is: run the automated suite first (catches regressions
 in seconds), then walk through the manual checks below in order — they
@@ -108,8 +108,9 @@ These are tested by the manual sections that follow:
   source of truth for the full gate; it does not represent a Windows
   desktop session and cannot validate tray, registry, or reboot flows.
 - If `python -m pytest tests/` is being used as a release gate, run it
-  on Windows 10/11 with the project's documented dependencies installed
-  and a real desktop session available for the manual checks.
+  on Windows 11 with Python 3.14.4, the project's documented
+  dependencies installed, and a real desktop session available for the
+  manual checks.
 
 ---
 

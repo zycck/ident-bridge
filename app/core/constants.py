@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """All magic numbers and hardcoded URLs in one place."""
-from __future__ import annotations
 
 # ── Timing (ms) ──────────────────────────────────────────────────────
 DEBOUNCE_SAVE_MS          = 800

@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for tray close-to-tray + Windows autostart registry."""
-from __future__ import annotations
-
 import sys
 from unittest.mock import MagicMock, patch
 

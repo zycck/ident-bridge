@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for app.core.odbc_utils."""
-from __future__ import annotations
-
 import pytest
 
 from app.core import odbc_utils

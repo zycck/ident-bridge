@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for app.core.instance_scanner."""
-from __future__ import annotations
-
 import pytest
 
 from app.config import SqlInstance

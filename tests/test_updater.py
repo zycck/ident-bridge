@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """Tests for updater download/apply helpers."""
-from __future__ import annotations
-
 from pathlib import Path
 
 from app.core import updater

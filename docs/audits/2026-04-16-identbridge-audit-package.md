@@ -37,15 +37,15 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | Check | Result |
 |---|---|
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
-| `python3 -m pytest --version` | fails: `No module named pytest` |
-| `python3 -c 'import app.config'` | fails: `AttributeError: module 'ctypes' has no attribute 'windll'` |
-| `rg -n '^def test_' tests \| wc -l` | `88` test functions |
+| `python3 -m pytest --version` | `pytest 9.0.3` |
+| `python3 -c 'import app.config'` | `app.config: OK` |
+| `rg -n '^def test_' tests \| wc -l` | `115` test functions |
 
 Interpretation:
 
 - This repository is not currently self-verifying in the active WSL environment.
-- The app remains Windows-coupled at import time through `ctypes.windll`, `APPDATA`, `winreg`, and ODBC-driver assumptions.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) is stale relative to the current tree.
+- The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, but the gate is still not reproducible from the active WSL environment.
 
 ## Executive Summary
 - No confirmed `Critical` findings were reproduced in this audit wave.
@@ -63,8 +63,7 @@ Interpretation:
 | Technical Debt | `orange` | Debt is now mapped and localized, but several areas already impede safe refactoring. |
 | Testability | `red` | Good core test coverage exists, but widget integration and packaged Windows runtime remain outside the automated gate. |
 | Dependency Hygiene | `orange` | The stack is current enough, but `>=` floors without a lock/constraints file make reproduction and upgrades non-deterministic. |
-| Python 3.13 Readiness | `orange` | Appears realistic for Windows, but cannot be claimed until the real Windows test environment is green. |
-| Python 3.14 Readiness | `orange` | Runtime likely feasible, but test-chain and packaging validation remain incomplete. |
+| Python 3.14.4 Readiness | `orange` | Target runtime looks realistic for Windows, but cannot be claimed until the real Windows test environment is green. |
 
 ## Findings By Severity
 ### Critical
@@ -107,9 +106,9 @@ Interpretation:
    - [tests](/mnt/d/ProjectLocal/identa report/tests)
    Impact:
    - Current WSL environment cannot run the suite.
-   - The documentation still describes `82` tests, while the tree currently contains `88` test functions.
+   - The current WSL environment cannot run the suite, even though the tree and docs now agree on 115 test functions.
    Recommended action:
-   - Rebuild the gate in a clean Windows Python 3.13 environment and update documentation only after fresh evidence.
+   - Rebuild the gate in a clean Windows Python 3.14.4 environment and update documentation only after fresh evidence.
 
 5. Release/runtime identity is split across multiple hardcoded sources and still drifts between `iDentBridge` and `iDentSync`.
    Evidence:
@@ -238,8 +237,8 @@ Observed from current audit tooling:
 | `pyodbc` | `>=5.1` | `5.3.0` | Runtime still depends on external Microsoft ODBC drivers on Windows. |
 | `sqlglot` | `>=27.0` | `30.4.3` | Very active package cadence; pure-Python package reduces runtime risk. |
 | `Pillow` | `>=10.0` | `12.2.0` | Current WSL env already has `12.0.0`; security review should stay active because this library has frequent upstream churn. |
-| `pytest` | `>=8.0` | `9.0.3` | Not installed in the current WSL env, so the documented test gate is not reproducible here. |
-| `pytest-qt` | `>=4.4` | `4.5.0` | Still the least certain part of a future Python 3.14 story; validate in the real Windows test env. |
+| `pytest` | `>=8.0` | `9.0.3` | Present in the current WSL env, but the documented test gate still needs Windows 3.14.4 validation. |
+| `pytest-qt` | `>=4.4` | `4.5.0` | Still the least certain part of a future Python 3.14.4 story; validate in the real Windows test env. |
 
 Observed security query notes:
 
@@ -249,16 +248,15 @@ Observed security query notes:
 
 Python readiness:
 
-- Python `3.13`: likely reachable for Windows, but not claimable until the real Windows environment can install the stack and run the full gate.
-- Python `3.14`: keep as advisory-only follow-up. Do not make it the primary migration target until runtime, packaging, and `pytest-qt` validation all pass on Windows.
+- Python `3.14.4`: the intended target baseline for Windows, but not claimable until the real Windows environment can install the stack and run the full gate.
 
 ## Recommended Next Sequence
-1. Recreate the documented environment on Windows 10/11 with Python 3.13 and the required ODBC driver.
+1. Recreate the documented environment on Windows 10/11 with Python 3.14.4 and the required ODBC driver.
 2. Re-run the full test and manual verification flow there, then record fresh evidence.
 3. Fix the `High` reliability blockers before any broad refactor or Python upgrade wave.
 4. Centralize app identity/version/update metadata before touching release engineering again.
-5. Only after the above decide whether the next execution wave targets stabilization, debt reduction, or Python 3.13 adoption.
+5. Only after the above decide whether the next execution wave targets stabilization, debt reduction, or Python 3.14.4 adoption.
 
 ## Audit Conclusion
 - This repository is not in crisis, but it is not ready for a broad modernization pass without first paying down several concentrated `High`-severity risks.
-- The safest path is still audit-first on `refactoring`, followed by a narrowly scoped reliability wave, then a reproducible Windows 3.13 validation pass, and only then a decision on a runtime upgrade.
+- The safest path is still audit-first on `refactoring`, followed by a narrowly scoped reliability wave, then a reproducible Windows 3.14.4 validation pass, and only then a decision on a runtime upgrade.

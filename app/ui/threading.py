@@ -6,8 +6,6 @@ Eliminates ~120 lines of boilerplate scattered across every widget that
 spawns a background worker. Handles the standard PySide6 GC-pin pattern
 (self.<attr> = worker) and identity-safe cleanup on thread.finished.
 """
-from __future__ import annotations
-
 import weakref
 from typing import Any, Callable
 

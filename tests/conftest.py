@@ -5,8 +5,6 @@ Shared pytest fixtures for the iDentBridge test suite.
 All tests run under QT_QPA_PLATFORM=offscreen (set in qapp fixture) so
 no GUI is shown. Use pytest-qt's `qtbot` fixture for signal-based waits.
 """
-from __future__ import annotations
-
 import os
 import sys
 from pathlib import Path

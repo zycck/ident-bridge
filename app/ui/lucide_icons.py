@@ -6,8 +6,6 @@ Loads SVG files from resources/icons/lucide/, replaces `currentColor`
 with the requested color, renders to a hi-DPI QPixmap, and returns a
 QIcon. Cached by (name, color, size) to keep recolored variants warm.
 """
-from __future__ import annotations
-
 import sys
 from functools import lru_cache
 from pathlib import Path
