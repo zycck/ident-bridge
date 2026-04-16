@@ -16,6 +16,7 @@ from app.ui.title_bar import CustomTitleBar
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
 from app.ui.error_dialog import install_global_handler
+from app.ui.main_window_chrome import MainWindowChromeController
 from app.ui.main_window_debug import DebugWindowCoordinator
 from app.ui.main_window_lifecycle import (
     MainWindowLifecycleController,
@@ -45,6 +46,11 @@ class MainWindow(QMainWindow):
         self._debug = DebugWindowCoordinator(self)
 
         self._build_ui()
+        self._chrome = MainWindowChromeController(
+            window=self,
+            title_bar=self._title_bar,
+        )
+        self._chrome.wire()
         self._build_tray()
         self._signal_router = MainWindowSignalRouter(
             dashboard=self._dashboard,
@@ -92,9 +98,6 @@ class MainWindow(QMainWindow):
 
         # Custom title bar
         self._title_bar = CustomTitleBar("iDentBridge", self)
-        self._title_bar.minimize_clicked.connect(self.showMinimized)
-        self._title_bar.maximize_clicked.connect(self._toggle_maximize)
-        self._title_bar.close_clicked.connect(self.close)
         outer.addWidget(self._title_bar)
 
         # Body: sidebar + stack
@@ -143,18 +146,9 @@ class MainWindow(QMainWindow):
     # Maximize toggle
     # ------------------------------------------------------------------
 
-    @Slot()
-    def _toggle_maximize(self) -> None:
-        if self.isMaximized():
-            self.showNormal()
-        else:
-            self.showMaximized()
-        self._title_bar.update_max_icon(self.isMaximized())
-
     def changeEvent(self, event) -> None:  # type: ignore[override]
-        if event.type() == event.Type.WindowStateChange:
-            if hasattr(self, "_title_bar"):
-                self._title_bar.update_max_icon(self.isMaximized())
+        if hasattr(self, "_chrome"):
+            self._chrome.handle_change_event(event)
         super().changeEvent(event)
 
     # ------------------------------------------------------------------

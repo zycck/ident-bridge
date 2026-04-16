@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **191 test functions / 192 collected test items** covering the scheduler engine,
+The fastest sanity check. **197 test functions / 198 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **191 tests**. Keep this number in
+The current tree actually contains **197 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-192 passed in X.XXs
+198 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -98,6 +98,7 @@ closed cleanly.
 | `tests/test_export_failure_alerts.py` | export failure counter thresholding and reset-after-success behavior | 2 |
 | `tests/test_dashboard_activity_panel.py` | extracted dashboard activity panel: aggregated count, empty clear no-op, clear cancel/confirm behavior | 4 |
 | `tests/test_dashboard_activity_store.py` | extracted dashboard activity store: pure history clearing and payload preservation | 2 |
+| `tests/test_dashboard_ping_timer.py` | extracted dashboard ping timer: timer setup, deferred first ping, safe stop lifecycle | 2 |
 | `tests/test_dashboard_update_banner.py` | extracted dashboard update banner: banner visibility, URL retention, request emission, in-progress state | 4 |
 | `tests/test_dashboard_status_cards.py` | extracted dashboard status cards: connection state mapping, default labels, last-sync formatting | 3 |
 | `tests/test_export_editor_header.py` | extracted export editor header: title editing, status summary, action signals | 2 |
@@ -118,6 +119,7 @@ closed cleanly.
 | `tests/test_main_window_navigation.py` | extracted main-window navigation: page order, button routing, active state/icon switching | 4 |
 | `tests/test_main_window_pages.py` | extracted main-window pages: page construction and stack order | 1 |
 | `tests/test_main_window_signal_router.py` | extracted main-window signal router: dashboard/update wiring, sync/history routing, tray failure alerts | 3 |
+| `tests/test_main_window_chrome.py` | extracted main-window chrome: title-bar signal wiring, maximize/restore toggling, state-change icon sync | 4 |
 | `tests/test_main_window_debug.py` | extracted main-window debug coordination: lazy create, toggle visibility, safe close | 4 |
 
 ### What the automated suite does NOT cover
@@ -652,7 +654,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 191 test functions, but the
+- The repository tree currently reports 197 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

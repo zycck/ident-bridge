@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 
 from app.config import ConfigManager, SyncResult
 from app.core.constants import PING_INTERVAL_MS
 from app.ui.dashboard_activity_panel import DashboardActivityPanel
 from app.ui.dashboard_ping_coordinator import DashboardPingCoordinator
+from app.ui.dashboard_ping_timer import DashboardPingTimerController
 from app.ui.dashboard_status_cards import DashboardStatusCards
 from app.ui.dashboard_update_banner import DashboardUpdateBanner
 
@@ -21,9 +22,14 @@ class DashboardWidget(QWidget):
         super().__init__(parent)
         self._config = config
         self._ping = DashboardPingCoordinator(self, config, self.set_connected)
+        self._ping_timer = DashboardPingTimerController(
+            parent=self,
+            ping=self._ping.ping_db,
+            interval_ms=PING_INTERVAL_MS,
+        )
 
         self._build_ui()
-        self._start_ping_timer()
+        self._ping_timer.start()
 
     # ------------------------------------------------------------------
     # UI construction
@@ -57,25 +63,12 @@ class DashboardWidget(QWidget):
         return banner
 
     # ------------------------------------------------------------------
-    # Timer
-    # ------------------------------------------------------------------
-
-    def _start_ping_timer(self) -> None:
-        self._ping_timer = QTimer(self)
-        self._ping_timer.setInterval(PING_INTERVAL_MS)
-        self._ping_timer.timeout.connect(self._ping_db)
-        self._ping_timer.start()
-        # Defer first ping until after event loop starts
-        QTimer.singleShot(1500, self._ping_db)
-
-    # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     def stop(self) -> None:
         """Stop the periodic ping timer. Called on app shutdown."""
-        if hasattr(self, "_ping_timer") and self._ping_timer is not None:
-            self._ping_timer.stop()
+        self._ping_timer.stop()
         self._ping.stop()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
@@ -97,10 +90,3 @@ class DashboardWidget(QWidget):
     def refresh_activity(self) -> None:
         """Re-aggregate history from all export jobs and rebuild the list."""
         self._activity_panel.refresh_activity()
-
-    # ------------------------------------------------------------------
-    # Private slots
-    # ------------------------------------------------------------------
-
-    def _ping_db(self) -> None:
-        self._ping.ping_db()
