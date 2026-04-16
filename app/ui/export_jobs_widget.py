@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """ExportJobsWidget — list-detail export job manager (tiles + editor pages)."""
 
-import re
 import uuid
 from datetime import datetime
 
@@ -38,6 +37,10 @@ from app.core.constants import (
 from app.core.scheduler import SyncScheduler
 from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_job_tile import ExportJobTile
+from app.ui.export_schedule_panel import (
+    ExportSchedulePanel,
+    schedule_value_is_valid,
+)
 from app.ui.export_sql import format_sql_for_tsql_editor, validate_sql
 from app.ui.lucide_icons import lucide
 from app.ui.sql_editor import SqlEditor
@@ -50,7 +53,6 @@ from app.workers.export_worker import ExportWorker
 _log = get_logger(__name__)
 
 # Maps _mode_combo index → schedule_mode string (order must match addItems call)
-_MODE_BY_INDEX: tuple[str, ...] = ("daily", "hourly", "minutely", "secondly")
 _FAILURE_ALERT_THRESHOLD = 3
 
 
@@ -245,48 +247,9 @@ class ExportJobEditor(QWidget):
         root.addWidget(self._webhook_edit)
 
     def _build_schedule_section(self, root: QVBoxLayout) -> None:
-        """Schedule label + auto checkbox + indented mode/value controls."""
-        root.addWidget(HeaderLabel("Расписание"))
-
-        self._sched_check = QCheckBox("Запускать автоматически")
-        self._sched_check.setToolTip("Включить автоматическую выгрузку по расписанию")
-        self._sched_check.toggled.connect(self._on_sched_changed)
-        root.addWidget(self._sched_check)
-
-        sched_controls = QHBoxLayout()
-        sched_controls.setContentsMargins(24, 0, 0, 0)   # indent under checkbox
-        sched_controls.setSpacing(8)
-
-        self._mode_combo = QComboBox()
-        style_combo_popup(self._mode_combo)
-        self._mode_combo.addItems([
-            "Ежедневно",
-            "Каждые N часов",
-            "Каждые N минут",
-            "Каждые N секунд",
-        ])
-        self._mode_combo.currentIndexChanged.connect(self._on_sched_changed)
-        self._mode_combo.setFixedWidth(180)
-        sched_controls.addWidget(self._mode_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
-
-        self._sched_value_edit = QLineEdit()
-        self._sched_value_edit.setFixedWidth(100)
-        self._sched_value_edit.setPlaceholderText("ЧЧ:ММ")
-        self._sched_value_edit.editingFinished.connect(self._on_sched_changed)
-        sched_controls.addWidget(self._sched_value_edit, alignment=Qt.AlignmentFlag.AlignVCenter)
-
-        sched_controls.addStretch(1)
-
-        # progress label (shown while export is running, hidden otherwise)
-        self._progress_lbl = QLabel()
-        self._progress_lbl.setStyleSheet(
-            f"color: {Theme.gray_500}; "
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent;"
-        )
-        sched_controls.addWidget(self._progress_lbl)
-
-        root.addLayout(sched_controls)
+        self._schedule_panel = ExportSchedulePanel(self)
+        self._schedule_panel.changed.connect(self._on_sched_changed)
+        root.addWidget(self._schedule_panel)
 
     def _build_history_section(self, root: QVBoxLayout) -> None:
         """History group with its own data/UI component."""
@@ -306,9 +269,9 @@ class ExportJobEditor(QWidget):
             name=self._name_edit.text().strip(),
             sql_query=self._query_edit.toPlainText().strip(),
             webhook_url=self._webhook_edit.text().strip(),
-            schedule_enabled=self._sched_check.isChecked(),
-            schedule_mode=_MODE_BY_INDEX[self._mode_combo.currentIndex()],
-            schedule_value=self._sched_value_edit.text().strip(),
+            schedule_enabled=self._schedule_panel.schedule_enabled(),
+            schedule_mode=self._schedule_panel.schedule_mode(),
+            schedule_value=self._schedule_panel.schedule_value(),
             history=self._history_panel.history(),
         )
 
@@ -316,30 +279,24 @@ class ExportJobEditor(QWidget):
         # Block all signals during programmatic load to avoid spurious saves
         for w in (
             self._query_edit, self._name_edit, self._webhook_edit,
-            self._sched_check, self._mode_combo, self._sched_value_edit,
         ):
             w.blockSignals(True)
 
         self._name_edit.setText(job.get("name", ""))
         self._query_edit.setPlainText(job.get("sql_query", ""))
         self._webhook_edit.setText(job.get("webhook_url", ""))
-        self._sched_check.setChecked(bool(job.get("schedule_enabled", False)))
-        mode = job.get("schedule_mode", "daily")
-        try:
-            idx = _MODE_BY_INDEX.index(mode)
-        except ValueError:
-            idx = 0
-        self._mode_combo.setCurrentIndex(idx)
-        self._sched_value_edit.setText(job.get("schedule_value", ""))
+        self._schedule_panel.set_schedule(
+            bool(job.get("schedule_enabled", False)),
+            job.get("schedule_mode", "daily"),
+            job.get("schedule_value", ""),
+        )
         self._history_panel.set_history(list(job.get("history") or []))
 
         for w in (
             self._query_edit, self._name_edit, self._webhook_edit,
-            self._sched_check, self._mode_combo, self._sched_value_edit,
         ):
             w.blockSignals(False)
 
-        self._update_placeholder()
         latest = self._history_panel.latest_entry()
         # Restore status summary from most recent history entry (if any)
         if latest is not None:
@@ -385,38 +342,18 @@ class ExportJobEditor(QWidget):
     # ------------------------------------------------------------------ Schedule
 
     def _on_sched_changed(self) -> None:
-        self._update_placeholder()
         self._apply_schedule()
         self._emit_changed()
-
-    def _update_placeholder(self) -> None:
-        placeholders = {
-            0: "ЧЧ:ММ",
-            1: "N часов",
-            2: "N минут",
-            3: "N секунд",
-        }
-        self._sched_value_edit.setPlaceholderText(
-            placeholders.get(self._mode_combo.currentIndex(), "")
-        )
 
     def _apply_schedule(self) -> None:
         """Start or stop this editor's scheduler based on current UI settings."""
         self._scheduler.stop()
-        if not self._sched_check.isChecked():
+        if not self._schedule_panel.schedule_enabled():
             return
-        mode = _MODE_BY_INDEX[self._mode_combo.currentIndex()]
-        value = self._sched_value_edit.text().strip()
-        if not value:
+        mode = self._schedule_panel.schedule_mode()
+        value = self._schedule_panel.schedule_value()
+        if not schedule_value_is_valid(mode, value):
             return
-        if mode == "daily":
-            if not re.fullmatch(r"\d{1,2}:\d{2}", value):
-                return
-        elif mode in ("hourly", "minutely", "secondly"):
-            if not value.isdigit() or int(value) < 1:
-                return
-        else:
-            return  # unknown mode
         self._scheduler.configure(mode, value)  # type: ignore[arg-type]
         self._scheduler.start()
         _log.debug(
@@ -498,7 +435,7 @@ class ExportJobEditor(QWidget):
         self._running = True
         self._current_trigger = self._last_trigger  # capture for history entry
         self._run_btn.setEnabled(False)
-        self._progress_lbl.setText("Запуск…")
+        self._schedule_panel.set_progress_text("Запуск…")
         self._update_status_summary("running", "Запуск…")
 
         job = self.to_job()
@@ -520,14 +457,14 @@ class ExportJobEditor(QWidget):
 
     @Slot(int, str)
     def _on_progress(self, _step: int, description: str) -> None:
-        self._progress_lbl.setText(description)
+        self._schedule_panel.set_progress_text(description)
         self._update_status_summary("running", description)
 
     @Slot(object)
     def _on_finished(self, result: SyncResult) -> None:
         self._running = False
         self._run_btn.setEnabled(True)
-        self._progress_lbl.setText("")
+        self._schedule_panel.set_progress_text("")
         if result.success:
             self._consecutive_failures = 0
             ts_clock = result.timestamp.strftime("%H:%M:%S")
@@ -547,7 +484,7 @@ class ExportJobEditor(QWidget):
     def _on_error(self, msg: str) -> None:
         self._running = False
         self._run_btn.setEnabled(True)
-        self._progress_lbl.setText("")
+        self._schedule_panel.set_progress_text("")
         self._update_status_summary("error", f"✗ {msg[:70]}")
         ts_full = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self._add_history_entry(ok=False, err=msg, ts=ts_full)
