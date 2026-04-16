@@ -32,11 +32,14 @@ GITHUB_REPO    = "zycck/ident-bridge"
 GITHUB_API_URL = "https://api.github.com/repos/{repo}/releases/latest"
 
 # ── Identity / metadata ──────────────────────────────────────────────
-APP_NAME       = "iDentBridge"
-CONFIG_DIR_NAME = "iDentSync"
-EXE_NAME        = "iDentSync"
-APP_VERSION     = "0.0.1"
-USER_AGENT      = f"{APP_NAME}/{APP_VERSION}"
+APP_NAME = "iDentBridge"
+# Keep the current runtime artifact/config names explicit until a dedicated
+# migration wave moves users off the legacy iDentSync footprint.
+LEGACY_RUNTIME_NAME = "iDentSync"
+CONFIG_DIR_NAME = LEGACY_RUNTIME_NAME
+EXE_NAME = LEGACY_RUNTIME_NAME
+APP_VERSION = "0.0.1"
+USER_AGENT = f"{APP_NAME}/{APP_VERSION}"
 
 # ── Misc ─────────────────────────────────────────────────────────────
 MIN_DOWNLOAD_BYTES = 1_000_000

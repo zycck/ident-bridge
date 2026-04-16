@@ -55,6 +55,7 @@ Interpretation:
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now delegates update-flow orchestration to [app/ui/update_flow_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/update_flow_coordinator.py:1).
   - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) now delegates ping/activity internals to [app/ui/dashboard_ping_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_ping_coordinator.py:1) and [app/ui/dashboard_activity.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_activity.py:1).
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
+  - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
   - `python -m pytest tests/ -q` → `122 passed in 1.81s`
   - `python main.py` on Windows 11 / Python 3.14.4 → started and closed cleanly (`Exited=True`)

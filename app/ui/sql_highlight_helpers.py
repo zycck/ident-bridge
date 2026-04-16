@@ -1,5 +1,4 @@
 """Shared T-SQL highlighting helpers used by the SQL editor."""
-from __future__ import annotations
 
 from PySide6.QtGui import QColor, QFont, QTextCharFormat
 

@@ -1,5 +1,4 @@
 """Helpers for the application error dialog and exception hook."""
-from __future__ import annotations
 
 import os
 from datetime import datetime

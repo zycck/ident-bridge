@@ -50,7 +50,7 @@ sync with the tree, or the release checklist will drift again.
 
 ```bash
 cd "D:\ProjectLocal\identa report"
-pip install -r requirements-dev.txt
+pip install -r requirements.txt -r requirements-dev.txt -c constraints-py314-win.txt
 ```
 
 ### Run
@@ -113,6 +113,9 @@ These are tested by the manual sections that follow:
   on Windows 11 with Python 3.14.4, the project's documented
   dependencies installed, and a real desktop session available for the
   manual checks.
+- For the exact dependency set that has already gone green in this repo,
+  prefer the pinned constraints file:
+  `pip install -r requirements.txt -r requirements-dev.txt -c constraints-py314-win.txt`
 
 ---
 

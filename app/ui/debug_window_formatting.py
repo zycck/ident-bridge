@@ -1,5 +1,4 @@
 """Helpers for formatting debug log lines in the floating log window."""
-from __future__ import annotations
 
 import re
 

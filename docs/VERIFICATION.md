@@ -12,6 +12,8 @@ Windows-specific validation.
 ## Prerequisites
 - Windows 10 or 11
 - Python 3.14.4 with PySide6 installed
+- Install the validated dependency set before running the checklist:
+  `pip install -r requirements.txt -r requirements-dev.txt -c constraints-py314-win.txt`
 - Optional: a reachable MS SQL Server instance for end-to-end export tests
 - Run the automated suite from the same Windows environment before
   relying on this checklist as a release gate.
