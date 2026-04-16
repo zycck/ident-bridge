@@ -24,16 +24,10 @@ from app.ui.settings_actions import (
     apply_startup_toggle,
     is_startup_enabled,
 )
-from app.ui.settings_persistence import (
-    build_settings_payload,
-    resolve_autosave_database,
-)
+from app.ui.settings_form_controller import SettingsFormController
 from app.ui.settings_sql_controller import SettingsSqlController
 from app.ui.settings_sql_flow import SettingsSqlFlowState
 from app.ui.theme import Theme
-from app.ui.settings_workers import (
-    instance_from_text,
-)
 from app.ui.widgets import labeled_row, section, status_label, style_combo_popup
 
 _log = get_logger(__name__)
@@ -70,6 +64,19 @@ class SettingsWidget(QWidget):
             conn_status=self._conn_status,
             flow=self._sql_flow,
             load_config=self._config.load,
+        )
+        self._form_controller = SettingsFormController(
+            config=self._config,
+            flow=self._sql_flow,
+            instance_combo=self._instance_combo,
+            db_combo=self._db_combo,
+            login_edit=self._login_edit,
+            password_edit=self._password_edit,
+            startup_check=self._startup_check,
+            auto_update_check=self._auto_update_check,
+            github_repo=GITHUB_REPO,
+            is_startup_enabled_fn=is_startup_enabled,
+            on_instance_selected=self._sql_controller.handle_instance_changed,
         )
         self._connect_auto_save()
         self._load_fields()
@@ -221,62 +228,10 @@ class SettingsWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _load_fields(self) -> None:
-        self._sql_flow.begin_load()
-        try:
-            self._load_fields_impl()
-        finally:
-            self._sql_flow.end_load()
-
-    def _load_fields_impl(self) -> None:
-        cfg = self._config.load()
-
-        # Credentials FIRST — _on_instance_changed reads them to fetch databases
-        self._login_edit.setText(cfg.get("sql_user", "") or "")
-        self._password_edit.setText(cfg.get("sql_password", "") or "")
-
-        # Запоминаем сохранённую БД — _on_dblist_finished будет её восстанавливать
-        saved_db = cfg.get("sql_database", "") or ""
-        self._sql_flow.remember_loaded_database(saved_db)
-
-        # SQL instance — block signals while populating, fire exactly once at end
-        saved_instance = cfg.get("sql_instance", "")
-        if saved_instance:
-            target_idx = 0
-            try:
-                self._instance_combo.blockSignals(True)
-                idx = self._instance_combo.findText(saved_instance)
-                if idx < 0:
-                    inst = instance_from_text(saved_instance)
-                    if inst:
-                        self._instance_combo.addItem(saved_instance, userData=inst)
-                    else:
-                        self._instance_combo.addItem(saved_instance)
-                    idx = self._instance_combo.count() - 1
-                target_idx = max(idx, 0)
-            finally:
-                self._instance_combo.blockSignals(False)
-            self._instance_combo.setCurrentIndex(target_idx)
-            self._on_instance_changed(target_idx)
-
-        self._startup_check.blockSignals(True)
-        self._startup_check.setChecked(is_startup_enabled())
-        self._startup_check.blockSignals(False)
-        self._auto_update_check.setChecked(bool(cfg.get("auto_update_check", True)))
+        self._form_controller.load_fields()
 
     def _save(self) -> None:
-        # Merge with existing config to preserve export_jobs and other fields
-        cfg = self._config.load()
-        db = self._sql_flow.selected_database or self._db_combo.currentText().strip()
-        cfg.update(build_settings_payload(
-            sql_instance=self._instance_combo.currentText().strip(),
-            sql_database=db,
-            sql_user=self._login_edit.text().strip(),
-            sql_password=self._password_edit.text(),
-            auto_update_check=self._auto_update_check.isChecked(),
-            run_on_startup=self._startup_check.isChecked(),
-            github_repo=GITHUB_REPO,
-        ))
-        self._config.save(cfg)
+        self._form_controller.save()
         QMessageBox.information(self, "Сохранено", "Настройки сохранены.")
 
     def _reset(self) -> None:
@@ -288,31 +243,10 @@ class SettingsWidget(QWidget):
 
     @Slot(int)
     def _on_db_changed(self, idx: int) -> None:
-        """Track DB selection in memory and trigger auto-save."""
-        text = self._db_combo.itemText(idx)
-        self._sql_flow.remember_database_selection(text)
-        self._auto_save()
+        self._form_controller.handle_database_changed(idx)
 
-    def _auto_save(self) -> None:
-        """Silently persist current field values; called on every user interaction."""
-        if self._sql_flow.should_skip_autosave():
-            return
-
-        db = resolve_autosave_database(
-            self._sql_flow.selected_database,
-            self._db_combo.currentText().strip(),
-        )
-
-        self._config.update(**build_settings_payload(
-            sql_instance=self._instance_combo.currentText().strip(),
-            sql_database=db,
-            sql_user=self._login_edit.text().strip(),
-            sql_password=self._password_edit.text(),
-            auto_update_check=self._auto_update_check.isChecked(),
-            run_on_startup=self._startup_check.isChecked(),
-            github_repo=GITHUB_REPO,
-        ))
-        _log.debug("Auto-saved settings")
+    def _auto_save(self) -> bool:
+        return self._form_controller.auto_save()
 
     # ------------------------------------------------------------------
     # SQL Server — controller delegates
