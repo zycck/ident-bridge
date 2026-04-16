@@ -29,6 +29,7 @@ from app.ui.settings_persistence import (
     build_settings_payload,
     resolve_autosave_database,
 )
+from app.ui.settings_sql_flow import SettingsSqlFlowState
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
 from app.ui.settings_workers import (
@@ -57,14 +58,7 @@ class SettingsWidget(QWidget):
         super().__init__(parent)
         self._config = config
         self._current_version = current_version
-
-        self._scan_running = False
-        self._dblist_running = False
-        self._test_conn_running = False
-
-        # If instance changes while a db-list fetch is in-flight, store the new
-        # target here and re-fetch as soon as the current fetch finishes/errors.
-        self._dblist_pending: SqlInstance | None = None
+        self._sql_flow = SettingsSqlFlowState()
 
         # Strong Python references — prevents GC from deleting workers while
         # the underlying QThread is still running (PySide6 doesn't keep them alive)
@@ -75,11 +69,6 @@ class SettingsWidget(QWidget):
             self,
             current_version=self._current_version,
         )
-
-        # Запоминает выбор БД в памяти — не зависит от того, сохранён ли конфиг на диск
-        self._selected_db: str = ""
-        # Флаг: идёт начальная загрузка полей → не триггерить автосохранение
-        self._loading: bool = False
 
         self._build_ui()
         self._connect_auto_save()
@@ -232,11 +221,11 @@ class SettingsWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _load_fields(self) -> None:
-        self._loading = True
+        self._sql_flow.begin_load()
         try:
             self._load_fields_impl()
         finally:
-            self._loading = False
+            self._sql_flow.end_load()
 
     def _load_fields_impl(self) -> None:
         cfg = self._config.load()
@@ -247,8 +236,7 @@ class SettingsWidget(QWidget):
 
         # Запоминаем сохранённую БД — _on_dblist_finished будет её восстанавливать
         saved_db = cfg.get("sql_database", "") or ""
-        if saved_db:
-            self._selected_db = saved_db
+        self._sql_flow.remember_loaded_database(saved_db)
 
         # SQL instance — block signals while populating, fire exactly once at end
         saved_instance = cfg.get("sql_instance", "")
@@ -278,7 +266,7 @@ class SettingsWidget(QWidget):
     def _save(self) -> None:
         # Merge with existing config to preserve export_jobs and other fields
         cfg = self._config.load()
-        db = self._selected_db or self._db_combo.currentText().strip()
+        db = self._sql_flow.selected_database or self._db_combo.currentText().strip()
         cfg.update(build_settings_payload(
             sql_instance=self._instance_combo.currentText().strip(),
             sql_database=db,
@@ -302,17 +290,16 @@ class SettingsWidget(QWidget):
     def _on_db_changed(self, idx: int) -> None:
         """Track DB selection in memory and trigger auto-save."""
         text = self._db_combo.itemText(idx)
-        if text and text not in ("Загрузка…",):
-            self._selected_db = text
+        self._sql_flow.remember_database_selection(text)
         self._auto_save()
 
     def _auto_save(self) -> None:
         """Silently persist current field values; called on every user interaction."""
-        if self._loading:
+        if self._sql_flow.should_skip_autosave():
             return
 
         db = resolve_autosave_database(
-            self._selected_db,
+            self._sql_flow.selected_database,
             self._db_combo.currentText().strip(),
         )
 
@@ -332,9 +319,8 @@ class SettingsWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _scan_instances(self) -> None:
-        if self._scan_running:
+        if not self._sql_flow.begin_scan():
             return
-        self._scan_running = True
 
         self._instance_combo.clear()
         self._instance_combo.addItem("Сканирование…")
@@ -351,8 +337,7 @@ class SettingsWidget(QWidget):
 
     @Slot(list)
     def _on_scan_finished(self, instances: list[SqlInstance]) -> None:
-        self._scan_running = False
-        self._dblist_running = False
+        self._sql_flow.finish_scan()
 
         target_idx = 0
         try:
@@ -382,7 +367,7 @@ class SettingsWidget(QWidget):
 
     @Slot(str)
     def _on_scan_error(self, message: str) -> None:
-        self._scan_running = False
+        self._sql_flow.fail_scan()
         self._instance_combo.setEnabled(True)
         self._instance_combo.clear()
         self._instance_combo.addItem("Ошибка сканирования")
@@ -411,11 +396,8 @@ class SettingsWidget(QWidget):
         self._fetch_databases(inst)
 
     def _fetch_databases(self, inst: SqlInstance) -> None:
-        if self._dblist_running:
-            self._dblist_pending = inst
+        if not self._sql_flow.begin_database_fetch(inst):
             return
-        self._dblist_pending = None
-        self._dblist_running = True
 
         self._db_combo.clear()
         self._db_combo.addItem("Загрузка…")
@@ -435,11 +417,9 @@ class SettingsWidget(QWidget):
 
     @Slot(list)
     def _on_dblist_finished(self, databases: list[str]) -> None:
-        self._dblist_running = False
-        pending = self._dblist_pending
-        self._dblist_pending = None
-
-        restore = self._selected_db or self._config.load().get("sql_database", "") or ""
+        restore, pending = self._sql_flow.finish_database_fetch(
+            saved_database=self._config.load().get("sql_database", "") or "",
+        )
 
         self._db_combo.blockSignals(True)
         self._db_combo.clear()
@@ -471,9 +451,7 @@ class SettingsWidget(QWidget):
 
     @Slot(str)
     def _on_dblist_error(self, message: str) -> None:
-        self._dblist_running = False
-        pending = self._dblist_pending
-        self._dblist_pending = None
+        pending = self._sql_flow.fail_database_fetch()
 
         self._db_combo.clear()
         self._db_combo.setEnabled(True)
@@ -498,9 +476,8 @@ class SettingsWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _test_connection(self) -> None:
-        if self._test_conn_running:
+        if not self._sql_flow.begin_connection_test():
             return
-        self._test_conn_running = True
 
         cfg = build_connection_config(
             sql_instance=self._instance_combo.currentText().strip(),
@@ -520,7 +497,7 @@ class SettingsWidget(QWidget):
 
     @Slot(bool, str)
     def _on_test_conn_finished(self, ok: bool, message: str) -> None:
-        self._test_conn_running = False
+        self._sql_flow.finish_connection_test()
         if ok:
             set_status(self._conn_status, "ok", message or "Подключение успешно")
         else:

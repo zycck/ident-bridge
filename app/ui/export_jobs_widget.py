@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 """ExportJobsWidget — list-detail export job manager (tiles + editor pages)."""
-
-import uuid
 from datetime import datetime
 
 from PySide6.QtCore import QTimer, Qt, Signal, Slot
@@ -33,6 +31,11 @@ from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_job_tile import ExportJobTile
 from app.ui.export_jobs_pages import ExportJobsEditorPage, ExportJobsTilesPage
 from app.ui.export_editor_runtime import ExportEditorRuntimeState
+from app.ui.export_jobs_store import (
+    load_export_jobs,
+    new_export_job,
+    persist_export_jobs,
+)
 from app.ui.export_schedule_panel import (
     ExportSchedulePanel,
     schedule_value_is_valid,
@@ -75,7 +78,7 @@ class ExportJobEditor(QWidget):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._config = config
-        self._job_id: str = job.get("id") or str(uuid.uuid4())
+        self._job_id: str = job.get("id", "")
         self._running = False
         self._worker: ExportWorker | None = None
         self._runtime = ExportEditorRuntimeState()
@@ -399,19 +402,7 @@ class ExportJobsWidget(QWidget):
     # ------------------------------------------------------------------ Jobs CRUD
 
     def _load_jobs(self) -> None:
-        cfg = self._config.load()
-        raw_jobs: list[dict] = cfg.get("export_jobs") or []  # type: ignore[assignment]
-        for raw in raw_jobs:
-            job = ExportJob(
-                id=raw.get("id", str(uuid.uuid4())),
-                name=raw.get("name", ""),
-                sql_query=raw.get("sql_query", ""),
-                webhook_url=raw.get("webhook_url", ""),
-                schedule_enabled=bool(raw.get("schedule_enabled", False)),
-                schedule_mode=raw.get("schedule_mode", "daily"),
-                schedule_value=raw.get("schedule_value", ""),
-                history=list(raw.get("history") or []),  # type: ignore[typeddict-item]
-            )
+        for job in load_export_jobs(self._config):
             self._add_tile(job)
             # Pre-create the editor so the scheduler runs even when not in
             # the editor view — same as the old ExportJobCard which lived
@@ -421,10 +412,10 @@ class ExportJobsWidget(QWidget):
         self._tiles_page.reflow_tiles()
 
     def _save_jobs(self) -> None:
-        cfg = self._config.load()
-        # Save the live state from each editor (which is the source of truth)
-        cfg["export_jobs"] = [ed.to_job() for ed in self._editors.values()]  # type: ignore[typeddict-unknown-key]
-        self._config.save(cfg)
+        persist_export_jobs(
+            self._config,
+            [ed.to_job() for ed in self._editors.values()],
+        )
         # Refresh the corresponding tile labels
         for ed in self._editors.values():
             job = ed.to_job()
@@ -434,16 +425,7 @@ class ExportJobsWidget(QWidget):
                     break
 
     def _add_new_job(self) -> None:
-        job = ExportJob(
-            id=str(uuid.uuid4()),
-            name="",
-            sql_query="",
-            webhook_url="",
-            schedule_enabled=False,
-            schedule_mode="daily",
-            schedule_value="",
-            history=[],  # type: ignore[typeddict-unknown-key]
-        )
+        job = new_export_job()
         self._add_tile(job)
         self._editors[job["id"]] = self._create_editor(job)
         self._save_jobs()
