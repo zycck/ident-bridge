@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.ui.title_bar_controller import TitleBarInteractionController
 from app.ui.title_bar_helpers import icon_path, make_control_button
 from app.ui.theme import Theme
 
@@ -42,6 +43,10 @@ class CustomTitleBar(QFrame):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
+        self._controller = TitleBarInteractionController(
+            window_provider=self.window,
+            emit_maximize=self.maximize_clicked.emit,
+        )
         self.setObjectName("titleBar")
         self.setFixedHeight(self.HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -102,51 +107,29 @@ class CustomTitleBar(QFrame):
         for b in (self._min_btn, self._max_btn, self._cls_btn):
             layout.addWidget(b)
 
-        # Drag state
-        self._drag_pos: QPoint | None = None
-
     # ------------------------------------------------------------------
     def eventFilter(self, obj, event):  # noqa: N802
         """Swap close button icon to white on hover (bg turns red)."""
-        if hasattr(obj, "_icon_hover"):
-            if event.type() == QEvent.Type.Enter:
-                obj.setIcon(obj._icon_hover)
-            elif event.type() == QEvent.Type.Leave:
-                obj.setIcon(obj._icon_default)
+        self._controller.handle_event_filter(obj, event)
         return super().eventFilter(obj, event)
 
     # ------------------------------------------------------------------
     # Drag-to-move
     # ------------------------------------------------------------------
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            window = self.window()
-            if window is not None:
-                self._drag_pos = (
-                    event.globalPosition().toPoint() - window.frameGeometry().topLeft()
-                )
-            event.accept()
-        else:
+        if not self._controller.handle_mouse_press(event):
             super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if self._drag_pos is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            window = self.window()
-            if window is not None and not window.isMaximized():
-                window.move(event.globalPosition().toPoint() - self._drag_pos)
-            event.accept()
-        else:
+        if not self._controller.handle_mouse_move(event):
             super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        self._drag_pos = None
+        self._controller.handle_mouse_release(event)
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.maximize_clicked.emit()
-            event.accept()
-        else:
+        if not self._controller.handle_mouse_double_click(event):
             super().mouseDoubleClickEvent(event)
 
     # ------------------------------------------------------------------
