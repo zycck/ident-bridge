@@ -5,13 +5,10 @@ tab-to-spaces, and explicit Cascadia Code font. Used by ExportJobEditor
 to give users a real SQL editing experience instead of a plain text
 input.
 """
-from PySide6.QtCore import QRegularExpression, Qt, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
     QFont,
     QKeyEvent,
-    QSyntaxHighlighter,
-    QTextCharFormat,
-    QTextDocument,
 )
 from PySide6.QtWidgets import (
     QDialog,
@@ -22,98 +19,7 @@ from PySide6.QtWidgets import (
 
 from app.ui.theme import Theme
 from app.ui.sql_editor_controller import SqlEditorInteractionController
-from app.ui.sql_highlight_helpers import TSQL_FUNCTIONS, TSQL_KEYWORDS, make_format
-
-
-class SqlHighlighter(QSyntaxHighlighter):
-    """T-SQL syntax highlighter — keywords, functions, strings, numbers, comments."""
-
-    def __init__(self, document: QTextDocument) -> None:
-        super().__init__(document)
-
-        # Color choices tuned for the lime brand on a white surface
-        self._kw_fmt        = make_format(Theme.syntax_keyword, bold=True)
-        self._fn_fmt        = make_format(Theme.syntax_function)
-        self._string_fmt    = make_format(Theme.syntax_string)
-        self._number_fmt    = make_format(Theme.syntax_number)
-        self._comment_fmt   = make_format(Theme.syntax_comment, italic=True)
-        self._operator_fmt  = make_format(Theme.syntax_operator)
-
-        # Pre-compile regex rules
-        self._rules: list[tuple[QRegularExpression, QTextCharFormat]] = []
-
-        # Keywords (whole-word, case-insensitive)
-        kw_pattern = r"\b(?:" + "|".join(TSQL_KEYWORDS) + r")\b"
-        self._rules.append((
-            QRegularExpression(
-                kw_pattern,
-                QRegularExpression.PatternOption.CaseInsensitiveOption,
-            ),
-            self._kw_fmt,
-        ))
-
-        # Functions (whole-word, case-insensitive)
-        fn_pattern = r"\b(?:" + "|".join(TSQL_FUNCTIONS) + r")\b"
-        self._rules.append((
-            QRegularExpression(
-                fn_pattern,
-                QRegularExpression.PatternOption.CaseInsensitiveOption,
-            ),
-            self._fn_fmt,
-        ))
-
-        # Numbers (integers and decimals)
-        self._rules.append((
-            QRegularExpression(r"\b\d+(?:\.\d+)?\b"),
-            self._number_fmt,
-        ))
-
-        # Operators (subtle)
-        self._rules.append((
-            QRegularExpression(r"[=<>!+\-*/%]+"),
-            self._operator_fmt,
-        ))
-
-        # Strings: 'literal' with '' as escape — handled per-line
-        # Single-quoted string: from ' to next ' (handle '' as escape via greedy [^']*)
-        # Two passes: 1) find ranges of strings to mark, 2) mark them
-        # Done in highlightBlock to handle multi-character escapes properly.
-
-        # Single-line comments -- ...
-        self._line_comment_re = QRegularExpression(r"--[^\n]*")
-
-    def highlightBlock(self, text: str) -> None:  # noqa: N802
-        # Apply all simple rules first
-        for regex, fmt in self._rules:
-            iterator = regex.globalMatch(text)
-            while iterator.hasNext():
-                m = iterator.next()
-                self.setFormat(m.capturedStart(), m.capturedLength(), fmt)
-
-        # Strings — process character by character to handle '' escapes
-        i = 0
-        n = len(text)
-        while i < n:
-            if text[i] == "'":
-                start = i
-                i += 1
-                while i < n:
-                    if text[i] == "'":
-                        if i + 1 < n and text[i + 1] == "'":
-                            i += 2  # escaped quote
-                            continue
-                        i += 1  # closing quote
-                        break
-                    i += 1
-                self.setFormat(start, i - start, self._string_fmt)
-            else:
-                i += 1
-
-        # Single-line comments override everything (highest priority)
-        iterator = self._line_comment_re.globalMatch(text)
-        while iterator.hasNext():
-            m = iterator.next()
-            self.setFormat(m.capturedStart(), m.capturedLength(), self._comment_fmt)
+from app.ui.sql_highlighter import SqlHighlighter
 
 
 class SqlEditor(QPlainTextEdit):
