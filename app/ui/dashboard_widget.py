@@ -1,14 +1,12 @@
 # -*- coding: utf-8 -*-
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QWidget
 
 from app.config import ConfigManager, SyncResult
 from app.core.constants import PING_INTERVAL_MS
-from app.ui.dashboard_activity_panel import DashboardActivityPanel
 from app.ui.dashboard_ping_coordinator import DashboardPingCoordinator
 from app.ui.dashboard_ping_timer import DashboardPingTimerController
-from app.ui.dashboard_status_cards import DashboardStatusCards
-from app.ui.dashboard_update_banner import DashboardUpdateBanner
+from app.ui.dashboard_shell import DashboardShell
 
 
 class DashboardWidget(QWidget):
@@ -36,31 +34,17 @@ class DashboardWidget(QWidget):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
+        self._shell = DashboardShell(self._config, self)
+        self._shell.update_requested.connect(self.update_requested)
+        self._status_cards = self._shell.status_cards()
+        self._update_banner = self._shell.update_banner()
+        self._activity_panel = self._shell.activity_panel()
+        from PySide6.QtWidgets import QVBoxLayout
+
         root = QVBoxLayout(self)
-        root.setSpacing(12)
-        root.setContentsMargins(16, 16, 16, 16)
-
-        root.addWidget(self._build_status_cards())
-        root.addWidget(self._build_update_banner())
-        root.addWidget(self._build_activity_section(), stretch=1)
-
-        # Populate activity rows from existing jobs
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(self._shell)
         self.refresh_activity()
-
-    def _build_activity_section(self) -> QFrame:
-        panel = DashboardActivityPanel(self._config, self)
-        self._activity_panel = panel
-        return panel
-
-    def _build_status_cards(self) -> DashboardStatusCards:
-        cards = DashboardStatusCards(self)
-        self._status_cards = cards
-        return cards
-
-    def _build_update_banner(self) -> DashboardUpdateBanner:
-        banner = DashboardUpdateBanner(self)
-        banner.update_requested.connect(self.update_requested)
-        return banner
 
     # ------------------------------------------------------------------
     # Public API
