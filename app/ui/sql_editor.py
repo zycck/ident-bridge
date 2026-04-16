@@ -15,15 +15,13 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QDialog,
-    QHBoxLayout,
     QPlainTextEdit,
     QPushButton,
-    QSizePolicy,
-    QVBoxLayout,
     QWidget,
 )
 
 from app.ui.theme import Theme
+from app.ui.sql_editor_controller import SqlEditorInteractionController
 from app.ui.sql_highlight_helpers import TSQL_FUNCTIONS, TSQL_KEYWORDS, make_format
 
 
@@ -162,43 +160,19 @@ class SqlEditor(QPlainTextEdit):
         )
         self._expand_btn.clicked.connect(self.expand_requested)
         self._expand_btn.raise_()
+        self._controller = SqlEditorInteractionController(
+            editor=self,
+            expand_button=self._expand_btn,
+            tab_spaces=self.TAB_SPACES,
+            margin=self.EXPAND_BTN_MARGIN,
+        )
 
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
-        self._reposition_expand_btn()
-
-    def _reposition_expand_btn(self) -> None:
-        vp = self.viewport()
-        sz = self._expand_btn.size()
-        x = vp.width() - sz.width() - self.EXPAND_BTN_MARGIN
-        y = self.EXPAND_BTN_MARGIN
-        self._expand_btn.move(max(0, x), max(0, y))
+        self._controller.reposition_expand_button()
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
-        # Tab inserts 4 spaces instead of \t
-        if event.key() == Qt.Key.Key_Tab and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
-            cursor = self.textCursor()
-            cursor.insertText(" " * self.TAB_SPACES)
-            event.accept()
-            return
-        # Shift+Tab: dedent the current line by up to 4 spaces from the start
-        if event.key() == Qt.Key.Key_Backtab:
-            cursor = self.textCursor()
-            cursor.movePosition(cursor.MoveOperation.StartOfLine)
-            line_start = cursor.position()
-            # Look at the next 4 chars
-            block_text = cursor.block().text()
-            spaces_to_remove = 0
-            for ch in block_text[: self.TAB_SPACES]:
-                if ch == " ":
-                    spaces_to_remove += 1
-                else:
-                    break
-            if spaces_to_remove > 0:
-                cursor.setPosition(line_start)
-                cursor.setPosition(line_start + spaces_to_remove, cursor.MoveMode.KeepAnchor)
-                cursor.removeSelectedText()
-            event.accept()
+        if self._controller.handle_key_press(event):
             return
         super().keyPressEvent(event)
 
@@ -268,56 +242,34 @@ class SqlEditorDialog(QDialog):
             f"}}"
         )
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(10)
+        self._on_format = on_format
+        from app.ui.sql_editor_dialog_shell import SqlEditorDialogShell
 
-        self._editor = SqlEditor()
-        self._editor.setPlainText(initial_text)
-        self._editor.setSizePolicy(
-            QSizePolicy.Policy.Expanding,
-            QSizePolicy.Policy.Expanding,
+        self._shell = SqlEditorDialogShell(
+            initial_text,
+            has_formatter=on_format is not None,
+            parent=self,
         )
-        layout.addWidget(self._editor, stretch=1)
+        self._shell.accept_requested.connect(self.accept)
+        self._shell.reject_requested.connect(self.reject)
+        self._shell.format_requested.connect(self._do_format)
 
-        # Button row
-        btn_row = QHBoxLayout()
-        btn_row.setSpacing(8)
+        from PySide6.QtWidgets import QVBoxLayout
 
-        if on_format is not None:
-            format_btn = QPushButton("Форматировать")
-            format_btn.setFixedHeight(32)
-            format_btn.clicked.connect(self._do_format)
-            btn_row.addWidget(format_btn)
-            self._on_format = on_format
-        else:
-            self._on_format = None
-
-        btn_row.addStretch()
-
-        cancel_btn = QPushButton("Отмена")
-        cancel_btn.setFixedHeight(32)
-        cancel_btn.clicked.connect(self.reject)
-        btn_row.addWidget(cancel_btn)
-
-        save_btn = QPushButton("Сохранить")
-        save_btn.setObjectName("primaryBtn")
-        save_btn.setFixedHeight(32)
-        save_btn.clicked.connect(self.accept)
-        btn_row.addWidget(save_btn)
-
-        layout.addLayout(btn_row)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self._shell)
 
     def _do_format(self) -> None:
         if self._on_format is None:
             return
-        sql = self._editor.toPlainText()
+        sql = self._shell.text()
         try:
             formatted = self._on_format(sql)
             if formatted:
-                self._editor.setPlainText(formatted)
+                self._shell.set_text(formatted)
         except Exception:
             pass
 
     def text(self) -> str:
-        return self._editor.toPlainText()
+        return self._shell.text()
