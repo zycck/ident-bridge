@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 """MainWindow — top-level application shell for iDentBridge."""
 from PySide6.QtCore import Qt, Slot
-from PySide6.QtGui import QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
-    QLabel,
     QMainWindow,
-    QPushButton,
     QStackedWidget,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -18,25 +16,22 @@ from app.ui.title_bar import CustomTitleBar
 
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
-from app.core.constants import NAV_SIDEBAR_W
 from app.ui.dashboard_widget import DashboardWidget
 from app.ui.error_dialog import install_global_handler
 from app.ui.export_jobs_widget import ExportJobsWidget
-from app.ui.lucide_icons import lucide
 from app.ui.main_window_debug import DebugWindowCoordinator
 from app.ui.main_window_lifecycle import (
     MainWindowLifecycleController,
     build_tray,
 )
+from app.ui.main_window_navigation import (
+    MainWindowNavigationController,
+    build_navigation_sidebar,
+)
 from app.ui.settings_widget import SettingsWidget
-from app.ui.theme import Theme
 from app.ui.update_flow_coordinator import UpdateFlowCoordinator
 
 _log = get_logger(__name__)
-
-
-_NAV_LABELS       = ("Статус", "Выгрузки", "Настройки")
-_NAV_LUCIDE_ICONS = ("bar-chart-3", "upload-cloud", "settings")
 
 
 class MainWindow(QMainWindow):
@@ -103,54 +98,17 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # Sidebar
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(NAV_SIDEBAR_W)
-        nav_layout = QVBoxLayout(sidebar)
-        nav_layout.setContentsMargins(8, 16, 8, 16)
-        nav_layout.setSpacing(4)
-
-        self._nav_btns: list[QPushButton] = []
-        self._nav_icons_normal: list[QIcon] = []
-        self._nav_icons_active: list[QIcon] = []
-
-        for i, (label, name) in enumerate(zip(_NAV_LABELS, _NAV_LUCIDE_ICONS)):
-            icon_n = lucide(name, color=Theme.gray_500)
-            icon_a = lucide(name, color=Theme.primary_500)
-            self._nav_icons_normal.append(icon_n)
-            self._nav_icons_active.append(icon_a)
-            btn = QPushButton(f"  {label}")
-            btn.setObjectName("navBtn")
-            btn.setIcon(icon_n)
-            btn.clicked.connect(lambda checked=False, idx=i: self.navigate(idx))
-            nav_layout.addWidget(btn)
-            self._nav_btns.append(btn)
-        nav_layout.addStretch()
-
-        debug_btn = QPushButton("  Debug")
-        debug_btn.setObjectName("navBtn")
-        debug_btn.setIcon(lucide('bug', color=Theme.gray_500))
-        debug_btn.setToolTip("Панель отладки (Ctrl+D)")
-        debug_btn.clicked.connect(self._toggle_debug_window)
-        nav_layout.addWidget(debug_btn)
-
-        # ── Footer: version + developer Telegram link (single line) ──────
-        footer_lbl = QLabel(
-            f'<span style="color: {Theme.gray_400};">v{self._current_version}</span>'
-            f'  ·  '
-            f'<a href="https://t.me/zycck" '
-            f'style="color: {Theme.primary_700}; text-decoration: none;">@zycck</a>'
+        (
+            sidebar,
+            self._nav_btns,
+            nav_icons_normal,
+            nav_icons_active,
+        ) = build_navigation_sidebar(
+            body,
+            current_version=self._current_version,
+            on_navigate=self.navigate,
+            on_debug=self._toggle_debug_window,
         )
-        footer_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        footer_lbl.setOpenExternalLinks(True)
-        footer_lbl.setStyleSheet(
-            f"font-size: {Theme.font_size_xs}pt; "
-            f"background: transparent; "
-            f"padding: 8px 4px;"
-        )
-        footer_lbl.setToolTip("Связаться с разработчиком в Telegram")
-        nav_layout.addWidget(footer_lbl)
 
         # Stacked pages
         self._stack = QStackedWidget()
@@ -167,6 +125,12 @@ class MainWindow(QMainWindow):
         self._stack.addWidget(self._dashboard)        # index 0
         self._stack.addWidget(self._export_jobs)      # index 1
         self._stack.addWidget(self._settings_widget)  # index 2
+        self._navigation = MainWindowNavigationController(
+            stack=self._stack,
+            buttons=self._nav_btns,
+            normal_icons=nav_icons_normal,
+            active_icons=nav_icons_active,
+        )
 
         root.addWidget(sidebar)
         root.addWidget(self._stack, stretch=1)
@@ -234,13 +198,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def navigate(self, index: int) -> None:
-        self._stack.setCurrentIndex(index)
-        for i, btn in enumerate(self._nav_btns):
-            active = (i == index)
-            btn.setObjectName("navBtnActive" if active else "navBtn")
-            btn.setIcon(self._nav_icons_active[i] if active else self._nav_icons_normal[i])
-            btn.style().unpolish(btn)
-            btn.style().polish(btn)
+        self._navigation.navigate(index)
 
     # ------------------------------------------------------------------
     # Update flow

@@ -15,6 +15,7 @@ from app.config import ConfigManager, SyncResult
 from app.core.constants import PING_INTERVAL_MS
 from app.ui.dashboard_activity import refresh_dashboard_activity
 from app.ui.dashboard_ping_coordinator import DashboardPingCoordinator
+from app.ui.dashboard_update_banner import DashboardUpdateBanner
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
 
@@ -29,7 +30,6 @@ class DashboardWidget(QWidget):
     ) -> None:
         super().__init__(parent)
         self._config = config
-        self._update_url: str = ""
         self._ping = DashboardPingCoordinator(self, config, self.set_connected)
 
         self._build_ui()
@@ -198,24 +198,10 @@ class DashboardWidget(QWidget):
         frame.setMinimumHeight(80)
         return frame
 
-    def _build_update_banner(self) -> QFrame:
-        self._update_banner = QFrame()
-        self._update_banner.setObjectName("updateBanner")
-        self._update_banner.setVisible(False)
-
-        banner_layout = QHBoxLayout(self._update_banner)
-        banner_layout.setContentsMargins(12, 8, 12, 8)
-
-        self._update_label = QLabel("Доступна версия — ")
-        self._update_btn = QPushButton("Обновить")
-        self._update_btn.setFlat(True)
-        self._update_btn.clicked.connect(self._on_update_clicked)
-
-        banner_layout.addWidget(self._update_label)
-        banner_layout.addWidget(self._update_btn)
-        banner_layout.addStretch()
-
-        return self._update_banner
+    def _build_update_banner(self) -> DashboardUpdateBanner:
+        banner = DashboardUpdateBanner(self)
+        banner.update_requested.connect(self.update_requested)
+        return banner
 
     # ------------------------------------------------------------------
     # Timer
@@ -259,13 +245,10 @@ class DashboardWidget(QWidget):
         self._last_sync_label.setText(f"{ts}  ·  {result.rows_synced} стр.")
 
     def show_update_banner(self, version: str, url: str) -> None:
-        self._update_url = url
-        self._update_label.setText(f"Доступна версия {version}  ·  ")
-        self._update_banner.setVisible(True)
+        self._update_banner.show_update(version, url)
 
     def set_update_in_progress(self, running: bool) -> None:
-        self._update_btn.setEnabled(not running)
-        self._update_btn.setText("Загрузка…" if running else "Обновить")
+        self._update_banner.set_in_progress(running)
 
     def refresh_activity(self) -> None:
         """Re-aggregate history from all export jobs and rebuild the list."""
@@ -282,9 +265,6 @@ class DashboardWidget(QWidget):
 
     def _ping_db(self) -> None:
         self._ping.ping_db()
-
-    def _on_update_clicked(self) -> None:
-        self.update_requested.emit(self._update_url)
 
     @Slot()
     def _on_clear_all_history(self) -> None:

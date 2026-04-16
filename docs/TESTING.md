@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree contains 170 `test_*` functions, and this
+Audit note: the current tree contains 178 `test_*` functions, and this
 workspace is a WSL/Linux negative-control environment. The full gate is
 expected to be validated on Windows 11 with Python 3.14.4 and the
 documented Qt stack; tray, registry, reboot, and background-run checks
@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **170 test functions / 171 collected test items** covering the scheduler engine,
+The fastest sanity check. **178 test functions / 179 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **170 tests**. Keep this number in
+The current tree actually contains **178 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-171 passed in X.XXs
+179 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -96,6 +96,7 @@ closed cleanly.
 | `tests/test_sql_client.py` | escaped DSN building, missing-pyodbc behavior, query materialization, clearer connection-failure reporting | 5 |
 | `tests/test_updater.py` | release asset selection, download helper, apply helper exit path | 4 |
 | `tests/test_export_failure_alerts.py` | export failure counter thresholding and reset-after-success behavior | 2 |
+| `tests/test_dashboard_update_banner.py` | extracted dashboard update banner: banner visibility, URL retention, request emission, in-progress state | 4 |
 | `tests/test_export_editor_header.py` | extracted export editor header: title editing, status summary, action signals | 2 |
 | `tests/test_export_editor_runtime.py` | extracted export editor runtime: trigger bookkeeping, success/error status, alert thresholding | 3 |
 | `tests/test_export_execution_controller.py` | extracted export execution controller: manual/scheduled starts, progress, success/error routing, test-entry recording | 4 |
@@ -111,6 +112,7 @@ closed cleanly.
 | `tests/test_settings_sql_flow.py` | extracted settings SQL flow: scan/db-list/test state transitions and restore behavior | 4 |
 | `tests/test_settings_sql_presenters.py` | extracted settings SQL presenters: instance/database list rendering and next-instance selection | 3 |
 | `tests/test_main_window_lifecycle.py` | extracted main-window lifecycle: tray activation, close-to-tray notice, quit path, shutdown cleanup | 4 |
+| `tests/test_main_window_navigation.py` | extracted main-window navigation: page order, button routing, active state/icon switching | 4 |
 | `tests/test_main_window_debug.py` | extracted main-window debug coordination: lazy create, toggle visibility, safe close | 4 |
 
 ### What the automated suite does NOT cover
@@ -645,7 +647,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 170 test functions, but the
+- The repository tree currently reports 178 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 
