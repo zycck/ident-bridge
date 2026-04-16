@@ -28,6 +28,7 @@ from app.ui.main_window_navigation import (
     MainWindowNavigationController,
     build_navigation_sidebar,
 )
+from app.ui.main_window_signal_router import MainWindowSignalRouter
 from app.ui.settings_widget import SettingsWidget
 from app.ui.update_flow_coordinator import UpdateFlowCoordinator
 
@@ -48,6 +49,13 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
         self._build_tray()
+        self._signal_router = MainWindowSignalRouter(
+            dashboard=self._dashboard,
+            export_jobs=self._export_jobs,
+            update_flow=self._update_flow,
+            tray=self._tray,
+        )
+        self._signal_router.wire()
         self._lifecycle = MainWindowLifecycleController(
             window=self,
             config=self._config,
@@ -137,14 +145,6 @@ class MainWindow(QMainWindow):
 
         outer.addWidget(body, stretch=1)
 
-        # Wire update_requested signal from dashboard
-        self._dashboard.update_requested.connect(self._on_update_requested)
-
-        # Wire sync results from export jobs → dashboard last sync card
-        self._export_jobs.sync_completed.connect(self._dashboard.update_last_sync)
-        self._export_jobs.history_changed.connect(self._dashboard.refresh_activity)
-        self._export_jobs.failure_alert.connect(self._on_export_failure_alert)
-
         self.navigate(0)
 
     # ------------------------------------------------------------------
@@ -206,37 +206,6 @@ class MainWindow(QMainWindow):
 
     def _run_update_check_silently(self) -> None:
         self._update_flow.run_silent_check()
-
-    @Slot(str, str)
-    def _on_update_available(self, version: str, url: str) -> None:
-        self._update_flow.on_update_available(version, url)
-
-    @Slot(str)
-    def _on_update_requested(self, url: str) -> None:
-        self._update_flow.on_update_requested(url)
-
-    @Slot(str)
-    def _on_update_downloaded(self, downloaded_path: str) -> None:
-        self._update_flow.on_update_downloaded(downloaded_path)
-
-    @Slot()
-    def _on_update_download_finished(self) -> None:
-        self._update_flow.on_update_download_finished()
-
-    @Slot(str)
-    def _on_update_download_error(self, message: str) -> None:
-        self._update_flow.on_update_download_error(message)
-
-    @Slot(str, int)
-    def _on_export_failure_alert(self, job_name: str, count: int) -> None:
-        """Show a tray balloon when an export job fails N times in a row."""
-        self._tray.showMessage(
-            "iDentBridge — ошибка выгрузки",
-            f"«{job_name}» — {count} неудачных запусков подряд. "
-            f"Откройте приложение, чтобы посмотреть детали.",
-            QSystemTrayIcon.MessageIcon.Warning,
-            8000,
-        )
 
     # ------------------------------------------------------------------
     # Error hook
