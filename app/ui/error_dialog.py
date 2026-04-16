@@ -1,8 +1,5 @@
-import os
 import sys
 import traceback
-from datetime import datetime
-from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
@@ -16,14 +13,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from app.core.constants import CONFIG_DIR_NAME
+from app.ui.error_dialog_helpers import append_error_log
 from app.ui.theme import Theme
 
 # Note: INotifier integration removed in Phase 1 refactor — re-introduce via
 # DI (constructor injection) if a notification channel comes back.
-
-LOG_MAX_BYTES = 1_000_000  # rotate errors.log when it exceeds ~1 MB
-
 
 class ErrorDialog(QDialog):
     def __init__(
@@ -94,27 +88,7 @@ def install_global_handler() -> None:
 
     def _hook(exc_type: type[BaseException], exc: BaseException, tb: object) -> None:
         tb_text: str = "".join(traceback.format_exception(exc_type, exc, tb))
-
-        # -- Append to error log -------------------------------------------
-        appdata = os.environ.get("APPDATA", "")
-        if appdata:
-            log_dir = Path(appdata) / CONFIG_DIR_NAME
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_path = log_dir / "errors.log"
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            try:
-                if log_path.exists() and log_path.stat().st_size > LOG_MAX_BYTES:
-                    rotated = log_path.with_suffix(".log.1")
-                    try:
-                        if rotated.exists():
-                            rotated.unlink()
-                        log_path.rename(rotated)
-                    except OSError:
-                        pass  # rotation failed — continue appending to current log
-            except OSError:
-                pass
-            with log_path.open("a", encoding="utf-8") as fh:
-                fh.write(f"\n[{timestamp}]\n{tb_text}")
+        append_error_log(tb_text)
 
         # -- Show dialog if Qt is running ----------------------------------
         app = QApplication.instance()

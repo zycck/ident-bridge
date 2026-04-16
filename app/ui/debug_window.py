@@ -1,9 +1,7 @@
 """DebugWindow — floating log panel for development."""
-import re
 
 from PySide6.QtCore import Qt, Slot
 
-from app.core.constants import DEBUG_LOG_BLOCK_LIMIT
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -16,7 +14,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.constants import DEBUG_LOG_BLOCK_LIMIT
 from app.core.app_logger import get_handler
+
+from app.ui.debug_window_formatting import format_log_line_html
 
 _STYLE_LOG = (
     "QPlainTextEdit {"
@@ -28,44 +29,6 @@ _STYLE_LOG = (
     "  font-size: 9pt;"
     "}"
 )
-
-# Per-level colors for the dark debug viewer.
-_LEVEL_COLORS: dict[str, str] = {
-    "DEBUG":    "#71717A",   # zinc-500 — muted
-    "INFO":     "#22D3EE",   # cyan-400
-    "WARNING":  "#FBBF24",   # amber-400
-    "ERROR":    "#F87171",   # red-400
-    "CRITICAL": "#EF4444",   # red-500 + bold
-}
-
-# Parses lines produced by the formatter:
-#   "HH:MM:SS [LEVEL] logger.name: message"
-_LINE_RE = re.compile(r"^(\d{2}:\d{2}:\d{2}) \[(\w+)\] ([^:]+): (.*)$")
-
-
-def _esc(s: str) -> str:
-    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-
-def _format_line(text: str) -> str:
-    """Colorize a log line into HTML for the dark debug viewer."""
-    m = _LINE_RE.match(text)
-    if not m:
-        # Unknown format — render as-is in default text color.
-        return f'<span style="color:#D4D4D8">{_esc(text)}</span>'
-
-    ts, level, logger, msg = m.groups()
-    level_color = _LEVEL_COLORS.get(level, "#A1A1AA")
-    weight = "700" if level == "CRITICAL" else "600"
-
-    return (
-        f'<span style="color:#52525B">{_esc(ts)}</span> '
-        f'<span style="color:{level_color}; font-weight:{weight}">'
-        f'[{_esc(level)}]</span> '
-        f'<span style="color:#A78BFA">{_esc(logger)}</span>'
-        f'<span style="color:#52525B">:</span> '
-        f'<span style="color:#D4D4D8">{_esc(msg)}</span>'
-    )
 
 
 class DebugWindow(QDialog):
@@ -143,7 +106,7 @@ class DebugWindow(QDialog):
     # ------------------------------------------------------------------
     @Slot(str)
     def _on_message(self, text: str) -> None:
-        self._log.appendHtml(_format_line(text))
+        self._log.appendHtml(format_log_line_html(text))
         sb = self._log.verticalScrollBar()
         sb.setValue(sb.maximum())
 

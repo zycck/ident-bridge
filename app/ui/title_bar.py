@@ -4,8 +4,6 @@ CustomTitleBar — frameless window title bar with drag-to-move and
 minimal/maximize/close buttons. Used by MainWindow when the native
 Windows title bar is suppressed via FramelessWindowHint.
 """
-import sys
-from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QIcon, QMouseEvent
@@ -13,19 +11,12 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPushButton,
     QSizePolicy,
     QWidget,
 )
 
-from app.ui.lucide_icons import lucide
+from app.ui.title_bar_helpers import icon_path, make_control_button
 from app.ui.theme import Theme
-
-
-def _icon_path() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "resources" / "icon.ico"  # type: ignore[attr-defined]
-    return Path(__file__).resolve().parent.parent.parent / "resources" / "icon.ico"
 
 
 class CustomTitleBar(QFrame):
@@ -70,7 +61,7 @@ class CustomTitleBar(QFrame):
         icon_lbl = QLabel()
         icon_lbl.setFixedSize(16, 16)
         icon_lbl.setStyleSheet("background: transparent;")
-        ip = _icon_path()
+        ip = icon_path()
         if ip.exists():
             icon_lbl.setPixmap(
                 QIcon(str(ip)).pixmap(16, 16)
@@ -89,10 +80,16 @@ class CustomTitleBar(QFrame):
         layout.addStretch()
 
         # ── Window control buttons ────────────────────────────────────
-        self._min_btn = self._make_btn("minus",  Theme.gray_500, hover_bg=Theme.gray_100)
-        self._max_btn = self._make_btn("square", Theme.gray_500, hover_bg=Theme.gray_100)
-        self._cls_btn = self._make_btn("x",      Theme.gray_500, hover_bg=Theme.error,
-                                       hover_color=Theme.surface)
+        self._min_btn = make_control_button("minus", Theme.gray_500, hover_bg=Theme.gray_100, height=self.HEIGHT)
+        self._max_btn = make_control_button("square", Theme.gray_500, hover_bg=Theme.gray_100, height=self.HEIGHT)
+        self._cls_btn = make_control_button(
+            "x",
+            Theme.gray_500,
+            hover_bg=Theme.error,
+            hover_color=Theme.surface,
+            height=self.HEIGHT,
+        )
+        self._cls_btn.installEventFilter(self)
 
         self._min_btn.setToolTip("Свернуть")
         self._max_btn.setToolTip("Развернуть")
@@ -109,36 +106,6 @@ class CustomTitleBar(QFrame):
         self._drag_pos: QPoint | None = None
 
     # ------------------------------------------------------------------
-    def _make_btn(
-        self,
-        icon_name: str,
-        icon_color: str,
-        *,
-        hover_bg: str,
-        hover_color: str | None = None,
-    ) -> QPushButton:
-        btn = QPushButton()
-        btn.setFixedSize(36, self.HEIGHT)
-        btn.setIcon(lucide(icon_name, color=icon_color, size=12))
-        btn.setFlat(True)
-        btn.setCursor(Qt.CursorShape.ArrowCursor)
-        btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  border: none;"
-            f"  background: transparent;"
-            f"  padding: 0;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background-color: {hover_bg};"
-            f"}}"
-        )
-        # Store icons for hover swap (used by close button to go white-on-red)
-        btn._icon_default = lucide(icon_name, color=icon_color, size=12)  # type: ignore[attr-defined]
-        if hover_color:
-            btn._icon_hover = lucide(icon_name, color=hover_color, size=12)  # type: ignore[attr-defined]
-            btn.installEventFilter(self)
-        return btn
-
     def eventFilter(self, obj, event):  # noqa: N802
         """Swap close button icon to white on hover (bg turns red)."""
         if hasattr(obj, "_icon_hover"):

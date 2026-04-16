@@ -5,11 +5,8 @@ tab-to-spaces, and explicit Cascadia Code font. Used by ExportJobEditor
 to give users a real SQL editing experience instead of a plain text
 input.
 """
-import re
-
 from PySide6.QtCore import QRegularExpression, Qt, Signal
 from PySide6.QtGui import (
-    QColor,
     QFont,
     QKeyEvent,
     QSyntaxHighlighter,
@@ -27,51 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.theme import Theme
-
-
-# ── T-SQL keyword sets ────────────────────────────────────────────────
-_TSQL_KEYWORDS = {
-    # DML
-    "SELECT", "INSERT", "UPDATE", "DELETE", "MERGE", "VALUES", "INTO",
-    "OUTPUT", "RETURNING",
-    # DDL
-    "CREATE", "DROP", "ALTER", "TRUNCATE", "TABLE", "VIEW", "INDEX",
-    "PROCEDURE", "FUNCTION", "TRIGGER", "DATABASE", "SCHEMA",
-    # Clauses
-    "FROM", "WHERE", "GROUP", "HAVING", "ORDER", "BY", "LIMIT", "OFFSET",
-    "TOP", "DISTINCT", "ALL", "UNION", "INTERSECT", "EXCEPT", "WITH",
-    "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS", "ON",
-    "USING", "AS", "ASC", "DESC",
-    # Predicates
-    "AND", "OR", "NOT", "IN", "EXISTS", "BETWEEN", "LIKE", "IS", "NULL",
-    "TRUE", "FALSE", "ANY", "SOME",
-    # Flow
-    "CASE", "WHEN", "THEN", "ELSE", "END", "IF", "BEGIN", "WHILE",
-    "RETURN", "DECLARE", "SET", "PRINT", "EXEC", "EXECUTE", "GO",
-    # Constraints / types referenced as keywords
-    "PRIMARY", "FOREIGN", "KEY", "REFERENCES", "DEFAULT", "CHECK",
-    "UNIQUE", "CONSTRAINT", "IDENTITY", "CASCADE",
-}
-
-_TSQL_FUNCTIONS = {
-    "COUNT", "SUM", "AVG", "MIN", "MAX", "COALESCE", "ISNULL", "NULLIF",
-    "CAST", "CONVERT", "TRY_CAST", "TRY_CONVERT", "FORMAT", "LEN",
-    "LEFT", "RIGHT", "SUBSTRING", "REPLACE", "TRIM", "LTRIM", "RTRIM",
-    "UPPER", "LOWER", "CONCAT", "CHAR", "ASCII", "GETDATE", "SYSDATETIME",
-    "DATEADD", "DATEDIFF", "DATEPART", "YEAR", "MONTH", "DAY",
-    "ROW_NUMBER", "RANK", "DENSE_RANK", "PARTITION", "OVER", "ABS",
-    "ROUND", "FLOOR", "CEILING", "POWER", "SQRT",
-}
-
-
-def _make_format(color: str, bold: bool = False, italic: bool = False) -> QTextCharFormat:
-    fmt = QTextCharFormat()
-    fmt.setForeground(QColor(color))
-    if bold:
-        fmt.setFontWeight(QFont.Weight.Bold)
-    if italic:
-        fmt.setFontItalic(True)
-    return fmt
+from app.ui.sql_highlight_helpers import TSQL_FUNCTIONS, TSQL_KEYWORDS, make_format
 
 
 class SqlHighlighter(QSyntaxHighlighter):
@@ -81,18 +34,18 @@ class SqlHighlighter(QSyntaxHighlighter):
         super().__init__(document)
 
         # Color choices tuned for the lime brand on a white surface
-        self._kw_fmt        = _make_format(Theme.syntax_keyword,  bold=True)
-        self._fn_fmt        = _make_format(Theme.syntax_function)
-        self._string_fmt    = _make_format(Theme.syntax_string)
-        self._number_fmt    = _make_format(Theme.syntax_number)
-        self._comment_fmt   = _make_format(Theme.syntax_comment, italic=True)
-        self._operator_fmt  = _make_format(Theme.syntax_operator)
+        self._kw_fmt        = make_format(Theme.syntax_keyword, bold=True)
+        self._fn_fmt        = make_format(Theme.syntax_function)
+        self._string_fmt    = make_format(Theme.syntax_string)
+        self._number_fmt    = make_format(Theme.syntax_number)
+        self._comment_fmt   = make_format(Theme.syntax_comment, italic=True)
+        self._operator_fmt  = make_format(Theme.syntax_operator)
 
         # Pre-compile regex rules
         self._rules: list[tuple[QRegularExpression, QTextCharFormat]] = []
 
         # Keywords (whole-word, case-insensitive)
-        kw_pattern = r"\b(?:" + "|".join(_TSQL_KEYWORDS) + r")\b"
+        kw_pattern = r"\b(?:" + "|".join(TSQL_KEYWORDS) + r")\b"
         self._rules.append((
             QRegularExpression(
                 kw_pattern,
@@ -102,7 +55,7 @@ class SqlHighlighter(QSyntaxHighlighter):
         ))
 
         # Functions (whole-word, case-insensitive)
-        fn_pattern = r"\b(?:" + "|".join(_TSQL_FUNCTIONS) + r")\b"
+        fn_pattern = r"\b(?:" + "|".join(TSQL_FUNCTIONS) + r")\b"
         self._rules.append((
             QRegularExpression(
                 fn_pattern,
