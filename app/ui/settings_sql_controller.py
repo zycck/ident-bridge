@@ -11,10 +11,9 @@ from app.core.app_logger import get_logger
 from app.ui.settings_persistence import build_connection_config
 from app.ui.settings_sql_flow import SettingsSqlFlowState
 from app.ui.settings_sql_presenters import (
-    build_database_items,
-    build_instance_items,
     next_instance_index,
 )
+from app.ui.settings_sql_view import SettingsSqlView
 from app.ui.settings_workers import (
     DatabaseListWorker,
     InstanceScanWorker,
@@ -67,14 +66,17 @@ class SettingsSqlController(QObject):
         self._scan_worker: object | None = None
         self._dblist_worker: object | None = None
         self._test_conn_worker: object | None = None
+        self._view = SettingsSqlView(
+            instance_combo=self._instance_combo,
+            db_combo=self._db_combo,
+            conn_status=self._conn_status,
+        )
 
     def scan_instances(self, _checked: bool = False) -> bool:
         if not self._flow.begin_scan():
             return False
 
-        self._instance_combo.clear()
-        self._instance_combo.addItem("Сканирование…")
-        self._instance_combo.setEnabled(False)
+        self._view.show_scan_in_progress()
 
         worker = self._scan_worker_factory()
         self._run_worker(
@@ -89,36 +91,17 @@ class SettingsSqlController(QObject):
     @Slot(list)
     def _on_scan_finished(self, instances: list[SqlInstance]) -> None:
         self._flow.finish_scan()
-
-        try:
-            self._instance_combo.blockSignals(True)
-            self._instance_combo.setEnabled(True)
-            self._instance_combo.clear()
-
-            if not instances:
-                self._instance_combo.addItem("Нет экземпляров")
-                return
-
-            saved = self._load_config().get("sql_instance", "")
-            items, target_idx = build_instance_items(
-                instances,
-                saved_instance=saved,
-            )
-            for label, inst in items:
-                self._instance_combo.addItem(label, userData=inst)
-        finally:
-            self._instance_combo.blockSignals(False)
-
-        self._instance_combo.setCurrentIndex(target_idx)
-        self.handle_instance_changed(target_idx)
+        target_idx = self._view.populate_instances(
+            instances,
+            saved_instance=self._load_config().get("sql_instance", ""),
+        )
+        if target_idx is not None:
+            self.handle_instance_changed(target_idx)
 
     @Slot(str)
     def _on_scan_error(self, message: str) -> None:
         self._flow.fail_scan()
-        self._instance_combo.setEnabled(True)
-        self._instance_combo.clear()
-        self._instance_combo.addItem("Ошибка сканирования")
-        set_status(self._conn_status, "error", f"Сканирование: {message}")
+        self._view.show_scan_error(message)
 
     @Slot(int)
     def handle_instance_changed(self, idx: int) -> bool:
@@ -143,9 +126,7 @@ class SettingsSqlController(QObject):
         if not self._flow.begin_database_fetch(inst):
             return False
 
-        self._db_combo.clear()
-        self._db_combo.addItem("Загрузка…")
-        self._db_combo.setEnabled(False)
+        self._view.show_databases_loading()
 
         user = self._login_edit.text().strip()
         password = self._password_edit.text()
@@ -164,14 +145,7 @@ class SettingsSqlController(QObject):
         restore, pending = self._flow.finish_database_fetch(
             saved_database=self._load_config().get("sql_database", "") or "",
         )
-        items, final_idx = build_database_items(databases, restore=restore)
-
-        self._db_combo.blockSignals(True)
-        self._db_combo.clear()
-        self._db_combo.setEnabled(True)
-        for db in items:
-            self._db_combo.addItem(db)
-        self._db_combo.blockSignals(False)
+        final_idx = self._view.populate_databases(databases, restore=restore)
 
         if self._db_combo.count() > 0:
             if self._db_combo.currentIndex() != final_idx:
@@ -186,9 +160,7 @@ class SettingsSqlController(QObject):
     def _on_dblist_error(self, message: str) -> None:
         pending = self._flow.fail_database_fetch()
 
-        self._db_combo.clear()
-        self._db_combo.setEnabled(True)
-        set_status(self._conn_status, "error", f"Список БД: {message}")
+        self._view.show_database_error(message)
 
         if pending is not None:
             self._fetch_databases(pending)
