@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `223` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `226` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`224 passed`) plus a clean `python main.py` smoke-run.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`227 passed`) plus a clean `python main.py` smoke-run.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -68,6 +68,7 @@ Interpretation:
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates the application/settings section UI (startup, auto-update, version label, update button) to [app/ui/settings_app_panel.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_app_panel.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates the top-level settings page layout and bottom action row to [app/ui/settings_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_shell.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates startup-toggle and manual update-check side effects to [app/ui/settings_app_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_app_controller.py:1).
+  - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now also delegates shell signal wiring and pass-through orchestration to [app/ui/settings_widget_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget_controller.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates tray visibility, close-to-tray, and shutdown cleanup behavior to [app/ui/main_window_lifecycle.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_lifecycle.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates lazy debug-window lifetime and toggling to [app/ui/main_window_debug.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_debug.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates navigation state and sidebar shell wiring to [app/ui/main_window_navigation.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_navigation.py:1).
@@ -122,7 +123,6 @@ Interpretation:
    Evidence:
    - [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:358)
    - [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:168)
-   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:638)
    Impact:
    - Fast workers can emit terminal signals before handlers are attached.
    - `_ping_running` can remain stuck and disable future health checks.
@@ -141,7 +141,6 @@ Interpretation:
 3. Primary UI orchestration is concentrated in god-modules.
    Evidence:
    - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1)
-   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1)
    - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1)
    Impact:
    - Refactoring risk is high because UI, persistence, orchestration, and worker control are tightly coupled.
@@ -249,7 +248,7 @@ Interpretation:
 | Component | Severity | Debt summary |
 |---|---|---|
 | [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) | `medium` | Much smaller after panel/page extraction, but still owns editor orchestration, persistence wiring, and deletion flow. |
-| [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) | `medium` | Smaller after SQL and form controller extraction, but startup/update flow and final UI composition are still mixed together. |
+| [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) | `medium` | Now mostly a shell over extracted panels and controllers; remaining debt is limited to final composition and controller ownership boundaries. |
 | [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) | `medium` | Smaller after ping/activity and banner extraction, but history mutation, status-card composition, and remaining widget orchestration are still mixed together. |
 | [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) | `medium` | Smaller after lifecycle, debug, and navigation extraction, but page construction/wiring and remaining top-level shell orchestration are still mixed together. |
 | [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1) | `high` | Highlighter, editor behavior, overlay UI, and dialog shell are all fused. |

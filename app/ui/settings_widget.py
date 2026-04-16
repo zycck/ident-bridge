@@ -1,15 +1,9 @@
-from PySide6.QtCore import Slot
-from PySide6.QtWidgets import (
-    QMessageBox,
-    QWidget,
-)
+from PySide6.QtWidgets import QWidget
 
 from app.config import ConfigManager
-from app.core.app_logger import get_logger
 
 from app.core.updater import GITHUB_REPO
 from app.ui.settings_app_controller import SettingsAppController
-from app.ui.settings_shell import SettingsShell
 from app.ui.settings_actions import (
     SettingsUpdateCoordinator,
     is_startup_enabled,
@@ -17,8 +11,7 @@ from app.ui.settings_actions import (
 from app.ui.settings_form_controller import SettingsFormController
 from app.ui.settings_sql_controller import SettingsSqlController
 from app.ui.settings_sql_flow import SettingsSqlFlowState
-
-_log = get_logger(__name__)
+from app.ui.settings_widget_controller import SettingsWidgetController
 
 
 # ---------------------------------------------------------------------------
@@ -70,17 +63,23 @@ class SettingsWidget(QWidget):
             startup_check=self._startup_check,
             update_coordinator=self._update_actions,
         )
-        self._connect_auto_save()
-        self._load_fields()
+        self._controller = SettingsWidgetController(
+            shell=self._shell,
+            form_controller=self._form_controller,
+            sql_controller=self._sql_controller,
+            app_controller=self._app_controller,
+        )
+        self._controller.wire()
+        self._controller.load_initial_state()
 
     # ------------------------------------------------------------------
     # UI construction
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
+        from app.ui.settings_shell import SettingsShell
+
         self._shell = SettingsShell(self._current_version, self)
-        self._shell.reset_requested.connect(self._reset)
-        self._shell.save_requested.connect(self._save)
         self._shell.setContentsMargins(0, 0, 0, 0)
 
         outer = self.layout()
@@ -97,79 +96,7 @@ class SettingsWidget(QWidget):
         self._login_edit = self._sql_panel.login_edit()
         self._password_edit = self._sql_panel.password_edit()
         self._conn_status = self._sql_panel.conn_status()
-        self._instance_combo.currentIndexChanged.connect(self._on_instance_changed)
-        self._sql_panel.scan_requested.connect(self._scan_instances)
-        self._sql_panel.refresh_databases_requested.connect(self._refresh_databases)
-        self._sql_panel.test_connection_requested.connect(self._test_connection)
 
         self._app_panel = self._shell.app_panel()
         self._startup_check = self._app_panel.startup_check()
         self._auto_update_check = self._app_panel.auto_update_check()
-        self._app_panel.startup_toggled.connect(self._on_startup_toggled)
-        self._app_panel.check_update_requested.connect(self._check_update)
-
-    # ------------------------------------------------------------------
-    # Auto-save wiring
-    # ------------------------------------------------------------------
-
-    def _connect_auto_save(self) -> None:
-        """Connect widget signals → auto-save after every user interaction."""
-        self._db_combo.currentIndexChanged.connect(self._on_db_changed)
-        self._login_edit.editingFinished.connect(self._auto_save)
-        self._password_edit.editingFinished.connect(self._auto_save)
-        if self._instance_combo.lineEdit() is not None:
-            self._instance_combo.lineEdit().editingFinished.connect(self._auto_save)
-        self._auto_update_check.toggled.connect(self._auto_save)
-
-    # ------------------------------------------------------------------
-    # Load / Save / Reset
-    # ------------------------------------------------------------------
-
-    def _load_fields(self) -> None:
-        self._form_controller.load_fields()
-
-    def _save(self) -> None:
-        self._form_controller.save()
-        QMessageBox.information(self, "Сохранено", "Настройки сохранены.")
-
-    def _reset(self) -> None:
-        self._load_fields()
-
-    # ------------------------------------------------------------------
-    # Auto-save helpers
-    # ------------------------------------------------------------------
-
-    @Slot(int)
-    def _on_db_changed(self, idx: int) -> None:
-        self._form_controller.handle_database_changed(idx)
-
-    def _auto_save(self) -> bool:
-        return self._form_controller.auto_save()
-
-    # ------------------------------------------------------------------
-    # SQL Server — controller delegates
-    # ------------------------------------------------------------------
-
-    def _scan_instances(self) -> bool:
-        return self._sql_controller.scan_instances()
-
-    @Slot(int)
-    def _on_instance_changed(self, idx: int) -> bool:
-        return self._sql_controller.handle_instance_changed(idx)
-
-    def _refresh_databases(self) -> bool:
-        return self._sql_controller.refresh_databases()
-
-    def _test_connection(self) -> bool:
-        return self._sql_controller.test_connection()
-
-    # ------------------------------------------------------------------
-    # App settings
-    # ------------------------------------------------------------------
-
-    @Slot(bool)
-    def _on_startup_toggled(self, checked: bool) -> None:
-        self._app_controller.handle_startup_toggled(checked)
-
-    def _check_update(self) -> bool:
-        return self._app_controller.check_update()
