@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree contains 115 `test_*` functions, and this
+Audit note: the current tree contains 119 `test_*` functions, and this
 workspace is a WSL/Linux negative-control environment. The full gate is
 expected to be validated on Windows 11 with Python 3.14.4 and the
 documented Qt stack; tray, registry, reboot, and background-run checks
@@ -39,11 +39,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **115 tests** covering the scheduler engine,
+The fastest sanity check. **119 test functions / 120 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **115 tests**. Keep this number in
+The current tree actually contains **119 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -62,7 +62,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-115 passed in X.XXs
+120 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -84,6 +84,7 @@ the automated suite is fully green.**
 | `tests/test_sql_client.py` | escaped DSN building, missing-pyodbc behavior, query materialization, clearer connection-failure reporting | 5 |
 | `tests/test_updater.py` | release asset selection, download helper, apply helper exit path | 4 |
 | `tests/test_export_failure_alerts.py` | export failure counter thresholding and reset-after-success behavior | 2 |
+| `tests/test_settings_helpers.py` | extracted settings helpers: instance parsing, autosave DB selection, config payload building | 4 |
 
 ### What the automated suite does NOT cover
 
@@ -496,7 +497,7 @@ each item off manually:
 
 ```
 Core startup
-  [ ] python -m pytest tests/ → 115/115 PASS (zero failures, zero errors)
+  [ ] python -m pytest tests/ → 120/120 PASS (zero failures, zero errors)
   [ ] Headless smoke construct → "MainWindow constructs OK"
 
 Tray
@@ -614,7 +615,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 115 test functions, but the
+- The repository tree currently reports 119 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

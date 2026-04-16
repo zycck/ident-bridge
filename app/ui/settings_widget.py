@@ -1,4 +1,4 @@
-from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -18,93 +18,25 @@ from app.config import AppConfig, ConfigManager, SqlInstance
 from app.core import startup as StartupManager
 from app.core.app_logger import get_logger
 
-from app.core.instance_scanner import list_databases, scan_all
-from app.core.sql_client import SqlClient
 from app.core.updater import GITHUB_REPO
 from app.ui.lucide_icons import lucide
+from app.ui.settings_persistence import (
+    build_connection_config,
+    build_settings_payload,
+    resolve_autosave_database,
+)
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
+from app.ui.settings_workers import (
+    DatabaseListWorker,
+    InstanceScanWorker,
+    TestConnectionWorker,
+    instance_from_text,
+)
 from app.ui.widgets import labeled_row, section, set_status, status_label, style_combo_popup
 from app.workers.update_worker import UpdateWorker
 
 _log = get_logger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Domain-specific helpers
-# ---------------------------------------------------------------------------
-
-def _instance_from_text(text: str) -> SqlInstance | None:
-    text = text.strip()
-    if not text or text in (
-        "Сканирование…", "Нет экземпляров", "Ошибка сканирования", "Загрузка…"
-    ):
-        return None
-    parts = text.split("\\", 1)
-    host = parts[0].strip()
-    name = parts[1].strip() if len(parts) > 1 else ""
-    return SqlInstance(name=name, host=host, display=text)
-
-
-# ---------------------------------------------------------------------------
-# Background workers
-# ---------------------------------------------------------------------------
-
-class _InstanceScanWorker(QObject):
-    finished: Signal = Signal(list)
-    error: Signal = Signal(str)
-
-    @Slot()
-    def run(self) -> None:
-        _log.debug("Scanning SQL instances…")
-        try:
-            instances = scan_all()
-            _log.info("Instance scan done: %d found", len(instances))
-            self.finished.emit(instances)
-        except Exception as exc:
-            _log.error("Instance scan failed: %s", exc)
-            self.error.emit(str(exc))
-
-
-class _DbListWorker(QObject):
-    finished: Signal = Signal(list)
-    error: Signal = Signal(str)
-
-    def __init__(self, inst: SqlInstance, user: str, password: str) -> None:
-        super().__init__()
-        self._inst = inst
-        self._user = user
-        self._password = password
-
-    @Slot()
-    def run(self) -> None:
-        _log.debug("Fetching databases for %s", self._inst.display)
-        try:
-            dbs = list_databases(self._inst, self._user, self._password)
-            _log.info("Database list for %s: %d entries", self._inst.display, len(dbs))
-            self.finished.emit(dbs)
-        except Exception as exc:
-            _log.error("Database list failed (%s): %s", self._inst.display, exc)
-            self.error.emit(str(exc))
-
-
-class _TestConnWorker(QObject):
-    finished: Signal = Signal(bool, str)
-
-    def __init__(self, cfg: AppConfig) -> None:
-        super().__init__()
-        self._cfg = cfg
-
-    @Slot()
-    def run(self) -> None:
-        _log.debug("Testing SQL connection to %s", self._cfg.get("sql_instance"))
-        client = SqlClient(self._cfg)
-        ok, msg = client.test_connection()
-        if ok:
-            _log.info("SQL connection test passed")
-        else:
-            _log.warning("SQL connection test failed: %s", msg)
-        self.finished.emit(ok, msg or "")
 
 
 # ---------------------------------------------------------------------------
@@ -134,9 +66,9 @@ class SettingsWidget(QWidget):
 
         # Strong Python references — prevents GC from deleting workers while
         # the underlying QThread is still running (PySide6 doesn't keep them alive)
-        self._scan_worker: _InstanceScanWorker | None = None
-        self._dblist_worker: _DbListWorker | None = None
-        self._test_conn_worker: _TestConnWorker | None = None
+        self._scan_worker: InstanceScanWorker | None = None
+        self._dblist_worker: DatabaseListWorker | None = None
+        self._test_conn_worker: TestConnectionWorker | None = None
         self._update_worker: object | None = None
 
         # Запоминает выбор БД в памяти — не зависит от того, сохранён ли конфиг на диск
@@ -321,7 +253,7 @@ class SettingsWidget(QWidget):
                 self._instance_combo.blockSignals(True)
                 idx = self._instance_combo.findText(saved_instance)
                 if idx < 0:
-                    inst = _instance_from_text(saved_instance)
+                    inst = instance_from_text(saved_instance)
                     if inst:
                         self._instance_combo.addItem(saved_instance, userData=inst)
                     else:
@@ -342,15 +274,15 @@ class SettingsWidget(QWidget):
         # Merge with existing config to preserve export_jobs and other fields
         cfg = self._config.load()
         db = self._selected_db or self._db_combo.currentText().strip()
-        cfg.update({  # type: ignore[typeddict-item]
-            "sql_instance": self._instance_combo.currentText().strip(),
-            "sql_database": db,
-            "sql_user": self._login_edit.text().strip(),
-            "sql_password": self._password_edit.text(),
-            "auto_update_check": self._auto_update_check.isChecked(),
-            "run_on_startup": self._startup_check.isChecked(),
-            "github_repo": GITHUB_REPO,
-        })
+        cfg.update(build_settings_payload(
+            sql_instance=self._instance_combo.currentText().strip(),
+            sql_database=db,
+            sql_user=self._login_edit.text().strip(),
+            sql_password=self._password_edit.text(),
+            auto_update_check=self._auto_update_check.isChecked(),
+            run_on_startup=self._startup_check.isChecked(),
+            github_repo=GITHUB_REPO,
+        ))
         self._config.save(cfg)
         QMessageBox.information(self, "Сохранено", "Настройки сохранены.")
 
@@ -374,13 +306,12 @@ class SettingsWidget(QWidget):
         if self._loading:
             return
 
-        db = self._selected_db
-        if not db:
-            combo_text = self._db_combo.currentText().strip()
-            if combo_text and combo_text not in ("Загрузка…", "Нет баз данных"):
-                db = combo_text
+        db = resolve_autosave_database(
+            self._selected_db,
+            self._db_combo.currentText().strip(),
+        )
 
-        self._config.update(
+        self._config.update(**build_settings_payload(
             sql_instance=self._instance_combo.currentText().strip(),
             sql_database=db,
             sql_user=self._login_edit.text().strip(),
@@ -388,7 +319,7 @@ class SettingsWidget(QWidget):
             auto_update_check=self._auto_update_check.isChecked(),
             run_on_startup=self._startup_check.isChecked(),
             github_repo=GITHUB_REPO,
-        )
+        ))
         _log.debug("Auto-saved settings")
 
     # ------------------------------------------------------------------
@@ -404,7 +335,7 @@ class SettingsWidget(QWidget):
         self._instance_combo.addItem("Сканирование…")
         self._instance_combo.setEnabled(False)
 
-        worker = _InstanceScanWorker()
+        worker = InstanceScanWorker()
         run_worker(
             self,
             worker,
@@ -459,7 +390,7 @@ class SettingsWidget(QWidget):
     def _on_instance_changed(self, idx: int) -> None:
         inst = self._instance_combo.itemData(idx)
         if inst is None:
-            inst = _instance_from_text(self._instance_combo.itemText(idx))
+            inst = instance_from_text(self._instance_combo.itemText(idx))
             if inst is None:
                 return
             self._instance_combo.setItemData(idx, inst)
@@ -469,7 +400,7 @@ class SettingsWidget(QWidget):
         idx = self._instance_combo.currentIndex()
         inst = self._instance_combo.itemData(idx)
         if inst is None:
-            inst = _instance_from_text(self._instance_combo.currentText())
+            inst = instance_from_text(self._instance_combo.currentText())
         if inst is None:
             return
         self._fetch_databases(inst)
@@ -488,7 +419,7 @@ class SettingsWidget(QWidget):
         user = self._login_edit.text().strip()
         password = self._password_edit.text()
 
-        worker = _DbListWorker(inst, user, password)
+        worker = DatabaseListWorker(inst, user, password)
         run_worker(
             self,
             worker,
@@ -566,15 +497,15 @@ class SettingsWidget(QWidget):
             return
         self._test_conn_running = True
 
-        cfg: AppConfig = {
-            "sql_instance": self._instance_combo.currentText().strip(),
-            "sql_database": self._db_combo.currentText().strip(),
-            "sql_user": self._login_edit.text().strip(),
-            "sql_password": self._password_edit.text(),
-        }
+        cfg = build_connection_config(
+            sql_instance=self._instance_combo.currentText().strip(),
+            sql_database=self._db_combo.currentText().strip(),
+            sql_user=self._login_edit.text().strip(),
+            sql_password=self._password_edit.text(),
+        )
         set_status(self._conn_status, "neutral", "Проверка подключения…")
 
-        worker = _TestConnWorker(cfg)
+        worker = TestConnectionWorker(cfg)
         run_worker(
             self,
             worker,

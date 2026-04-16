@@ -39,17 +39,28 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `115` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `119` test functions |
 
 Interpretation:
 
-- This repository is not currently self-verifying in the active WSL environment.
+- This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, but the gate is still not reproducible from the active WSL environment.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`120 passed`) plus a clean `python main.py` smoke-run.
+
+## Post-Implementation Update
+- Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
+  - Python 3.14 modernization baseline landed in core and UI modules.
+  - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now delegates extracted SQL helpers and tile rendering to [app/ui/export_sql.py](/mnt/d/ProjectLocal/identa report/app/ui/export_sql.py:1) and [app/ui/export_job_tile.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile.py:1).
+  - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now delegates worker/helper logic to [app/ui/settings_workers.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_workers.py:1) and [app/ui/settings_persistence.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_persistence.py:1).
+  - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now delegates update-flow orchestration to [app/ui/update_flow_coordinator.py](/mnt/d/ProjectLocal/identa report/app/ui/update_flow_coordinator.py:1).
+- Fresh Windows validation evidence after these changes:
+  - `python -m pytest tests/ -q` → `120 passed in 1.82s`
+  - `python main.py` on Windows 11 / Python 3.14.4 → started and closed cleanly (`Exited=True`)
+- Remaining findings below should be read as the original audit baseline plus any items that still remain open after the first modernization/decomposition wave.
 
 ## Executive Summary
 - No confirmed `Critical` findings were reproduced in this audit wave.
-- `High` risk is concentrated in reliability/threading, top-level UI orchestration, config/update/release coupling, and the lack of a reproducible automated quality gate from the current repo state.
+- `High` risk is concentrated in reliability/threading, top-level UI orchestration, and config/update/release coupling.
 - `Medium` risk is concentrated in scalability, contract drift, dependency reproducibility, and several fragile platform/runtime assumptions.
 - `Low` risk is concentrated in portability constraints that appear intentional, plus local cleanup debt such as broad exception handling and inline UI policy.
 
@@ -61,9 +72,9 @@ Interpretation:
 | Scalability | `orange` | `fetchall()`, full UI rebuilds, and full config rewrites will become noticeable under larger data volumes. |
 | Cleanliness | `yellow` | Codebase is readable overall, but naming drift, duplication, inline styles, and broad catches remain visible. |
 | Technical Debt | `orange` | Debt is now mapped and localized, but several areas already impede safe refactoring. |
-| Testability | `red` | Good core test coverage exists, but widget integration and packaged Windows runtime remain outside the automated gate. |
+| Testability | `orange` | Good core test coverage exists and the Windows 3.14.4 automated gate is now green, but widget integration and packaged runtime still need more evidence. |
 | Dependency Hygiene | `orange` | The stack is current enough, but `>=` floors without a lock/constraints file make reproduction and upgrades non-deterministic. |
-| Python 3.14.4 Readiness | `orange` | Target runtime looks realistic for Windows, but cannot be claimed until the real Windows test environment is green. |
+| Python 3.14.4 Readiness | `yellow` | Automated Windows validation is now green, but full packaged/manual verification still remains. |
 
 ## Findings By Severity
 ### Critical
