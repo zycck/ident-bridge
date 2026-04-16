@@ -2,12 +2,12 @@
 """Presentation tile for a single export job."""
 
 import uuid
-from datetime import datetime, timedelta
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
 
 from app.config import ExportJob
+from app.ui.export_job_tile_presenter import build_export_job_tile_display
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
 
@@ -39,6 +39,7 @@ class ExportJobTile(QFrame):
         self._build_ui()
 
     def _build_ui(self) -> None:
+        display = build_export_job_tile_display(self._job)
         # Tile background + hover via inline stylesheet
         self.setStyleSheet(
             f"#jobTile {{"
@@ -60,8 +61,7 @@ class ExportJobTile(QFrame):
         top = QHBoxLayout()
         top.setSpacing(6)
 
-        name = self._job.get("name") or "Без названия"
-        self._name_lbl = QLabel(name)
+        self._name_lbl = QLabel(display.name)
         self._name_lbl.setStyleSheet(
             f"color: {Theme.gray_900}; "
             f"font-size: {Theme.font_size_md}pt; "
@@ -82,10 +82,9 @@ class ExportJobTile(QFrame):
         layout.addLayout(top)
 
         # ── Status line: last run summary ────────────────────────────
-        status_text, status_color = self._compute_status()
-        self._status_lbl = QLabel(status_text)
+        self._status_lbl = QLabel(display.status_text)
         self._status_lbl.setStyleSheet(
-            f"color: {status_color}; "
+            f"color: {display.status_color}; "
             f"font-size: {Theme.font_size_sm}pt; "
             f"background: transparent;"
         )
@@ -97,8 +96,7 @@ class ExportJobTile(QFrame):
         bottom = QHBoxLayout()
         bottom.setSpacing(6)
 
-        sched_text = self._compute_schedule_text()
-        self._sched_lbl = QLabel(sched_text)
+        self._sched_lbl = QLabel(display.schedule_text)
         self._sched_lbl.setStyleSheet(
             f"color: {Theme.gray_500}; "
             f"font-size: {Theme.font_size_xs}pt; "
@@ -132,66 +130,15 @@ class ExportJobTile(QFrame):
     def update_from_job(self, job: ExportJob) -> None:
         """Refresh the tile's labels from a (possibly updated) job dict."""
         self._job = job
-        self._name_lbl.setText(job.get("name") or "Без названия")
-        status_text, status_color = self._compute_status()
-        self._status_lbl.setText(status_text)
+        display = build_export_job_tile_display(job)
+        self._name_lbl.setText(display.name)
+        self._status_lbl.setText(display.status_text)
         self._status_lbl.setStyleSheet(
-            f"color: {status_color}; "
+            f"color: {display.status_color}; "
             f"font-size: {Theme.font_size_sm}pt; "
             f"background: transparent;"
         )
-        self._sched_lbl.setText(self._compute_schedule_text())
-
-    def _compute_status(self) -> tuple[str, str]:
-        """Return (text, color) for the status line based on history[0]."""
-        history = self._job.get("history") or []
-        if not history:
-            return "Ещё не запускалось", Theme.gray_500
-        latest = history[0]
-        ts_short = self._format_short_ts(latest.get("ts", ""))
-        if latest.get("ok"):
-            return f"✓ {latest.get('rows', 0)} строк · {ts_short}", Theme.success
-        err = latest.get("err", "Ошибка")
-        return f"✗ {err[:40]}", Theme.error
-
-    def _compute_schedule_text(self) -> str:
-        if not self._job.get("schedule_enabled"):
-            return "Ручной запуск"
-        mode = self._job.get("schedule_mode", "daily")
-        value = self._job.get("schedule_value", "")
-        if not value:
-            return "Расписание не настроено"
-        if mode == "daily":
-            return f"Ежедневно в {value}"
-        if mode == "hourly":
-            return f"Каждые {value} ч"
-        if mode == "minutely":
-            return f"Каждые {value} мин"
-        if mode == "secondly":
-            return f"Каждые {value} с"
-        return f"Расписание: {mode}"
-
-    @staticmethod
-    def _format_short_ts(ts: str) -> str:
-        if not ts or len(ts) < 16:
-            return ts
-        dt = None
-        for fmt, length in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
-            if len(ts) >= length:
-                try:
-                    dt = datetime.strptime(ts[:length], fmt)
-                    break
-                except ValueError:
-                    pass
-        if dt is None:
-            return ts
-        today = datetime.now().date()
-        time_str = dt.strftime("%H:%M:%S")
-        if dt.date() == today:
-            return f"сегодня {time_str}"
-        if dt.date() == today - timedelta(days=1):
-            return f"вчера {time_str}"
-        return f"{dt.strftime('%d.%m')} {time_str}"
+        self._sched_lbl.setText(display.schedule_text)
 
     def _on_run_clicked(self) -> None:
         self.run_requested.emit(self._job_id)
