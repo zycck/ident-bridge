@@ -32,6 +32,7 @@ from app.ui.export_editor_header import ExportEditorHeader
 from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_job_tile import ExportJobTile
 from app.ui.export_jobs_pages import ExportJobsEditorPage, ExportJobsTilesPage
+from app.ui.export_editor_runtime import ExportEditorRuntimeState
 from app.ui.export_schedule_panel import (
     ExportSchedulePanel,
     schedule_value_is_valid,
@@ -77,9 +78,7 @@ class ExportJobEditor(QWidget):
         self._job_id: str = job.get("id") or str(uuid.uuid4())
         self._running = False
         self._worker: ExportWorker | None = None
-        self._consecutive_failures: int = 0  # reset on success; triggers tray alert at threshold
-        self._last_trigger: TriggerType = TriggerType.MANUAL    # set just before export starts
-        self._current_trigger: TriggerType = TriggerType.MANUAL  # captured at export start for history
+        self._runtime = ExportEditorRuntimeState()
 
         self._scheduler = SyncScheduler(self)
         self._scheduler.trigger.connect(self._auto_trigger)
@@ -193,21 +192,8 @@ class ExportJobEditor(QWidget):
         latest = self._history_panel.latest_entry()
         # Restore status summary from most recent history entry (if any)
         if latest is not None:
-            if latest.get("ok"):
-                _ts = latest.get("ts", "")
-                if len(_ts) >= 19:
-                    ts_short = _ts[11:19]
-                elif len(_ts) >= 16:
-                    ts_short = _ts[11:16]
-                else:
-                    ts_short = _ts
-                self._header.set_status(
-                    "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}"
-                )
-            else:
-                self._header.set_status(
-                    "error", f"✗ {latest.get('err', 'Ошибка')[:70]}"
-                )
+            kind, text = self._runtime.status_from_latest_entry(latest)
+            self._header.set_status(kind, text)
         # Trigger syntax check after layout settles
         QTimer.singleShot(0, self._refresh_sql_syntax)
 
@@ -257,24 +243,24 @@ class ExportJobEditor(QWidget):
     @Slot()
     def _auto_trigger(self) -> None:
         """Called by scheduler — marks trigger as scheduled then fires export."""
-        self._last_trigger = TriggerType.SCHEDULED
+        self._runtime.mark_scheduled_trigger()
         if not self._running:
             self._start_export()
 
     def start_export(self) -> None:
         """Public API — manual trigger; idempotent."""
         if not self._running:
-            self._last_trigger = TriggerType.MANUAL
+            self._runtime.mark_manual_trigger()
             self._start_export()
 
     def _start_export(self) -> None:
         if self._running:
             return
         self._running = True
-        self._current_trigger = self._last_trigger  # capture for history entry
+        status_kind, status_text = self._runtime.begin_run()
         self._header.set_run_enabled(False)
         self._schedule_panel.set_progress_text("Запуск…")
-        self._header.set_status("running", "Запуск…")
+        self._header.set_status(status_kind, status_text)
 
         job = self.to_job()
         base_cfg = self._config.load()
@@ -304,13 +290,9 @@ class ExportJobEditor(QWidget):
         self._header.set_run_enabled(True)
         self._schedule_panel.set_progress_text("")
         if result.success:
-            self._consecutive_failures = 0
-            ts_clock = result.timestamp.strftime("%H:%M:%S")
-            ts_full  = result.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-            self._header.set_status(
-                "ok", f"✓ {result.rows_synced} строк · {ts_clock}"
-            )
-            self._add_history_entry(ok=True, rows=result.rows_synced, ts=ts_full)
+            status_kind, status_text, entry = self._runtime.on_success(result)
+            self._header.set_status(status_kind, status_text)
+            self._add_history_entry(entry)
             self.sync_completed.emit(result)
         else:
             # Failure accounting happens in _on_error() because the worker
@@ -323,28 +305,22 @@ class ExportJobEditor(QWidget):
         self._running = False
         self._header.set_run_enabled(True)
         self._schedule_panel.set_progress_text("")
-        self._header.set_status("error", f"✗ {msg[:70]}")
-        ts_full = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self._add_history_entry(ok=False, err=msg, ts=ts_full)
-        self._consecutive_failures += 1
-        if self._consecutive_failures >= _FAILURE_ALERT_THRESHOLD:
+        update = self._runtime.on_error(
+            msg,
+            now=datetime.now(),
+            alert_threshold=_FAILURE_ALERT_THRESHOLD,
+        )
+        self._header.set_status(update.status_kind, update.status_text)
+        self._add_history_entry(update.entry)
+        if update.alert_count is not None:
             self.failure_alert.emit(
                 self.to_job().get("name") or "Без названия",
-                self._consecutive_failures,
+                update.alert_count,
             )
 
     # ------------------------------------------------------------------ History data
 
-    def _add_history_entry(
-        self, *, ok: bool, ts: str, rows: int = 0, err: str = ""
-    ) -> None:
-        entry: ExportHistoryEntry = {
-            "ts":      ts,
-            "trigger": self._current_trigger.value,
-            "ok":      ok,
-            "rows":    rows,
-            "err":     err,
-        }
+    def _add_history_entry(self, entry: ExportHistoryEntry) -> None:
         self._history_panel.prepend_entry(entry)
 
     # ------------------------------------------------------------------ Test dialog
@@ -364,18 +340,23 @@ class ExportJobEditor(QWidget):
     @Slot(bool, int, str)
     def _on_test_completed(self, ok: bool, rows: int, err: str) -> None:
         """Record a TestRunDialog run as a TEST-trigger history entry."""
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M")
-        saved = self._current_trigger
-        self._current_trigger = TriggerType.TEST
-        try:
-            self._add_history_entry(ok=ok, ts=ts, rows=rows, err=err)
-        finally:
-            self._current_trigger = saved
+        entry = self._runtime.build_test_entry(
+            ok=ok,
+            rows=rows,
+            err=err,
+            now=datetime.now(),
+        )
+        self._add_history_entry(entry)
 
     # ------------------------------------------------------------------ Signals
 
     def _emit_changed(self) -> None:
         self.changed.emit(self.to_job())
+
+    @property
+    def _consecutive_failures(self) -> int:
+        """Compatibility shim for existing tests during the decomposition wave."""
+        return self._runtime.consecutive_failures
 
 
 # ---------------------------------------------------------------------------

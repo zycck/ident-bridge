@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree contains 134 `test_*` functions, and this
+Audit note: the current tree contains 137 `test_*` functions, and this
 workspace is a WSL/Linux negative-control environment. The full gate is
 expected to be validated on Windows 11 with Python 3.14.4 and the
 documented Qt stack; tray, registry, reboot, and background-run checks
@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **134 test functions / 135 collected test items** covering the scheduler engine,
+The fastest sanity check. **137 test functions / 138 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **134 tests**. Keep this number in
+The current tree actually contains **137 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-135 passed in X.XXs
+138 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -97,6 +97,7 @@ closed cleanly.
 | `tests/test_updater.py` | release asset selection, download helper, apply helper exit path | 4 |
 | `tests/test_export_failure_alerts.py` | export failure counter thresholding and reset-after-success behavior | 2 |
 | `tests/test_export_editor_header.py` | extracted export editor header: title editing, status summary, action signals | 2 |
+| `tests/test_export_editor_runtime.py` | extracted export editor runtime: trigger bookkeeping, success/error status, alert thresholding | 3 |
 | `tests/test_export_history_panel.py` | extracted export history panel: render, delete, clear-confirm behavior | 3 |
 | `tests/test_export_jobs_widget.py` | extracted export jobs pages: tiles/editor routing and reflow safety | 2 |
 | `tests/test_export_schedule_panel.py` | extracted export schedule panel: validation, placeholder, round-trip state | 3 |
@@ -518,7 +519,7 @@ each item off manually:
 
 ```
 Core startup
-  [ ] python -m pytest tests/ → 135/135 PASS (zero failures, zero errors)
+  [ ] python -m pytest tests/ → 138/138 PASS (zero failures, zero errors)
   [ ] Headless smoke construct → "MainWindow constructs OK"
 
 Tray
@@ -636,7 +637,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 134 test functions, but the
+- The repository tree currently reports 137 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

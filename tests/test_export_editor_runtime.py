@@ -1,0 +1,79 @@
+# -*- coding: utf-8 -*-
+"""Tests for extracted export editor runtime state."""
+
+from datetime import datetime, timezone
+
+from app.config import SyncResult, TriggerType
+from app.ui.export_editor_runtime import ExportEditorRuntimeState
+
+
+def _success_result() -> SyncResult:
+    return SyncResult(
+        success=True,
+        rows_synced=7,
+        error=None,
+        timestamp=datetime(2026, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+    )
+
+
+def test_runtime_state_builds_success_status_and_history_entry() -> None:
+    state = ExportEditorRuntimeState()
+
+    state.mark_manual_trigger()
+    state.begin_run()
+    status_kind, status_text, entry = state.on_success(_success_result())
+
+    assert status_kind == "ok"
+    assert status_text == "✓ 7 строк · 12:05:00"
+    assert entry == {
+        "ts": "2026-01-01 12:05:00",
+        "trigger": TriggerType.MANUAL.value,
+        "ok": True,
+        "rows": 7,
+        "err": "",
+    }
+    assert state.consecutive_failures == 0
+
+
+def test_runtime_state_counts_failures_and_alert_threshold() -> None:
+    state = ExportEditorRuntimeState()
+
+    alerts = []
+    for _ in range(3):
+        state.mark_manual_trigger()
+        state.begin_run()
+        payload = state.on_error(
+            "db down",
+            now=datetime(2026, 1, 1, 12, 0, 0),
+            alert_threshold=3,
+        )
+        alerts.append(payload.alert_count)
+
+    assert alerts == [None, None, 3]
+    assert state.consecutive_failures == 3
+    assert payload.entry["trigger"] == TriggerType.MANUAL.value
+    assert payload.entry["ok"] is False
+
+
+def test_runtime_state_restores_status_from_latest_history_entry() -> None:
+    ok_kind, ok_text = ExportEditorRuntimeState.status_from_latest_entry(
+        {
+            "ts": "2026-04-16 09:10:11",
+            "trigger": TriggerType.MANUAL.value,
+            "ok": True,
+            "rows": 3,
+            "err": "",
+        }
+    )
+    err_kind, err_text = ExportEditorRuntimeState.status_from_latest_entry(
+        {
+            "ts": "2026-04-16 09:10:11",
+            "trigger": TriggerType.MANUAL.value,
+            "ok": False,
+            "rows": 0,
+            "err": "permission denied",
+        }
+    )
+
+    assert (ok_kind, ok_text) == ("ok", "✓ 3 строк · 09:10:11")
+    assert (err_kind, err_text) == ("error", "✗ permission denied")
