@@ -34,12 +34,11 @@ from app.core.app_logger import get_logger
 from app.core.constants import (
     DEBOUNCE_SAVE_MS,
     DEBOUNCE_SYNTAX_MS,
-    HISTORY_MAX,
 )
 from app.core.scheduler import SyncScheduler
+from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_job_tile import ExportJobTile
 from app.ui.export_sql import format_sql_for_tsql_editor, validate_sql
-from app.ui.history_row import HistoryRow
 from app.ui.lucide_icons import lucide
 from app.ui.sql_editor import SqlEditor
 from app.ui.test_run_dialog import TestRunDialog
@@ -87,7 +86,6 @@ class ExportJobEditor(QWidget):
         self._consecutive_failures: int = 0  # reset on success; triggers tray alert at threshold
         self._last_trigger: TriggerType = TriggerType.MANUAL    # set just before export starts
         self._current_trigger: TriggerType = TriggerType.MANUAL  # captured at export start for history
-        self._history: list[ExportHistoryEntry] = []
 
         self._scheduler = SyncScheduler(self)
         self._scheduler.trigger.connect(self._auto_trigger)
@@ -291,66 +289,11 @@ class ExportJobEditor(QWidget):
         root.addLayout(sched_controls)
 
     def _build_history_section(self, root: QVBoxLayout) -> None:
-        """Hidden-by-default history group: separator + header row + scroll."""
-        self._hist_sep = hsep()
-        self._hist_sep.setVisible(False)
-        root.addSpacing(4)
-        root.addWidget(self._hist_sep)
-        root.addSpacing(4)
-
-        self._history_hdr_row = QWidget()
-        self._history_hdr_row.setStyleSheet("background: transparent;")
-        hdr_layout = QHBoxLayout(self._history_hdr_row)
-        hdr_layout.setContentsMargins(0, 0, 0, 0)
-        hdr_layout.setSpacing(8)
-
-        self._history_hdr = QLabel("История")
-        self._history_hdr.setStyleSheet(
-            f"color: {Theme.gray_600}; "
-            f"font-size: {Theme.font_size_base}pt; "
-            f"font-weight: {Theme.font_weight_semi}; "
-            f"background: transparent;"
-        )
-        hdr_layout.addWidget(self._history_hdr)
-        hdr_layout.addStretch()
-
-        self._history_clear_btn = QPushButton("Очистить")
-        self._history_clear_btn.setFlat(True)
-        self._history_clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._history_clear_btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  border: none; background: transparent; padding: 0;"
-            f"  color: {Theme.gray_500};"
-            f"  text-decoration: underline;"
-            f"}}"
-            f"QPushButton:hover {{ color: {Theme.error}; }}"
-        )
-        self._history_clear_btn.clicked.connect(self._on_clear_history)
-        hdr_layout.addWidget(self._history_clear_btn)
-
-        self._history_hdr_row.setVisible(False)
-        root.addWidget(self._history_hdr_row)
-
-        # Inner container with transparent background
-        self._history_container = QWidget()
-        self._history_container.setStyleSheet("background: transparent;")
-        self._history_layout = QVBoxLayout(self._history_container)
-        self._history_layout.setContentsMargins(0, 0, 0, 0)
-        self._history_layout.setSpacing(2)
-
-        self._history_scroll = QScrollArea()
-        self._history_scroll.setWidget(self._history_container)
-        self._history_scroll.setWidgetResizable(True)
-        self._history_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self._history_scroll.setMaximumHeight(280)
-        self._history_scroll.setHorizontalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
-        )
-        self._history_scroll.setStyleSheet(
-            "QScrollArea { background: transparent; border: none; }"
-        )
-        self._history_scroll.setVisible(False)
-        root.addWidget(self._history_scroll)
+        """History group with its own data/UI component."""
+        self._history_panel = ExportHistoryPanel(self)
+        self._history_panel.changed.connect(self._emit_changed)
+        self._history_panel.changed.connect(self.history_changed)
+        root.addWidget(self._history_panel)
 
     # ------------------------------------------------------------------ Load / save
 
@@ -366,7 +309,7 @@ class ExportJobEditor(QWidget):
             schedule_enabled=self._sched_check.isChecked(),
             schedule_mode=_MODE_BY_INDEX[self._mode_combo.currentIndex()],
             schedule_value=self._sched_value_edit.text().strip(),
-            history=list(self._history),
+            history=self._history_panel.history(),
         )
 
     def _load_job(self, job: ExportJob) -> None:
@@ -388,7 +331,7 @@ class ExportJobEditor(QWidget):
             idx = 0
         self._mode_combo.setCurrentIndex(idx)
         self._sched_value_edit.setText(job.get("schedule_value", ""))
-        self._history = list(job.get("history") or [])
+        self._history_panel.set_history(list(job.get("history") or []))
 
         for w in (
             self._query_edit, self._name_edit, self._webhook_edit,
@@ -397,10 +340,9 @@ class ExportJobEditor(QWidget):
             w.blockSignals(False)
 
         self._update_placeholder()
-        self._rebuild_history_ui()
+        latest = self._history_panel.latest_entry()
         # Restore status summary from most recent history entry (if any)
-        if self._history:
-            latest = self._history[0]
+        if latest is not None:
             if latest.get("ok"):
                 _ts = latest.get("ts", "")
                 if len(_ts) >= 19:
@@ -628,57 +570,7 @@ class ExportJobEditor(QWidget):
             "rows":    rows,
             "err":     err,
         }
-        self._history.insert(0, entry)          # newest first
-        if len(self._history) > HISTORY_MAX:
-            self._history = self._history[:HISTORY_MAX]
-        self._rebuild_history_ui()
-        self._emit_changed()
-        self.history_changed.emit()
-
-    def _delete_history(self, index: int) -> None:
-        if 0 <= index < len(self._history):
-            self._history.pop(index)
-            self._rebuild_history_ui()
-            self._emit_changed()
-            self.history_changed.emit()
-
-    @Slot()
-    def _on_clear_history(self) -> None:
-        """Clear all history entries for this editor after confirmation."""
-        if not self._history:
-            return
-        reply = QMessageBox.question(
-            self,
-            "Очистить историю",
-            f"Удалить все записи истории ({len(self._history)})?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            self._history.clear()
-            self._rebuild_history_ui()
-            self._emit_changed()
-            self.history_changed.emit()
-
-    # ------------------------------------------------------------------ History UI
-
-    def _rebuild_history_ui(self) -> None:
-        """Clear and repopulate history rows; show/hide section accordingly."""
-        # Remove all existing row widgets
-        while self._history_layout.count():
-            item = self._history_layout.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
-
-        has = bool(self._history)
-        self._hist_sep.setVisible(has)
-        self._history_hdr_row.setVisible(has)
-        self._history_scroll.setVisible(has)
-        if has:
-            self._history_hdr.setText(f"История ({len(self._history)})")
-            for i, entry in enumerate(self._history):
-                row = HistoryRow(entry, i, self)
-                row.delete_requested.connect(self._delete_history)
-                self._history_layout.addWidget(row)
+        self._history_panel.prepend_entry(entry)
 
     # ------------------------------------------------------------------ Test dialog
 
