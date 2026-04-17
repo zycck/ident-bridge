@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `263` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `266` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`264 passed`). `python main.py` still starts correctly there, but shell-driven close verification currently follows the existing close-to-tray path and requires a force-stop for automated cleanup.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`267 passed`). `python main.py` still starts correctly there, but shell-driven close verification currently follows the existing close-to-tray path and requires a force-stop for automated cleanup.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -58,6 +58,7 @@ Interpretation:
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates the stateful delete transaction (running guard, confirmation, editor/tile removal, save/reflow/history emit) to [app/ui/export_jobs_delete_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_delete_controller.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates the editor view composition, webhook field, and view-level helpers to [app/ui/export_editor_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/export_editor_shell.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now keeps only list/detail container duties, while the per-job editor lifecycle lives in [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1).
+  - [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1) now also delegates job-payload serialization, worker startup wiring, history prepend, and test-dialog creation to [app/ui/export_job_editor_bridge.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor_bridge.py:1).
   - [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1) now also delegates scheduler/timer/test-dialog lifecycle wiring to [app/ui/export_editor_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_editor_controller.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates job loading, save synchronization, tile/editor wiring, and “new job” creation to [app/ui/export_jobs_collection_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_collection_controller.py:1).
   - [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) now delegates worker/helper logic to [app/ui/settings_workers.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_workers.py:1), [app/ui/settings_persistence.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_persistence.py:1), and [app/ui/settings_actions.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_actions.py:1).
@@ -101,7 +102,7 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `264 passed in 2.26s`
+  - `python -m pytest tests/ -q` → `267 passed in 2.50s`
   - `python main.py` on Windows 11 / Python 3.14.4 → started successfully; automated shell cleanup still follows the current close-to-tray path and required a force-stop (`Exited=True`, `ExitCode=-1`)
   - `python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean` → built `build/dist/iDentSync.exe`
   - `build/dist/iDentSync.exe` → started and closed cleanly (`Exited=True`)
@@ -240,7 +241,7 @@ Interpretation:
 | Component | Severity | Debt summary |
 |---|---|---|
 | [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) | `medium` | Much smaller after panel/page extraction, but still owns editor orchestration, persistence wiring, and deletion flow. |
-| [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1) | `medium` | Smaller after lifecycle controller extraction, but worker callbacks and final execution wiring still live beside the widget shell. |
+| [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1) | `low` | Bridge duties are extracted now; the widget mostly composes the shell and wires controllers together. |
 | [app/ui/settings_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/settings_widget.py:1) | `medium` | Now mostly a shell over extracted panels and controllers; remaining debt is limited to final composition and controller ownership boundaries. |
 | [app/ui/dashboard_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/dashboard_widget.py:1) | `medium` | Smaller after ping/activity and banner extraction, but history mutation, status-card composition, and remaining widget orchestration are still mixed together. |
 | [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) | `medium` | Smaller after lifecycle, debug, and navigation extraction, but page construction/wiring and remaining top-level shell orchestration are still mixed together. |

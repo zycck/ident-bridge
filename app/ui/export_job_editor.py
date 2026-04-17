@@ -8,11 +8,10 @@ from app.config import ConfigManager, ExportHistoryEntry, ExportJob, SyncResult
 from app.core.constants import DEBOUNCE_SAVE_MS, DEBOUNCE_SYNTAX_MS
 from app.core.scheduler import SyncScheduler
 from app.ui.export_editor_controller import ExportEditorController
+from app.ui.export_job_editor_bridge import ExportJobEditorBridge
 from app.ui.export_editor_runtime import ExportEditorRuntimeState
 from app.ui.export_editor_shell import ExportEditorShell
 from app.ui.export_execution_controller import ExportExecutionController
-from app.ui.test_run_dialog import TestRunDialog
-from app.ui.threading import run_worker
 from app.workers.export_worker import ExportWorker
 
 _FAILURE_ALERT_THRESHOLD = 3
@@ -46,16 +45,21 @@ class ExportJobEditor(QWidget):
         self._syntax_timer.setSingleShot(True)
         self._syntax_timer.setInterval(DEBOUNCE_SYNTAX_MS)
         self._build_ui()
+        self._bridge = ExportJobEditorBridge(
+            owner=self,
+            shell=self._shell,
+            job_id=self._job_id,
+        )
         self._execution = ExportExecutionController(
             runtime=self._runtime,
             load_config=self._config.load,
-            build_job=self.to_job,
+            build_job=self._bridge.build_job,
             create_worker=lambda cfg, current_job: ExportWorker(cfg, current_job),
-            start_worker=self._start_worker,
+            start_worker=self._bridge.start_worker,
             set_run_enabled=self._shell.set_run_enabled,
             set_progress_text=self._shell.set_progress_text,
             set_status=self._shell.set_status,
-            add_history_entry=self._add_history_entry,
+            add_history_entry=self._bridge.add_history_entry,
             emit_sync_completed=self.sync_completed.emit,
             emit_failure_alert=self.failure_alert.emit,
             failure_alert_threshold=_FAILURE_ALERT_THRESHOLD,
@@ -71,7 +75,7 @@ class ExportJobEditor(QWidget):
             run_manual_export=self._execution.start_manual,
             run_scheduled_export=self._execution.start_scheduled,
             record_test_completed=self._execution.record_test_completed,
-            create_test_dialog=self._create_test_dialog,
+            create_test_dialog=self._bridge.create_test_dialog,
         )
         self._controller.wire()
         self._controller.load_job(job)
@@ -90,19 +94,10 @@ class ExportJobEditor(QWidget):
         root.addWidget(self._shell)
 
     def job_id(self) -> str:
-        return self._job_id
+        return self._bridge.job_id()
 
     def to_job(self) -> ExportJob:
-        return ExportJob(
-            id=self._job_id,
-            name=self._shell.job_name(),
-            sql_query=self._shell.sql_text(),
-            webhook_url=self._shell.webhook_url(),
-            schedule_enabled=self._shell.schedule_enabled(),
-            schedule_mode=self._shell.schedule_mode(),
-            schedule_value=self._shell.schedule_value(),
-            history=self._shell.history(),
-        )
+        return self._bridge.build_job()
 
     def _on_sched_changed(self) -> None:
         self._controller.handle_schedule_changed()
@@ -132,22 +127,6 @@ class ExportJobEditor(QWidget):
     def _start_export(self) -> None:
         self._controller.start_export()
 
-    def _start_worker(
-        self,
-        worker: ExportWorker,
-        on_finished,
-        on_error,
-        on_progress,
-    ) -> None:
-        worker.progress.connect(on_progress)
-        run_worker(
-            self,
-            worker,
-            pin_attr="_worker",
-            on_finished=on_finished,
-            on_error=on_error,
-        )
-
     @Slot(int, str)
     def _on_progress(self, _step: int, description: str) -> None:
         self._execution.on_progress(_step, description)
@@ -159,9 +138,6 @@ class ExportJobEditor(QWidget):
     @Slot(str)
     def _on_error(self, msg: str) -> None:
         self._execution.on_error(msg)
-
-    def _add_history_entry(self, entry: ExportHistoryEntry) -> None:
-        self._shell.prepend_history_entry(entry)
 
     def _open_test_dialog(self) -> None:
         self._controller.open_test_dialog()
@@ -183,11 +159,3 @@ class ExportJobEditor(QWidget):
     @property
     def _running(self) -> bool:
         return self._execution.running
-
-    def _create_test_dialog(self, cfg: dict, sql: str) -> TestRunDialog:
-        return TestRunDialog(
-            cfg,
-            initial_sql=sql,
-            auto_run=bool(sql),
-            parent=self,
-        )
