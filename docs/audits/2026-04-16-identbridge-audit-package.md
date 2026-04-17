@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `272` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `275` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`273 passed`). `python main.py` still starts correctly there, but shell-driven close verification currently follows the existing close-to-tray path and requires a force-stop for automated cleanup.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`276 passed`). `python main.py` still starts correctly there, but shell-driven close verification currently follows the existing close-to-tray path and requires a force-stop for automated cleanup.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -57,6 +57,7 @@ Interpretation:
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates config-facing load/save/new-job normalization to [app/ui/export_jobs_store.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_store.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates worker/test-run orchestration to [app/ui/export_execution_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_execution_controller.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates the stateful delete transaction (running guard, confirmation, editor/tile removal, save/reflow/history emit) to [app/ui/export_jobs_delete_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_delete_controller.py:1).
+  - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates page routing, current-editor ownership, and shutdown cleanup to [app/ui/export_jobs_navigation_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_navigation_controller.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now also delegates the editor view composition, webhook field, and view-level helpers to [app/ui/export_editor_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/export_editor_shell.py:1).
   - [app/ui/export_jobs_widget.py](/mnt/d/ProjectLocal/identa report/app/ui/export_jobs_widget.py:1) now keeps only list/detail container duties, while the per-job editor lifecycle lives in [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1).
   - [app/ui/export_job_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor.py:1) now also delegates job-payload serialization, worker startup wiring, history prepend, and test-dialog creation to [app/ui/export_job_editor_bridge.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_editor_bridge.py:1).
@@ -103,7 +104,7 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `273 passed in 3.60s`
+  - `python -m pytest tests/ -q` → `276 passed in 2.91s`
   - `python tools/perf_smoke.py --scenario all --cycles 1 --top 8` → `positive_retained_kib=1714.9` with the largest retained buckets dominated by first-load Python/Qt allocations plus `app/ui/export_jobs_pages.py` and `app/ui/main_window_navigation.py`
   - `python tools/perf_smoke.py --scenario export-editor --cycles 5 --top 8` → `positive_retained_kib=993.4`, down from the earlier `1681.1 KiB` after lazy-loading `sqlglot`, removing eager syntax validation on initial editor load, and caching highlighter assets
   - `python main.py` on Windows 11 / Python 3.14.4 → started successfully; automated shell cleanup still follows the current close-to-tray path and required a force-stop (`Exited=True`, `ExitCode=-1`)

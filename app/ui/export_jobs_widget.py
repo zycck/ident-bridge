@@ -11,11 +11,11 @@ from PySide6.QtWidgets import (
 
 from app.config import (
     ConfigManager,
-    ExportJob,
 )
+from app.ui.export_job_editor import ExportJobEditor  # re-exported for existing imports/tests
 from app.ui.export_jobs_collection_controller import ExportJobsCollectionController
 from app.ui.export_jobs_delete_controller import ExportJobsDeleteController
-from app.ui.export_job_editor import ExportJobEditor
+from app.ui.export_jobs_navigation_controller import ExportJobsNavigationController
 from app.ui.export_jobs_pages import ExportJobsEditorPage, ExportJobsTilesPage
 
 
@@ -33,20 +33,25 @@ class ExportJobsWidget(QWidget):
     def __init__(self, config: ConfigManager, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._config = config
-        self._current_editor_id: str | None = None
         self._build_ui()
         self._jobs = ExportJobsCollectionController(
             config=self._config,
             parent=self,
             tiles_page=self._tiles_page,
             editor_page=self._editor_page,
-            open_editor=self._show_editor,
+            open_editor=self._open_editor,
             delete_job=self._on_tile_delete,
             emit_sync_completed=self.sync_completed.emit,
             emit_history_changed=self.history_changed.emit,
             emit_failure_alert=self.failure_alert.emit,
         )
         self._editors = self._jobs.editors()
+        self._navigation = ExportJobsNavigationController(
+            stack=self._stack,
+            editor_page=self._editor_page,
+            editors=self._editors,
+            sync_tiles_from_editors=self._jobs.sync_tiles_from_editors,
+        )
         self._delete_controller = ExportJobsDeleteController(
             tiles_page=self._tiles_page,
             editor_page=self._editor_page,
@@ -86,26 +91,22 @@ class ExportJobsWidget(QWidget):
         self._jobs.add_new_job()
 
     @Slot(str)
+    def _open_editor(self, job_id: str) -> None:
+        self._navigation.show_editor(job_id)
+
+    @Slot(str)
     def _show_editor(self, job_id: str) -> None:
-        editor = self._editors.get(job_id)
-        if editor is None:
-            return
-        if not self._editor_page.show_editor(job_id):
-            return
-        self._current_editor_id = job_id
-        self._stack.setCurrentIndex(1)
+        self._open_editor(job_id)
 
     @Slot()
     def _show_tiles(self) -> None:
-        self._current_editor_id = None
-        self._stack.setCurrentIndex(0)
-        self._jobs.sync_tiles_from_editors()
+        self._navigation.show_tiles()
 
     @Slot()
     def _delete_current_editor(self) -> None:
-        if self._current_editor_id is None:
+        if self._navigation.current_editor_id is None:
             return
-        self._on_tile_delete(self._current_editor_id)
+        self._on_tile_delete(self._navigation.current_editor_id)
 
     @Slot(str)
     def _run_job(self, job_id: str) -> None:
@@ -116,7 +117,7 @@ class ExportJobsWidget(QWidget):
         self._delete_controller.delete_job(
             job_id=job_id,
             editors=self._editors,
-            current_editor_id=self._current_editor_id,
+            current_editor_id=self._navigation.current_editor_id,
         )
 
     def _confirm_delete(self, job_name: str) -> bool:
@@ -138,7 +139,5 @@ class ExportJobsWidget(QWidget):
     def closeEvent(self, event) -> None:  # type: ignore[override]
         """Safety net: stop schedulers + timers if the widget is closed
         independently of the app's normal aboutToQuit cleanup hook."""
-        self.stop_all_schedulers()
-        for editor in self._editors.values():
-            editor.stop_timers()
+        self._navigation.stop_all_editors()
         super().closeEvent(event)

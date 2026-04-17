@@ -42,12 +42,12 @@ def test_export_jobs_widget_routes_between_tiles_and_editor(qtbot) -> None:
     widget._show_editor("job-1")
 
     assert widget._stack.currentIndex() == 1
-    assert widget._current_editor_id == "job-1"
+    assert widget._navigation.current_editor_id == "job-1"
 
     widget._show_tiles()
 
     assert widget._stack.currentIndex() == 0
-    assert widget._current_editor_id is None
+    assert widget._navigation.current_editor_id is None
 
 
 def test_export_jobs_widget_reflow_keeps_tile_set_intact(qtbot) -> None:
