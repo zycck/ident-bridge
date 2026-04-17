@@ -15,6 +15,30 @@ from app.ui.theme import Theme
 from app.core.updater import cleanup_old_exe
 
 
+def _set_windows_app_user_model_id() -> None:
+    """Tell Windows that this process belongs to its own application.
+
+    Without an explicit AppUserModelID, Windows groups the process
+    under whatever spawned it (``python.exe`` when run from source)
+    and the taskbar icon / Task Manager "Name" column inherit from
+    the parent. A unique AUMID lets Windows associate the process
+    with the app's own icon + window title grouping.
+
+    Safe no-op on non-Windows and if the call fails for any reason.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        # "CompanyName.ProductName.Subproduct.Version" per MS guidelines.
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            f"iDentBridge.Desktop.{APP_VERSION}"
+        )
+    except Exception:
+        # Feature is cosmetic — never fail app startup over it.
+        pass
+
+
 def _load_fonts(app: QApplication) -> None:
     """
     Register bundled fonts and set Manrope as the application-wide default.
@@ -92,9 +116,16 @@ def main() -> None:
     # Remove leftover .exe from a previous self-update
     cleanup_old_exe()
 
+    # Tag the process BEFORE the QApplication exists, otherwise the
+    # first taskbar icon and window-grouping association is already
+    # bound to the generic "python.exe" AUMID.
+    _set_windows_app_user_model_id()
+
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
+    app.setApplicationDisplayName(APP_NAME)
     app.setApplicationVersion(APP_VERSION)
+    app.setOrganizationName(APP_NAME)
     # Don't quit when the main window is closed (tray icon keeps app alive)
     app.setQuitOnLastWindowClosed(False)
 

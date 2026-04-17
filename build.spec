@@ -83,5 +83,9 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon="resources/icon.ico",
+    # Populates the Windows EXE file properties (Task Manager "Name"
+    # column, File Properties → Details, UAC prompt title) with
+    # ProductName="iDentBridge", FileDescription, version numbers, etc.
+    version="resources/version_info.txt",
     onefile=True,
 )
