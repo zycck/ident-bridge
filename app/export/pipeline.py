@@ -1,0 +1,123 @@
+"""Connect → query → deliver pipeline.
+
+The pipeline is a plain callable (not a QObject) so it can be unit
+tested without a Qt event loop. :class:`~app.workers.export_worker.ExportWorker`
+is the QObject wrapper that adapts :meth:`ExportPipeline.run` into
+Qt signals.
+
+Responsibilities:
+- Call ``db.connect()`` once, ``db.disconnect()`` in ``finally`` once.
+- Run one SQL query against that connection.
+- Hand the result to the sink (if any).
+- Emit progress through a callback so the caller (usually a QObject)
+  can translate that into signals or log lines.
+
+Error handling is intentionally minimal — the pipeline converts no
+exceptions. The worker catches and translates to signals; unit tests
+catch and assert directly.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Callable
+
+from app.config import AppConfig, ExportJob, QueryResult, SyncResult
+from app.core.constants import MAX_WEBHOOK_ROWS
+from app.core.sql_client import SqlClient
+from app.export.protocol import ExportSink
+from app.export.sinks.webhook import WebhookSink
+
+_log = logging.getLogger(__name__)
+
+# ProgressCallback: step_number (0–3), human-readable message.
+ProgressCallback = Callable[[int, str], None]
+
+
+def _noop_progress(step: int, message: str) -> None:
+    pass
+
+
+@dataclass(slots=True)
+class ExportPipeline:
+    """Stateless pipeline of ``connect → query → (optional) sink``.
+
+    A fresh pipeline should be constructed for each run — the database
+    client inside is single-use.
+    """
+
+    db: Any                       # DatabaseClient-like (SqlClient today)
+    sink: ExportSink | None
+    logger: logging.Logger = field(default_factory=lambda: _log)
+
+    def run(
+        self,
+        job: ExportJob,
+        progress: ProgressCallback = _noop_progress,
+    ) -> SyncResult:
+        """Execute the pipeline end-to-end and return a :class:`SyncResult`."""
+        job_name = job.get("name", "?")
+        sql = (job.get("sql_query") or "").strip()
+        if not sql:
+            raise ValueError("SQL запрос не задан в карточке выгрузки")
+
+        try:
+            progress(0, "Подключение к БД...")
+            # connect() lives inside the try so disconnect() still fires
+            # when the initial connect itself raises (matches the pre-refactor
+            # behaviour — see test_db_connect_failure_disconnect_still_called).
+            self.db.connect()
+
+            progress(1, "Выполнение запроса...")
+            result: QueryResult = self.db.query(sql)
+
+            progress(2, "Отправка данных...")
+            if self.sink is not None:
+                self.sink.push(job_name, result)
+            else:
+                self.logger.info(
+                    "Выгрузка '%s': %d строк (webhook не настроен)",
+                    job_name, result.count,
+                )
+
+            progress(3, "Готово")
+            return SyncResult(
+                success=True,
+                rows_synced=result.count,
+                error=None,
+                timestamp=datetime.now(timezone.utc),
+            )
+        finally:
+            self.db.disconnect()
+
+
+def build_pipeline_for_job(
+    cfg: AppConfig,
+    job: ExportJob,
+    *,
+    sql_client_cls: type = SqlClient,
+) -> ExportPipeline:
+    """Factory: assemble the default pipeline for a job.
+
+    Single registration point for which sink handles which job type.
+    Extend this function (or replace the factory call-site) when a new
+    sink type lands.
+
+    ``sql_client_cls`` is accepted as a keyword for tests and future
+    DatabaseClient-factory wiring (see audit plan I.4).
+    """
+    db = sql_client_cls(cfg)
+
+    webhook_url = (job.get("webhook_url") or "").strip()
+    sink: ExportSink | None
+    if webhook_url:
+        sink = WebhookSink(webhook_url, max_rows=MAX_WEBHOOK_ROWS)
+    else:
+        sink = None
+
+    return ExportPipeline(db=db, sink=sink)
+
+
+__all__ = ["ExportPipeline", "ProgressCallback", "build_pipeline_for_job"]

@@ -1,5 +1,11 @@
 """
-ExportWorker — full sync pipeline in a worker thread (moveToThread pattern).
+ExportWorker — QObject wrapper that runs an :class:`ExportPipeline`
+on a background thread and translates its progress / result / failure
+into Qt signals.
+
+The heavy lifting lives in :mod:`app.export.pipeline`. This file is
+deliberately thin — it exists to bridge the pipeline (plain Python)
+with the rest of the app that speaks Qt signals.
 
 Pipeline steps (emitted via progress signal):
     0  Подключение к БД...
@@ -8,48 +14,25 @@ Pipeline steps (emitted via progress signal):
     3  Готово
 """
 
-import json
+from __future__ import annotations
+
 import logging
-import os
-import ssl
-import time
-import urllib.request
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from app.config import AppConfig, ExportJob, SyncResult
-from app.core.constants import MAX_WEBHOOK_ROWS
-from app.core.sql_client import SqlClient
-
-_log = logging.getLogger(__name__)
-
-# Retry policy for webhook POST
-WEBHOOK_RETRY_ATTEMPTS: int = 3
-WEBHOOK_RETRY_BASE_DELAY: float = float(
-    os.environ.get("IDENTBRIDGE_WEBHOOK_RETRY_DELAY", "2.0")
+from app.core.sql_client import SqlClient  # noqa: F401 - kept for test monkeypatch compat
+from app.export.pipeline import build_pipeline_for_job
+# Backwards-compatible re-exports. Callers (incl. tests) historically
+# imported these names from this module.
+from app.export.sinks.webhook import (  # noqa: F401
+    DEFAULT_RETRY_ATTEMPTS as WEBHOOK_RETRY_ATTEMPTS,
+    DEFAULT_RETRY_BASE_DELAY as WEBHOOK_RETRY_BASE_DELAY,
+    build_webhook_payload,
 )
 
-# Module-level SSL context. Mirrors app.core.updater's usage: an explicit
-# context makes the TLS policy predictable — certifi bundle on frozen
-# builds, OS trust store otherwise — and avoids falling back to urllib's
-# implicit-default path where cert verification can silently change with
-# Python/OpenSSL updates.
-_SSL_CONTEXT = ssl.create_default_context()
-
-
-def build_webhook_payload(job_name: str, result) -> bytes:
-    """Serialize one webhook payload without pre-copying all result rows."""
-    return json.dumps(
-        {
-            "job": job_name,
-            "rows": result.count,
-            "columns": result.columns,
-            "data": result.rows,
-        },
-        ensure_ascii=False,
-        default=str,
-    ).encode("utf-8")
+_log = logging.getLogger(__name__)
 
 
 class ExportWorker(QObject):
@@ -70,73 +53,18 @@ class ExportWorker(QObject):
     @Slot()
     def run(self) -> None:
         """Execute the SQL → webhook pipeline."""
-        sql_client = SqlClient(self._cfg)
+        # Resolve SqlClient via module attribute so tests that monkeypatch
+        # ``app.workers.export_worker.SqlClient`` still intercept construction.
+        sql_client_cls = globals().get("SqlClient", SqlClient)
+        pipeline = build_pipeline_for_job(
+            self._cfg,
+            self._job,
+            sql_client_cls=sql_client_cls,
+        )
         job_name = self._job.get("name", "?")
         try:
-            self.progress.emit(0, "Подключение к БД...")
-            sql_client.connect()
-
-            self.progress.emit(1, "Выполнение запроса...")
-            sql = (self._job.get("sql_query") or "").strip()
-            if not sql:
-                raise ValueError("SQL запрос не задан в карточке выгрузки")
-            result = sql_client.query(sql)
-
-            self.progress.emit(2, "Отправка данных...")
-            webhook_url = (self._job.get("webhook_url") or "").strip()
-            if webhook_url:
-                if result.count > MAX_WEBHOOK_ROWS:
-                    msg = (
-                        f"Слишком много строк для webhook ({result.count} > "
-                        f"{MAX_WEBHOOK_ROWS}). Сократите запрос."
-                    )
-                    _log.error(msg)
-                    raise ValueError(msg)
-                last_exc: Exception | None = None
-                for attempt in range(1, WEBHOOK_RETRY_ATTEMPTS + 1):
-                    try:
-                        payload = build_webhook_payload(job_name, result)
-                        req = urllib.request.Request(
-                            webhook_url,
-                            data=payload,
-                            headers={
-                                "Content-Type": "application/json; charset=utf-8",
-                                "User-Agent":   "iDentBridge",
-                            },
-                            method="POST",
-                        )
-                        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
-                            _log.info(
-                                "Webhook %s → HTTP %d (attempt %d)",
-                                webhook_url, resp.status, attempt,
-                            )
-                            last_exc = None
-                            break
-                    except Exception as exc:
-                        last_exc = exc
-                        _log.warning(
-                            "Webhook attempt %d/%d failed: %s",
-                            attempt, WEBHOOK_RETRY_ATTEMPTS, exc,
-                        )
-                        if attempt < WEBHOOK_RETRY_ATTEMPTS:
-                            time.sleep(WEBHOOK_RETRY_BASE_DELAY * (2 ** (attempt - 1)))
-                if last_exc is not None:
-                    _log.error("Webhook push failed after %d attempts: %s", WEBHOOK_RETRY_ATTEMPTS, last_exc)
-                    raise last_exc
-                _log.info("Выгрузка '%s': %d строк → webhook %s", job_name, result.count, webhook_url)
-            else:
-                _log.info("Выгрузка '%s': %d строк (webhook не настроен)", job_name, result.count)
-
-            self.progress.emit(3, "Готово")
-            self.finished.emit(
-                SyncResult(
-                    success=True,
-                    rows_synced=result.count,
-                    error=None,
-                    timestamp=datetime.now(timezone.utc),
-                )
-            )
-
+            result = pipeline.run(self._job, progress=self.progress.emit)
+            self.finished.emit(result)
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             _log.error("Ошибка выгрузки '%s': %s", job_name, msg)
@@ -150,5 +78,10 @@ class ExportWorker(QObject):
                 )
             )
 
-        finally:
-            sql_client.disconnect()
+
+__all__ = [
+    "ExportWorker",
+    "build_webhook_payload",
+    "WEBHOOK_RETRY_ATTEMPTS",
+    "WEBHOOK_RETRY_BASE_DELAY",
+]

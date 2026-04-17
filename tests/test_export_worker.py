@@ -16,7 +16,9 @@ from app.workers.export_worker import ExportWorker, build_webhook_payload
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
     """Suppress time.sleep inside the retry loop so tests run at full speed."""
-    monkeypatch.setattr("app.workers.export_worker.time.sleep", lambda *_: None)
+    # The retry loop now lives in app.export.sinks.webhook after the
+    # ExportSink refactor; the worker no longer imports time itself.
+    monkeypatch.setattr("app.export.sinks.webhook.time.sleep", lambda *_: None)
 
 
 @pytest.fixture
