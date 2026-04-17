@@ -11,6 +11,7 @@ Pipeline steps (emitted via progress signal):
 import json
 import logging
 import os
+import ssl
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -28,6 +29,13 @@ WEBHOOK_RETRY_ATTEMPTS: int = 3
 WEBHOOK_RETRY_BASE_DELAY: float = float(
     os.environ.get("IDENTBRIDGE_WEBHOOK_RETRY_DELAY", "2.0")
 )
+
+# Module-level SSL context. Mirrors app.core.updater's usage: an explicit
+# context makes the TLS policy predictable — certifi bundle on frozen
+# builds, OS trust store otherwise — and avoids falling back to urllib's
+# implicit-default path where cert verification can silently change with
+# Python/OpenSSL updates.
+_SSL_CONTEXT = ssl.create_default_context()
 
 
 def build_webhook_payload(job_name: str, result) -> bytes:
@@ -97,7 +105,7 @@ class ExportWorker(QObject):
                             },
                             method="POST",
                         )
-                        with urllib.request.urlopen(req, timeout=15) as resp:
+                        with urllib.request.urlopen(req, timeout=15, context=_SSL_CONTEXT) as resp:
                             _log.info(
                                 "Webhook %s → HTTP %d (attempt %d)",
                                 webhook_url, resp.status, attempt,
