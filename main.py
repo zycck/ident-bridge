@@ -16,7 +16,7 @@ from app.ui.theme import Theme
 from app.core.updater import cleanup_old_exe
 
 
-def _load_fonts() -> None:
+def _load_fonts(app: QApplication) -> None:
     """
     Register bundled fonts and set Manrope as the application-wide default.
 
@@ -56,10 +56,7 @@ def _load_fonts() -> None:
     # PreferAntialias: explicit AA even at small sizes.
     default_font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
 
-    from PySide6.QtWidgets import QApplication
-    qapp = QApplication.instance()
-    if qapp is not None:
-        qapp.setFont(default_font)
+    app.setFont(default_font)
 
 
 def _load_app_icon(app: QApplication) -> None:
@@ -107,7 +104,7 @@ def main() -> None:
     # Install Qt→Python logging bridge before any UI is created
     app_logger.setup()
 
-    _load_fonts()
+    _load_fonts(app)
 
     theme = _load_theme()
     if theme:
