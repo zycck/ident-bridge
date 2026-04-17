@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 """SQL validation and formatting helpers for export-job editing."""
 
+import importlib
 import re
+from functools import lru_cache
 
-import sqlglot
-from sqlglot.errors import ParseError, TokenError
+
+@lru_cache(maxsize=1)
+def _load_sqlglot():
+    sqlglot = importlib.import_module("sqlglot")
+    errors = importlib.import_module("sqlglot.errors")
+    return sqlglot, errors.ParseError, errors.TokenError
 
 
 def validate_sql(sql: str) -> tuple[bool, str]:
@@ -14,12 +20,17 @@ def validate_sql(sql: str) -> tuple[bool, str]:
         return False, "Запрос пуст"
 
     try:
+        sqlglot, parse_error, token_error = _load_sqlglot()
+    except ImportError:
+        return False, "Парсер SQL недоступен"
+
+    try:
         statements = sqlglot.parse(
             sql,
             dialect="tsql",
             error_level=sqlglot.ErrorLevel.IMMEDIATE,
         )
-    except (ParseError, TokenError) as exc:
+    except (parse_error, token_error) as exc:
         return False, format_sqlglot_error(exc)
     except Exception as exc:  # pragma: no cover — defensive
         return False, f"Ошибка парсера: {exc}"
@@ -62,6 +73,7 @@ def format_sql_for_tsql_editor(sql: str) -> str:
     if not sql:
         return sql
     try:
+        sqlglot, _, _ = _load_sqlglot()
         statements = sqlglot.transpile(sql, read="tsql", write="tsql", pretty=True)
         if statements:
             return ";\n\n".join(statements).rstrip(";\n") + ";"

@@ -73,7 +73,6 @@ class ExportEditorController:
             kind, text = self._status_from_latest_entry(latest)
             self._shell.set_status(kind, text)
 
-        QTimer.singleShot(0, self.refresh_sql_syntax)
         self.apply_schedule()
 
     @Slot()

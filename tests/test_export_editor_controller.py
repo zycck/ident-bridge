@@ -146,22 +146,20 @@ def _make_controller(**overrides) -> ExportEditorController:
     )
 
 
-def test_export_editor_controller_loads_job_restores_status_and_starts_schedule(
+def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_without_eager_sql_validation(
     monkeypatch,
 ) -> None:
     shell = _FakeShell()
     scheduler = _FakeScheduler()
-    syntax_timer = _FakeTimer()
     single_shot_calls: list[int] = []
     monkeypatch.setattr(
         "app.ui.export_editor_controller.QTimer.singleShot",
-        lambda ms, callback: single_shot_calls.append(ms) or callback(),
+        lambda ms, callback: single_shot_calls.append(ms),
     )
 
     controller = _make_controller(
         shell=shell,
         scheduler=scheduler,
-        syntax_timer=syntax_timer,
     )
     job = ExportJob(
         id="job-1",
@@ -189,8 +187,8 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule(
     assert shell.webhook_url() == "https://example.test/hook"
     assert shell.history()[0]["rows"] == 3
     assert shell.status_calls == [("ok", "✓ 3 строк · 09:10:11")]
-    assert shell.refresh_calls == 1
-    assert single_shot_calls == [0]
+    assert shell.refresh_calls == 0
+    assert single_shot_calls == []
     assert scheduler.stop_calls == 1
     assert scheduler.configure_calls == [("hourly", "2")]
     assert scheduler.start_calls == 1

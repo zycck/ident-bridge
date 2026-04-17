@@ -66,10 +66,15 @@ Latest expanded baseline on Windows 11 / Python 3.14.4:
 ```text
 scenario=all
 cycles=1
-positive_retained_kib=2400.5
+positive_retained_kib=1714.9
 ```
 
 Largest retained buckets in that run were dominated by first-load costs
-from Python/Qt/sqlglot imports plus UI page construction, especially
+from Python/Qt imports plus UI page construction, especially
 `enum.py`, `app/ui/export_jobs_pages.py`, and `app/ui/main_window_navigation.py`.
-Treat this as a starting baseline, not a regression threshold yet.
+After moving `sqlglot` to lazy import and removing eager SQL validation
+on initial export-editor load, the narrower `export-editor` scenario
+dropped from `1681.1 KiB` to `997.4 KiB` on the same Windows 11 /
+Python 3.14.4 machine.
+Treat these numbers as a living baseline, not a hard regression
+threshold yet.
