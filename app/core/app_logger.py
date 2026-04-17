@@ -5,6 +5,7 @@ import logging
 from PySide6.QtCore import QObject, Signal
 
 from app.core.constants import LOG_RING_BUFFER
+from app.core.log_sanitizer import SecretFilter
 
 _FMT  = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 _DFMT = "%H:%M:%S"
@@ -48,7 +49,12 @@ _handler: QtLogHandler | None = None
 
 
 def setup() -> QtLogHandler:
-    """Install handler on root logger. Call once at startup."""
+    """Install handler on root logger. Call once at startup.
+
+    A :class:`SecretFilter` is attached on the root logger so every
+    handler (Qt bridge, stderr, and any future file handler) sees
+    webhook URLs and ODBC credentials masked before formatting.
+    """
     global _handler
     if _handler is None:
         _handler = QtLogHandler()
@@ -56,6 +62,9 @@ def setup() -> QtLogHandler:
 
         root = logging.getLogger()
         root.setLevel(logging.DEBUG)
+        # Mask secrets on record before any handler formats/emits it.
+        if not any(isinstance(f, SecretFilter) for f in root.filters):
+            root.addFilter(SecretFilter())
         root.addHandler(_handler)
 
         stderr_handler = logging.StreamHandler()
