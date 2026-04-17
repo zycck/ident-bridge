@@ -62,3 +62,13 @@
 - **Scope:** match in scheduler (E3/J4) + merge dashboard_activity_store (A2) + dedup ts formatters (A3)
 - **Deferred:** SettingsSqlController split (A1) + test_run_dialog rename (A5) — both touch many import sites; rolled into a future focused session
 
+## Stage 7 — 2026-04-17
+
+- **N.1 pytest:** PASS — 377 passed in 2.42 s
+- **N.2 launch smoke:** PASS — `positive_retained_kib=2069.4` (baseline 2362.7, delta **−12.4 %**)
+- **N.3 build:** PASS — `dist/iDentSync.exe` 40 747 376 bytes (40.7 MB)
+- **N.4 EXE smoke:** PASS — process alive 15 s, killed cleanly
+- **Tag:** `stage-7-passed-20260417`
+- **Scope:** strip 138× `# -*- coding: utf-8 -*-` (E2) + `collections.abc.Callable` in threading.py (E5)
+- **Deferred:** `from __future__ import annotations` mass add (E1), `NotRequired[...]` rewrite (E4), `@override` markers (E7)
+
