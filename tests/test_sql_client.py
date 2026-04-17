@@ -12,6 +12,8 @@ class _FakeCursor:
         self._rows = rows or []
         self.executed: list[tuple[str, tuple]] = []
         self.description = [("col1",), ("col2",)]
+        self.fetchmany_calls: list[int] = []
+        self._offset = 0
 
     def __enter__(self) -> "_FakeCursor":
         return self
@@ -24,6 +26,12 @@ class _FakeCursor:
 
     def fetchall(self):
         return tuple(self._rows)
+
+    def fetchmany(self, size: int):
+        self.fetchmany_calls.append(size)
+        batch = self._rows[self._offset:self._offset + size]
+        self._offset += len(batch)
+        return list(batch)
 
     def __iter__(self):
         return iter(self._rows)
@@ -125,7 +133,24 @@ def test_query_materializes_rows_once(monkeypatch) -> None:
     assert result.columns == ["col1", "col2"]
     assert result.rows == [(1, "alice"), (2, "bob")]
     assert result.count == 2
+    assert result.truncated is False
     assert result.duration_ms >= 0
+
+
+def test_query_respects_max_rows_and_marks_truncated(monkeypatch) -> None:
+    fake_pyodbc = _FakePyodbc(
+        _FakeConnection(rows=[(1, "alice"), (2, "bob"), (3, "carol")])
+    )
+    monkeypatch.setattr(sql_client, "pyodbc", fake_pyodbc)
+    monkeypatch.setattr(sql_client, "best_driver", lambda: "ODBC Driver 18 for SQL Server")
+
+    client = SqlClient(_cfg())
+    client.connect()
+    result = client.query("SELECT id, name FROM users", max_rows=2)
+
+    assert result.rows == [(1, "alice"), (2, "bob")]
+    assert result.count == 2
+    assert result.truncated is True
 
 
 def test_test_connection_returns_clear_failure_when_driver_detection_breaks(monkeypatch) -> None:

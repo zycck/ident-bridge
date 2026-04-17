@@ -4,7 +4,11 @@
 from PySide6.QtCore import QObject
 
 from app.config import QueryResult
-from app.ui.test_run_dialog_controller import TestRunDialogController as _TestRunDialogController
+from app.core.constants import TEST_DIALOG_MAX_ROWS
+from app.ui.test_run_dialog_controller import (
+    TestRunDialogController as _TestRunDialogController,
+    _QueryWorker,
+)
 
 
 class _FakeShell(QObject):
@@ -94,3 +98,61 @@ def test_test_run_dialog_controller_handles_result_and_error() -> None:
     assert shell.run_enabled == [True, True]
     assert shell.status_updates == [("2 строк · 7 мс", ""), ("boom", "#EF4444")]
     assert completed == [(True, 2, ""), (False, 0, "boom")]
+
+
+def test_test_run_dialog_controller_marks_truncated_results_in_status() -> None:
+    owner = QObject()
+    shell = _FakeShell("SELECT 1")
+    completed = []
+    controller = _TestRunDialogController(
+        owner=owner,
+        shell=shell,
+        cfg={},
+        emit_test_completed=lambda ok, rows, err: completed.append((ok, rows, err)),
+    )
+    result = QueryResult(
+        columns=["id"],
+        rows=[(1,), (2,)],
+        count=2,
+        duration_ms=7,
+        truncated=True,
+    )
+
+    controller.handle_result(result)
+
+    assert shell.status_updates == [("2 строк · 7 мс · показаны первые строки", "")]
+    assert completed == [(True, 2, "")]
+
+
+def test_query_worker_limits_rows_for_dialog(monkeypatch) -> None:
+    calls: list[int | None] = []
+    results: list[QueryResult] = []
+
+    class _FakeClient:
+        def __init__(self, cfg) -> None:
+            pass
+
+        def connect(self) -> None:
+            pass
+
+        def query(self, sql: str, *, max_rows: int | None = None) -> QueryResult:
+            calls.append(max_rows)
+            return QueryResult(
+                columns=["id"],
+                rows=[(1,), (2,)],
+                count=2,
+                duration_ms=5,
+                truncated=True,
+            )
+
+        def disconnect(self) -> None:
+            pass
+
+    monkeypatch.setattr("app.ui.test_run_dialog_controller.SqlClient", _FakeClient)
+    worker = _QueryWorker({}, "SELECT 1")
+    worker.result.connect(results.append)
+
+    worker.run()
+
+    assert calls == [TEST_DIALOG_MAX_ROWS]
+    assert results[0].truncated is True

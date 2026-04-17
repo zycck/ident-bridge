@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree contains 276 `test_*` functions, and this
+Audit note: the current tree contains 279 `test_*` functions, and this
 workspace is a WSL/Linux negative-control environment. The full gate is
 expected to be validated on Windows 11 with Python 3.14.4 and the
 documented Qt stack; tray, registry, reboot, and background-run checks
@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **276 test functions / 277 collected test items** covering the scheduler engine,
+The fastest sanity check. **279 test functions / 280 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **276 tests**. Keep this number in
+The current tree actually contains **279 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-277 passed in X.XXs
+280 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -105,7 +105,7 @@ normal top-level close request, yielding a clean exit for automation.
 | `tests/test_connection.py` | ODBC connection-string escaping and trusted-connection fallback | 3 |
 | `tests/test_instance_scanner.py` | registry/network instance discovery fallbacks, deduplication, database listing without hard pyodbc dependency | 6 |
 | `tests/test_odbc_utils.py` | driver detection priority and missing-pyodbc diagnostics | 3 |
-| `tests/test_sql_client.py` | escaped DSN building, missing-pyodbc behavior, query materialization, clearer connection-failure reporting | 5 |
+| `tests/test_sql_client.py` | escaped DSN building, missing-pyodbc behavior, bounded result materialization, clearer connection-failure reporting | 6 |
 | `tests/test_updater.py` | release asset selection, download helper, apply helper exit path | 4 |
 | `tests/test_update_apply_worker.py` | extracted update apply worker: off-GUI apply handoff, applied/error/finished signals | 2 |
 | `tests/test_error_dialog_controller.py` | extracted error hook/controller: traceback formatting, logging, dialog display gating | 3 |
@@ -113,6 +113,8 @@ normal top-level close request, yielding a clean exit for automation.
 | `tests/test_title_bar_controller.py` | extracted title-bar interaction controller: hover icon swap, drag move, maximize double-click | 4 |
 | `tests/test_sql_editor_controller.py` | extracted SQL editor interaction controller: expand-button positioning, tab/dedent behavior | 2 |
 | `tests/test_sql_editor_dialog_shell.py` | extracted SQL editor dialog shell: text roundtrip, save/cancel/format actions | 2 |
+| `tests/test_test_run_dialog_controller.py` | extracted test-run dialog controller: worker startup, bounded result handling, truncation status, and result/error handling | 5 |
+| `tests/test_test_run_dialog_shell.py` | extracted test-run dialog shell: SQL/status/result rendering and button signals | 2 |
 | `tests/test_export_failure_alerts.py` | export failure counter thresholding and reset-after-success behavior | 2 |
 | `tests/test_dashboard_activity_panel.py` | extracted dashboard activity panel: aggregated count, empty clear no-op, clear cancel/confirm behavior | 4 |
 | `tests/test_dashboard_activity_store.py` | extracted dashboard activity store: pure history clearing and payload preservation | 2 |
@@ -675,7 +677,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 276 test functions, but the
+- The repository tree currently reports 279 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

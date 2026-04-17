@@ -83,8 +83,11 @@ behaviour are not meaningful from WSL/Linux.
 1. **Выгрузки** → tile → click into the editor
 2. Click **Тест** below the SQL editor
 3. **Verify:** test dialog opens, query auto-runs, results table populated
-4. Close the dialog
-5. **Verify:** history gains a new entry with the **test** trigger (flask icon, gray accent)
+4. **Verify:** if the result is very large, the dialog shows only the
+   first rows and the status line explicitly says that the result was
+   truncated for display
+5. Close the dialog
+6. **Verify:** history gains a new entry with the **test** trigger (flask icon, gray accent)
 
 ## 7. SQL editor full-screen
 1. In the editor, click the **↗ expand** icon in the top-right of the SQL field

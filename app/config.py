@@ -34,6 +34,7 @@ class QueryResult:
     rows:    list[tuple]
     count:   int
     duration_ms: int
+    truncated: bool = False
 
 
 @dataclass(slots=True)

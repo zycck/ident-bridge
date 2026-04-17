@@ -7,6 +7,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from app.config import AppConfig, QueryResult
 from app.core.app_logger import get_logger
+from app.core.constants import TEST_DIALOG_MAX_ROWS
 from app.core.sql_client import SqlClient
 from app.ui.test_run_dialog_shell import TestRunDialogShell
 from app.ui.threading import run_worker
@@ -33,7 +34,7 @@ class _QueryWorker(QObject):
         client = SqlClient(self._cfg)
         try:
             client.connect()
-            query_result = client.query(self._sql)
+            query_result = client.query(self._sql, max_rows=TEST_DIALOG_MAX_ROWS)
             _log.info("Query: %d строк за %d мс", query_result.count, query_result.duration_ms)
             self.result.emit(query_result)
         except ConnectionError as exc:
@@ -95,7 +96,10 @@ class TestRunDialogController(QObject):
     @Slot(object)
     def handle_result(self, result: QueryResult) -> None:
         self._shell.populate_result(result)
-        self._shell.set_status(f"{result.count} строк · {result.duration_ms} мс", color="")
+        status = f"{result.count} строк · {result.duration_ms} мс"
+        if result.truncated:
+            status += " · показаны первые строки"
+        self._shell.set_status(status, color="")
         self._shell.set_run_enabled(True)
         self._emit_test_completed(True, result.count, "")
 

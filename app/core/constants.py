@@ -12,6 +12,7 @@ TEST_DIALOG_AUTO_RUN_MS   = 80
 HISTORY_MAX           = 50
 LOG_RING_BUFFER       = 500
 DEBUG_LOG_BLOCK_LIMIT = 3000
+TEST_DIALOG_MAX_ROWS  = 1000
 
 # ── Dimensions (px) ──────────────────────────────────────────────────
 SQL_EDITOR_MIN_H      = 88

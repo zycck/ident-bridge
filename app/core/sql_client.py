@@ -106,22 +106,48 @@ class SqlClient:
                 return False
             raise
 
-    def query(self, sql: str, params: tuple = ()) -> QueryResult:
+    def query(self, sql: str, params: tuple = (), *, max_rows: int | None = None) -> QueryResult:
         if self._conn is None:
             raise RuntimeError("Not connected")
         start = datetime.now(timezone.utc)
         with self._conn.cursor() as cursor:
             cursor.execute(sql, params)
             columns = [d[0] for d in cursor.description]
-            rows = cursor.fetchall()
-            if not isinstance(rows, list):
-                rows = list(rows)
+            truncated = False
+            if max_rows is None:
+                rows = cursor.fetchall()
+                if not isinstance(rows, list):
+                    rows = list(rows)
+            else:
+                rows = []
+                fetchmany = getattr(cursor, "fetchmany", None)
+                if callable(fetchmany):
+                    batch_size = max(1, min(max_rows, 500))
+                    while len(rows) < max_rows:
+                        batch = fetchmany(batch_size)
+                        if not batch:
+                            break
+                        rows.extend(batch[: max_rows - len(rows)])
+                        if len(batch) == batch_size and len(rows) >= max_rows:
+                            extra = fetchmany(1)
+                            if extra:
+                                truncated = True
+                            break
+                    else:
+                        truncated = True
+                else:
+                    all_rows = cursor.fetchall()
+                    if not isinstance(all_rows, list):
+                        all_rows = list(all_rows)
+                    truncated = len(all_rows) > max_rows
+                    rows = all_rows[:max_rows]
         elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
         return QueryResult(
             columns=columns,
             rows=rows,
             count=len(rows),
             duration_ms=elapsed,
+            truncated=truncated,
         )
 
     def test_connection(self) -> tuple[bool, str]:
