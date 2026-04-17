@@ -1,0 +1,16 @@
+07:07:00 [INFO] app.ui.main_window: iDentBridge 0.0.1 started
+07:07:00 [INFO] app.ui.main_window_lifecycle: Shutting down…
+07:07:00 [INFO] app.ui.main_window: iDentBridge 0.0.1 started
+07:07:00 [INFO] app.ui.main_window_lifecycle: Shutting down…
+scenario=all
+cycles=3
+positive_retained_kib=2072.1
+top_diffs:
+C:\Users\wwwki\AppData\Local\Python\pythoncore-3.14-64\Lib\enum.py:0 -> +707.5 KiB
+D:\ProjectLocal\identa report\app\ui\export_jobs_pages.py:0 -> +602.2 KiB
+D:\ProjectLocal\identa report\app\ui\main_window_navigation.py:0 -> +119.9 KiB
+D:\ProjectLocal\identa report\app\ui\settings_sql_panel.py:0 -> +54.8 KiB
+D:\ProjectLocal\identa report\app\ui\widgets.py:0 -> +41.5 KiB
+D:\ProjectLocal\identa report\app\ui\dashboard_status_cards.py:0 -> +31.2 KiB
+D:\ProjectLocal\identa report\app\ui\lucide_icons.py:0 -> +26.0 KiB
+D:\ProjectLocal\identa report\app\ui\main_window_lifecycle.py:0 -> +24.8 KiB
