@@ -28,8 +28,11 @@ from app.config import ConfigManager
 from app.core.constants import APP_VERSION
 from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import ErrorDialog
+from app.ui.export_job_editor import ExportJobEditor
 from app.ui.main_window import MainWindow
+from app.ui.settings_widget import SettingsWidget
 from app.ui.sql_editor import SqlEditorDialog
+from app.ui.test_run_dialog import TestRunDialog
 from main import _load_app_icon, _load_fonts, _load_theme
 
 
@@ -94,11 +97,56 @@ def _run_error_dialog_cycle(app: QApplication, iteration: int) -> None:
     _dispose_widget(dialog, app)
 
 
+def _sample_export_job(iteration: int) -> dict:
+    return {
+        "id": f"perf-job-{iteration}",
+        "name": f"Perf export {iteration}",
+        "sql_query": "SELECT 1",
+        "webhook_url": "",
+        "schedule_enabled": False,
+        "schedule_mode": "daily",
+        "schedule_value": "",
+        "history": [],
+    }
+
+
+def _run_export_editor_cycle(app: QApplication, iteration: int) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"ident-perf-export-{iteration}-") as tmp:
+        _rebind_temp_config_dir(Path(tmp))
+        config = ConfigManager()
+        editor = ExportJobEditor(_sample_export_job(iteration), config)
+        editor.show()
+        _process_events(app)
+        editor.stop_scheduler()
+        editor.stop_timers()
+        _dispose_widget(editor, app)
+
+
+def _run_settings_widget_cycle(app: QApplication, iteration: int) -> None:
+    with tempfile.TemporaryDirectory(prefix=f"ident-perf-settings-{iteration}-") as tmp:
+        _rebind_temp_config_dir(Path(tmp))
+        config = ConfigManager()
+        widget = SettingsWidget(config, APP_VERSION)
+        widget.show()
+        _process_events(app)
+        _dispose_widget(widget, app)
+
+
+def _run_test_run_dialog_cycle(app: QApplication, iteration: int) -> None:
+    dialog = TestRunDialog({}, initial_sql="SELECT 1", auto_run=False, parent=None)
+    dialog.show()
+    _process_events(app)
+    _dispose_widget(dialog, app)
+
+
 SCENARIOS = {
     "main-window": _run_main_window_cycle,
     "debug-window": _run_debug_window_cycle,
     "sql-editor": _run_sql_editor_cycle,
     "error-dialog": _run_error_dialog_cycle,
+    "export-editor": _run_export_editor_cycle,
+    "settings-widget": _run_settings_widget_cycle,
+    "test-run-dialog": _run_test_run_dialog_cycle,
 }
 
 
