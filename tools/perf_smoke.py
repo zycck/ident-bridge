@@ -46,7 +46,7 @@ def _prepare_app() -> QApplication:
     if app is None:
         app = QApplication([])
         _load_app_icon(app)
-        _load_fonts()
+        _load_fonts(app)
         theme = _load_theme()
         if theme:
             app.setStyleSheet(theme)
