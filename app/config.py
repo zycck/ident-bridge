@@ -7,11 +7,12 @@ import logging
 import os
 import threading
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import TypedDict
+from typing import Iterator, TypedDict
 
 from app.core import dpapi
 from app.core.constants import CONFIG_DIR_NAME
@@ -134,6 +135,12 @@ ENCRYPTED_KEYS: frozenset[str] = frozenset({"sql_user", "sql_password"})
 class ConfigManager:
     def __init__(self) -> None:
         self._lock = threading.RLock()
+        # Batch mode: update() mutates in-memory only while depth > 0, and
+        # one save() fires at the outermost __exit__. Avoids a tempfile +
+        # fsync + os.replace cycle per keystroke when a settings form
+        # autosaves many fields at once.
+        self._batch_depth: int = 0
+        self._batch_dirty: bool = False
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         self._cfg: AppConfig = {}
         if CONFIG_PATH.exists():
@@ -220,11 +227,48 @@ class ConfigManager:
                 pass
 
     def update(self, **changes: object) -> None:
-        """Atomic load → merge → save. Preserves keys not in changes."""
+        """Merge ``changes`` into the config.
+
+        Outside of :meth:`batch`: atomic load → merge → save, preserving
+        keys not in ``changes`` (same semantics as before).
+
+        Inside :meth:`batch`: mutates the in-memory config only and marks
+        the batch dirty; one :meth:`save` fires on batch exit.
+        """
         with self._lock:
+            if self._batch_depth > 0:
+                self._cfg.update(changes)  # type: ignore[typeddict-item]
+                self._batch_dirty = True
+                return
             cfg = self.load()
             cfg.update(changes)  # type: ignore[typeddict-item]
             self.save(cfg)
+
+    @contextmanager
+    def batch(self) -> Iterator[None]:
+        """Coalesce multiple :meth:`update` calls into one disk write.
+
+        Usage::
+
+            with config.batch():
+                config.update(sql_instance=inst)
+                config.update(sql_database=db)
+                config.update(sql_user=user)
+            # one fsync + os.replace here
+
+        Nested batches are allowed; only the outermost exit flushes.
+        If nothing was changed inside the batch, no write happens.
+        """
+        with self._lock:
+            self._batch_depth += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._batch_depth -= 1
+                if self._batch_depth == 0 and self._batch_dirty:
+                    self._batch_dirty = False
+                    self.save(self._cfg)
 
     def get(self, key: str) -> str | None:
         with self._lock:

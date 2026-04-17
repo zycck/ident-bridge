@@ -137,6 +137,115 @@ def test_update_with_no_changes_is_noop(tmp_config):
     assert cfg.get("sql_instance") == "host1"
 
 
+# ── batch() context manager (audit D2 / J1) ───────────────────────────
+
+def test_batch_coalesces_multiple_updates_into_one_save(tmp_config, tmp_path, monkeypatch):
+    import app.config as config_module
+
+    save_calls = 0
+    original_save = tmp_config.save
+
+    def _counting_save(cfg):
+        nonlocal save_calls
+        save_calls += 1
+        original_save(cfg)
+
+    monkeypatch.setattr(tmp_config, "save", _counting_save)
+
+    with tmp_config.batch():
+        tmp_config.update(sql_instance="h1")
+        tmp_config.update(sql_database="db1")
+        tmp_config.update(auto_update_check=True)
+
+    # Exactly one save at batch exit, not three
+    assert save_calls == 1
+    cfg = tmp_config.load()
+    assert cfg.get("sql_instance") == "h1"
+    assert cfg.get("sql_database") == "db1"
+    assert cfg.get("auto_update_check") is True
+
+
+def test_batch_with_no_changes_does_not_save(tmp_config, monkeypatch):
+    save_calls = 0
+    monkeypatch.setattr(tmp_config, "save", lambda cfg: (_ for _ in ()).throw(AssertionError("should not save")) if False else None)
+    # Count real calls via a separate wrapper
+    original_save = tmp_config.save
+
+    def _counting(cfg):
+        nonlocal save_calls
+        save_calls += 1
+
+    monkeypatch.setattr(tmp_config, "save", _counting)
+
+    with tmp_config.batch():
+        pass
+
+    assert save_calls == 0
+
+
+def test_batch_nested_only_outer_flushes(tmp_config, monkeypatch):
+    save_calls = 0
+    original_save = tmp_config.save
+
+    def _counting_save(cfg):
+        nonlocal save_calls
+        save_calls += 1
+        original_save(cfg)
+
+    monkeypatch.setattr(tmp_config, "save", _counting_save)
+
+    with tmp_config.batch():
+        tmp_config.update(sql_instance="outer")
+        with tmp_config.batch():
+            tmp_config.update(sql_database="inner")
+        # inner exit must not flush
+        assert save_calls == 0
+    # outer exit flushes exactly once
+    assert save_calls == 1
+
+
+def test_batch_exception_still_flushes_pending_writes(tmp_config, monkeypatch):
+    """On exception inside batch, we still flush what was buffered.
+
+    The rationale: a half-applied settings change is still the user's
+    intent for the fields they did touch — losing them silently is worse
+    than recording them.
+    """
+    save_calls = 0
+    original_save = tmp_config.save
+
+    def _counting_save(cfg):
+        nonlocal save_calls
+        save_calls += 1
+        original_save(cfg)
+
+    monkeypatch.setattr(tmp_config, "save", _counting_save)
+
+    with pytest.raises(RuntimeError):
+        with tmp_config.batch():
+            tmp_config.update(sql_instance="partial")
+            raise RuntimeError("boom")
+
+    assert save_calls == 1
+    cfg = tmp_config.load()
+    assert cfg.get("sql_instance") == "partial"
+
+
+def test_update_outside_batch_still_saves_immediately(tmp_config, monkeypatch):
+    save_calls = 0
+    original_save = tmp_config.save
+
+    def _counting_save(cfg):
+        nonlocal save_calls
+        save_calls += 1
+        original_save(cfg)
+
+    monkeypatch.setattr(tmp_config, "save", _counting_save)
+
+    tmp_config.update(sql_instance="immediate")
+    assert save_calls == 1
+
+
 # ── DPAPI encryption (Windows-only) ───────────────────────────────────
 
 @pytest.mark.skipif(sys.platform != "win32", reason="DPAPI is Windows-only")
