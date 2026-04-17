@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Tests for extracted export schedule panel helpers."""
 
-from app.ui.export_schedule_panel import ExportSchedulePanel, schedule_value_is_valid
+from app.core.scheduler import schedule_value_is_valid
+from app.ui.export_schedule_panel import ExportSchedulePanel
 
 
 def test_schedule_value_validation_covers_supported_modes() -> None:

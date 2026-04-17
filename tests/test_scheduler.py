@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import pytest
 from PySide6.QtCore import QObject
 
-from app.core.scheduler import SyncScheduler
+from app.core.scheduler import SyncScheduler, schedule_value_is_valid
 
 
 @pytest.fixture
@@ -25,11 +25,50 @@ def test_configure_sets_mode_and_value(scheduler):
     """configure() accepts valid modes without raising."""
     scheduler.configure("daily", "14:30")
     scheduler.configure("hourly", "1")
+    scheduler.configure("minutely", "5")
+    scheduler.configure("secondly", "10")
 
 
 @pytest.mark.parametrize("mode,value", [("garbage", "14:30"), ("cron", "* * * * *")])
 def test_configure_invalid_mode_raises_value_error(scheduler, mode, value):
     """Unsupported modes fail at configure() and never reach start()."""
+    with pytest.raises(ValueError):
+        scheduler.configure(mode, value)
+
+
+@pytest.mark.parametrize(
+    ("mode", "value"),
+    [
+        ("daily", "08:30"),
+        ("hourly", "2"),
+        ("minutely", "15"),
+        ("secondly", "10"),
+    ],
+)
+def test_schedule_value_validation_accepts_supported_values(mode, value):
+    assert schedule_value_is_valid(mode, value) is True
+
+
+@pytest.mark.parametrize(
+    ("mode", "value"),
+    [
+        ("daily", "bad"),
+        ("daily", "24:00"),
+        ("hourly", "0"),
+        ("minutely", "0"),
+        ("secondly", "0"),
+        ("unknown", "1"),
+    ],
+)
+def test_schedule_value_validation_rejects_invalid_values(mode, value):
+    assert schedule_value_is_valid(mode, value) is False
+
+
+@pytest.mark.parametrize(
+    ("mode", "value"),
+    [("daily", "bad"), ("hourly", "0"), ("minutely", "0"), ("secondly", "0")],
+)
+def test_configure_invalid_value_raises_value_error(scheduler, mode, value):
     with pytest.raises(ValueError):
         scheduler.configure(mode, value)
 
@@ -105,11 +144,9 @@ def test_daily_mode_next_run_tomorrow_if_past(scheduler):
 
 
 def test_daily_mode_invalid_format_raises(scheduler):
-    """A daily value like 'abc' causes an exception (ValueError or similar)."""
-    scheduler.configure("daily", "abc")
-    # int("abc") raises ValueError inside _schedule_next
-    with pytest.raises((ValueError, IndexError)):
-        scheduler.start()
+    """A daily value like 'abc' fails fast at configure()."""
+    with pytest.raises(ValueError):
+        scheduler.configure("daily", "abc")
 
 
 # ── Hourly mode ────────────────────────────────────────────────────────
@@ -291,13 +328,9 @@ def test_minutely_mode_1_minute(parent):
 
 
 def test_minutely_invalid_value(parent):
-    """minutely with value 0 should not crash — _schedule_next returns early."""
     sch = SyncScheduler(parent)
-    sch.configure("minutely", "0")
-    sch.start()  # must not raise
-    # next_run stays None because _schedule_next returned early
-    assert sch.next_run() is None
-    sch.stop()
+    with pytest.raises(ValueError):
+        sch.configure("minutely", "0")
 
 
 # ── Secondly mode ─────────────────────────────────────────────────────

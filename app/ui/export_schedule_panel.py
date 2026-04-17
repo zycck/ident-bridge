@@ -1,31 +1,20 @@
 # -*- coding: utf-8 -*-
 """Schedule controls for ExportJobEditor."""
 
-import re
-
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
+from app.core.scheduler import SUPPORTED_SCHEDULE_MODES
 from app.ui.theme import Theme
 from app.ui.widgets import HeaderLabel, style_combo_popup
 
-SCHEDULE_MODE_BY_INDEX: tuple[str, ...] = ("daily", "hourly", "minutely", "secondly")
+SCHEDULE_MODE_BY_INDEX: tuple[str, ...] = SUPPORTED_SCHEDULE_MODES
 _PLACEHOLDERS: dict[int, str] = {
     0: "ЧЧ:ММ",
     1: "N часов",
     2: "N минут",
     3: "N секунд",
 }
-
-
-def schedule_value_is_valid(mode: str, value: str) -> bool:
-    if not value:
-        return False
-    if mode == "daily":
-        return bool(re.fullmatch(r"\d{1,2}:\d{2}", value))
-    if mode in ("hourly", "minutely", "secondly"):
-        return value.isdigit() and int(value) >= 1
-    return False
 
 
 class ExportSchedulePanel(QWidget):

@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `279` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `282` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`280 passed`). `python main.py` now also supports a test-only clean-close override for automation via `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1`.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`294 passed`). `python main.py` now also supports a test-only clean-close override for automation via `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1`.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -81,6 +81,7 @@ Interpretation:
   - [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1) now delegates expand-button positioning and tab/dedent behavior to [app/ui/sql_editor_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor_controller.py:1), the full-window dialog shell to [app/ui/sql_editor_dialog_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor_dialog_shell.py:1), and standalone syntax-highlighting to [app/ui/sql_highlighter.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_highlighter.py:1).
   - [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:1) now delegates view composition to [app/ui/test_run_dialog_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog_shell.py:1) and worker/result handling to [app/ui/test_run_dialog_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog_controller.py:1).
   - [app/core/sql_client.py](/mnt/d/ProjectLocal/identa report/app/core/sql_client.py:1) now supports bounded result materialization, and [app/ui/test_run_dialog_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog_controller.py:1) uses it to cap large preview results while clearly marking truncated output in the dialog status.
+  - [app/core/scheduler.py](/mnt/d/ProjectLocal/identa report/app/core/scheduler.py:1) now owns the shared supported-mode contract and centralized schedule value validation used by both runtime and UI; invalid values fail fast at `configure()` instead of drifting into late timer/runtime behavior.
   - [app/ui/history_row.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row.py:1) now delegates trigger normalization, timestamp formatting, and status-text derivation to [app/ui/history_row_presenter.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row_presenter.py:1).
   - [app/ui/export_job_tile.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile.py:1) now delegates status/schedule/timestamp presentation to [app/ui/export_job_tile_presenter.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile_presenter.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates tray visibility, close-to-tray, and shutdown cleanup behavior to [app/ui/main_window_lifecycle.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_lifecycle.py:1).
@@ -106,7 +107,7 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `280 passed in 3.13s`
+  - `python -m pytest tests/ -q` → `294 passed in 2.98s`
   - `python tools/perf_smoke.py --scenario all --cycles 1 --top 8` → `positive_retained_kib=1714.9` with the largest retained buckets dominated by first-load Python/Qt allocations plus `app/ui/export_jobs_pages.py` and `app/ui/main_window_navigation.py`
   - `python tools/perf_smoke.py --scenario export-editor --cycles 5 --top 8` → `positive_retained_kib=993.4`, down from the earlier `1681.1 KiB` after lazy-loading `sqlglot`, removing eager syntax validation on initial editor load, and caching highlighter assets
   - `python main.py` on Windows 11 / Python 3.14.4 with `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1` → started successfully and exited cleanly (`Exited=True`, `ExitCode=0`)
@@ -177,11 +178,11 @@ Interpretation:
    Impact:
    - Failure alerts may fire earlier than intended.
 
-2. Scheduler contract drift is real: `cron` appears in the API surface but is not implemented.
+2. Scheduler contract ambiguity has been reduced, but long-run validation is still needed.
    Evidence:
    - [app/core/scheduler.py](/mnt/d/ProjectLocal/identa report/app/core/scheduler.py:19)
    Impact:
-   - Callers can believe a mode is supported and discover the truth only at runtime.
+   - Supported modes and invalid values are now explicit and validated early, but the scheduler still needs real desktop/runtime coverage for long-lived timer behavior.
 
 3. Scalability hotspots are already visible.
    Evidence:
@@ -236,7 +237,7 @@ Interpretation:
 | [app/core/app_logger.py](/mnt/d/ProjectLocal/identa report/app/core/app_logger.py:1) | `low` | Root logger side effects and bootstrap-order coupling. |
 | [app/core/instance_scanner.py](/mnt/d/ProjectLocal/identa report/app/core/instance_scanner.py:1) | `high` | Registry/sqlcmd coupling, swallowed failures, eager listing. |
 | [app/core/odbc_utils.py](/mnt/d/ProjectLocal/identa report/app/core/odbc_utils.py:1) | `medium` | Brittle dependence on driver naming and legacy fallback ladder. |
-| [app/core/scheduler.py](/mnt/d/ProjectLocal/identa report/app/core/scheduler.py:1) | `high` | API/runtime contract drift for `cron`; late validation. |
+| [app/core/scheduler.py](/mnt/d/ProjectLocal/identa report/app/core/scheduler.py:1) | `medium` | Supported modes and value validation are now centralized; remaining debt is mainly long-run timer/manual desktop validation. |
 | [app/core/sql_client.py](/mnt/d/ProjectLocal/identa report/app/core/sql_client.py:1) | `medium` | `fetchall()`, flattened diagnostics, partial retry coverage. |
 | [app/core/startup.py](/mnt/d/ProjectLocal/identa report/app/core/startup.py:1) | `medium` | Tight Run-key coupling and silent drift. |
 | [app/core/updater.py](/mnt/d/ProjectLocal/identa report/app/core/updater.py:1) | `high` | Fragile release assumptions and weak diagnostics. |

@@ -1,13 +1,14 @@
 import logging
 import os
 import random
+import re
 from datetime import datetime, timedelta
 from typing import Literal
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 _log = logging.getLogger(__name__)
-_SUPPORTED_MODES = ("daily", "hourly", "minutely", "secondly")
+SUPPORTED_SCHEDULE_MODES = ("daily", "hourly", "minutely", "secondly")
 
 # Daily-mode scheduling uses datetime.now().astimezone() to be DST-aware.
 # When the local timezone observes DST transitions, "daily at 14:30" stays
@@ -15,6 +16,22 @@ _SUPPORTED_MODES = ("daily", "hourly", "minutely", "secondly")
 def _local_now() -> datetime:
     """Return the current local time as a timezone-aware datetime."""
     return datetime.now().astimezone()
+
+
+def schedule_value_is_valid(mode: str, value: str) -> bool:
+    value = value.strip()
+    if not value:
+        return False
+    if mode == "daily":
+        if not re.fullmatch(r"\d{1,2}:\d{2}", value):
+            return False
+        hour_text, minute_text = value.split(":")
+        hour = int(hour_text)
+        minute = int(minute_text)
+        return 0 <= hour <= 23 and 0 <= minute <= 59
+    if mode in ("hourly", "minutely", "secondly"):
+        return value.isdigit() and int(value) >= 1
+    return False
 
 
 class SyncScheduler(QObject):
@@ -31,8 +48,10 @@ class SyncScheduler(QObject):
         self._next_run: datetime | None = None
 
     def configure(self, mode: Literal["daily", "hourly", "minutely", "secondly"], value: str) -> None:
-        if mode not in _SUPPORTED_MODES:
+        if mode not in SUPPORTED_SCHEDULE_MODES:
             raise ValueError(f"Unsupported mode: {mode!r}")
+        if not schedule_value_is_valid(mode, value):
+            raise ValueError(f"Invalid value for {mode!r}: {value!r}")
         self._mode = mode
         self._value = value
 

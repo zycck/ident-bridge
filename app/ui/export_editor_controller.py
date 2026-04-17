@@ -7,9 +7,8 @@ from PySide6.QtCore import QTimer, Slot
 
 from app.config import ExportHistoryEntry, ExportJob
 from app.core.app_logger import get_logger
-from app.core.scheduler import SyncScheduler
+from app.core.scheduler import SyncScheduler, schedule_value_is_valid
 from app.ui.export_editor_runtime import ExportEditorRuntimeState
-from app.ui.export_schedule_panel import schedule_value_is_valid
 
 _log = get_logger(__name__)
 
