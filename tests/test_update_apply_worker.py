@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for UpdateApplyWorker."""
 
 from app.workers.update_worker import UpdateApplyWorker

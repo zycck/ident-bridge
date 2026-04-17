@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Composite view shell for ExportJobEditor."""
 
 from PySide6.QtCore import Signal

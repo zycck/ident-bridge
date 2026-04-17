@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """SQL Server section extracted from SettingsWidget."""
 
 from PySide6.QtCore import Signal

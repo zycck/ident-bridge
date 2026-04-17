@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Startup/update side-effects controller for SettingsWidget."""
 
 from collections.abc import Callable

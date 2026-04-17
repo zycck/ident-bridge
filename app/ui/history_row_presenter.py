@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Presentation helpers for HistoryRow."""
 
 from dataclasses import dataclass

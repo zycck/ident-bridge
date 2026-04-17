@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Reusable dashboard cards for connection and last-sync status."""
 
 from PySide6.QtCore import Qt

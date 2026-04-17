@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Dashboard update-banner widget extracted from DashboardWidget."""
 
 from PySide6.QtCore import Signal, Slot

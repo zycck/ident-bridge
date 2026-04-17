@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted DebugWindow log bridge."""
 
 from app.ui.debug_window_log_controller import DebugWindowLogController

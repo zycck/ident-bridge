@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for app.workers.export_worker.ExportWorker."""
 import json
 from unittest.mock import MagicMock

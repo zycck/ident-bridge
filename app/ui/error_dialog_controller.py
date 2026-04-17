@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Infrastructure helpers extracted from ErrorDialog."""
 
 import sys

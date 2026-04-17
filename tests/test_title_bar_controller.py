@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted title-bar interaction controller."""
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt

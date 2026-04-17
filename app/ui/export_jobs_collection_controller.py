@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Collection/persistence controller for ExportJobsWidget."""
 
 from collections.abc import Callable

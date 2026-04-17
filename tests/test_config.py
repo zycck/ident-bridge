@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for app.config.ConfigManager + TypedDicts + TriggerType."""
 import json
 import os

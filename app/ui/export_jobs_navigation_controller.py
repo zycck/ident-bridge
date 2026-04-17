@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Navigation/lifecycle controller for ExportJobsWidget."""
 
 

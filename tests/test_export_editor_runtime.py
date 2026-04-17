@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export editor runtime state."""
 
 from datetime import datetime, timezone

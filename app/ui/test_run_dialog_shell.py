@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """View shell for the test-run SQL dialog."""
 
 from PySide6.QtCore import Qt, Signal

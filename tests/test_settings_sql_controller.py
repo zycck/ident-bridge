@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SettingsWidget SQL orchestration."""
 
 from dataclasses import dataclass

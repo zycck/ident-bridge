@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for app.core.odbc_utils."""
 import pytest
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tray/shutdown lifecycle helpers extracted from MainWindow."""
 
 from collections.abc import Callable

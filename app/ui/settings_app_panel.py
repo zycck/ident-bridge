@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Application settings section extracted from SettingsWidget."""
 
 from PySide6.QtCore import Signal

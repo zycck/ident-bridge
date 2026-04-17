@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """SQL editor section for ExportJobEditor."""
 
 from PySide6.QtCore import Signal, Slot

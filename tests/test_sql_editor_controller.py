@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SQL editor interaction controller."""
 
 from PySide6.QtCore import QPoint, Qt

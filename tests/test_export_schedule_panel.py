@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export schedule panel helpers."""
 
 from app.core.scheduler import schedule_value_is_valid

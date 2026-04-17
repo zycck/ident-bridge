@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted Settings SQL view adapter."""
 
 from PySide6.QtWidgets import QComboBox

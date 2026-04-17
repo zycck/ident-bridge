@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Interaction controller extracted from SqlEditor."""
 
 from PySide6.QtCore import Qt

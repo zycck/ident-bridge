@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted Lucide icon path and loading helpers."""
 
 from pathlib import Path

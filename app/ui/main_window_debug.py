@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Lazy debug-window coordination extracted from MainWindow."""
 
 from collections.abc import Callable

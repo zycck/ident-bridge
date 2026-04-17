@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 QThread + worker factory.
 
@@ -7,7 +6,8 @@ spawns a background worker. Handles the standard PySide6 GC-pin pattern
 (self.<attr> = worker) and identity-safe cleanup on thread.finished.
 """
 import weakref
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from PySide6.QtCore import QObject, QThread, QTimer
 

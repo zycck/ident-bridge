@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Presentation helpers for ExportJobTile."""
 
 from dataclasses import dataclass

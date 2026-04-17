@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Compact one-line widget for a single export-job run."""
 
 from PySide6.QtCore import Signal

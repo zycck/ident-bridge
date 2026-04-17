@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted dashboard shell/composite layout."""
 
 from app.ui.dashboard_activity_panel import DashboardActivityPanel

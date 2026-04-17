@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted ExportEditorController."""
 
 from app.config import ExportJob, TriggerType

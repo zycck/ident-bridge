@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 CustomTitleBar — frameless window title bar with drag-to-move and
 minimal/maximize/close buttons. Used by MainWindow when the native

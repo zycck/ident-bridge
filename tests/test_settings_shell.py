@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SettingsWidget shell/composite view."""
 
 from PySide6.QtCore import Qt

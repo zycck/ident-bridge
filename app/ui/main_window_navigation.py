@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Navigation shell helpers extracted from MainWindow."""
 
 from collections.abc import Callable

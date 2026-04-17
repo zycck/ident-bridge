@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow chrome controller."""
 
 from PySide6.QtCore import QObject, QEvent, Signal

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """SQL validation and formatting helpers for export-job editing."""
 
 import importlib

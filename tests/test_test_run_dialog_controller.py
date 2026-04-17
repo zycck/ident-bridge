@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted test-run dialog controller."""
 
 from PySide6.QtCore import QObject

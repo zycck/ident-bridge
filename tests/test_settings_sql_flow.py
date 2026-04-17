@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SettingsWidget SQL flow state."""
 
 from app.config import SqlInstance

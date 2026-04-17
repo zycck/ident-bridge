@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Dashboard activity/history card with refresh and clear actions."""
 
 from PySide6.QtCore import Qt, Slot

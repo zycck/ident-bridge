@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Runtime state helpers for ExportJobEditor."""
 
 from dataclasses import dataclass

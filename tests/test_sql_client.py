@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for app.core.sql_client."""
 import pytest
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted dashboard ping timer controller."""
 
 from PySide6.QtCore import QObject

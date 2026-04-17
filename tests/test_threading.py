@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for app.ui.threading.run_worker() factory.
 
 IMPORTANT design note

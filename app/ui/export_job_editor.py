@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Export job editor widget extracted from ExportJobsWidget."""
 
 from PySide6.QtCore import QTimer, Qt, Signal, Slot

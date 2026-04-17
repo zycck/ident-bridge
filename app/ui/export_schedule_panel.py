@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Schedule controls for ExportJobEditor."""
 
 from PySide6.QtCore import Qt, Signal

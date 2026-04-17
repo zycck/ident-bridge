@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for ExportJobsWidget navigation/lifecycle controller."""
 
 from app.ui.export_jobs_navigation_controller import ExportJobsNavigationController

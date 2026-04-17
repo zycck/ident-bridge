@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SettingsWidget action helpers."""
 
 from app.ui.settings_actions import apply_startup_toggle

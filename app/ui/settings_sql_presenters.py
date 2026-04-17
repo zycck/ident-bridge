@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Presentation helpers for SettingsWidget SQL lists."""
 
 from app.config import SqlInstance

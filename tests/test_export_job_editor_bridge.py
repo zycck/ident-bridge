@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted ExportJobEditor bridge/services layer."""
 
 from PySide6.QtCore import QObject

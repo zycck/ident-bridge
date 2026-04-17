@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Helpers for building the MainWindow page stack."""
 
 from dataclasses import dataclass

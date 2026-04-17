@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted HistoryRow presentation helpers."""
 
 from datetime import datetime

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for ExportJobsWidget page scaffold and routing."""
 
 from app.config import ExportJob

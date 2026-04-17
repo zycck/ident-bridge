@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted ExportJobsWidget deletion flow."""
 
 from app.ui.export_jobs_delete_controller import ExportJobsDeleteController

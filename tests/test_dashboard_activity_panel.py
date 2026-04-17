@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted dashboard activity/history panel."""
 
 from PySide6.QtWidgets import QMessageBox

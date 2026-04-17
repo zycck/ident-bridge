@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Header widget for ExportJobEditor."""
 
 from PySide6.QtCore import Signal

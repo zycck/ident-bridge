@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow pages helper."""
 
 from PySide6.QtWidgets import QStackedWidget, QWidget

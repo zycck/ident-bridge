@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted dashboard status cards widget."""
 
 from datetime import datetime

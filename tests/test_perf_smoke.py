@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for tracemalloc performance smoke harness."""
 
 from tools import perf_smoke

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export editor header widget."""
 
 from PySide6.QtCore import Qt

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Signal/delegate coordinator for SettingsWidget."""
 
 from collections.abc import Callable

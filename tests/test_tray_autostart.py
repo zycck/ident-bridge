@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for tray close-to-tray + Windows autostart registry."""
 import sys
 from unittest.mock import MagicMock, patch

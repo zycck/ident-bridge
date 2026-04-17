@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SettingsWidget signal/delegate coordinator."""
 
 from app.ui.settings_shell import SettingsShell

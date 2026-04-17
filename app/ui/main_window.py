@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """MainWindow — top-level application shell for iDentBridge."""
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (

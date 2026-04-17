@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for export failure accounting in ExportJobEditor."""
 from datetime import datetime, timezone
 

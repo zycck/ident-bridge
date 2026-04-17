@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 SqlEditor — QPlainTextEdit subclass with T-SQL syntax highlighting,
 tab-to-spaces, and explicit Cascadia Code font. Used by ExportJobEditor

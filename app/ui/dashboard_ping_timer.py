@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Timer lifecycle helper for dashboard connectivity pings."""
 
 from collections.abc import Callable

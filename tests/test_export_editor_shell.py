@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export editor shell/view."""
 
 from app.ui.export_editor_shell import ExportEditorShell

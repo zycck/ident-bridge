@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """History panel widget used by ExportJobEditor."""
 
 from PySide6.QtCore import Qt, Signal, Slot

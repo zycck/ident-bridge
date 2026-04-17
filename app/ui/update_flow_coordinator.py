@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Update-flow orchestration extracted from MainWindow."""
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox

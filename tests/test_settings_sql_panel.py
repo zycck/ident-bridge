@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted settings SQL section panel."""
 
 from PySide6.QtCore import Qt

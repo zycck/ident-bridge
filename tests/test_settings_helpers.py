@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SettingsWidget helpers."""
 
 from app.ui.settings_persistence import (

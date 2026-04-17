@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Design tokens — single source of truth for colors, dimensions, typography."""
 
 class Theme:

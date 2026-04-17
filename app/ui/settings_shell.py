@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Composite shell for the settings screen."""
 
 from PySide6.QtCore import Signal

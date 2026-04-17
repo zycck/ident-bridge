@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Shared pytest fixtures for the iDentBridge test suite.
 

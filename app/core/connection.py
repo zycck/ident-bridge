@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Single source of truth for SQL Server ODBC connection strings."""
 
 from app.core.constants import APP_NAME

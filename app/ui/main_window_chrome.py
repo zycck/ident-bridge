@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Window-chrome helpers for MainWindow/title-bar coordination."""
 
 from PySide6.QtCore import QEvent

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export execution orchestration."""
 
 from datetime import datetime, timezone

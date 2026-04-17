@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """SQL discovery/test orchestration extracted from SettingsWidget."""
 
 from collections.abc import Callable

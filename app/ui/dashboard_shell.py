@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Composite shell/layout for DashboardWidget."""
 
 from PySide6.QtCore import Signal

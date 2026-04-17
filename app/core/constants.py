@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """All magic numbers and hardcoded URLs in one place."""
 
 # ── Timing (ms) ──────────────────────────────────────────────────────

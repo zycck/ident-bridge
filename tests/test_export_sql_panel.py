@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export SQL panel widget."""
 
 from app.ui.export_sql_panel import ExportSqlPanel

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Dialog shell extracted from SqlEditorDialog."""
 
 from PySide6.QtCore import Signal

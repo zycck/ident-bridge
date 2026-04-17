@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted dashboard update banner widget."""
 
 from PySide6.QtCore import Qt

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow debug-window coordination."""
 
 from PySide6.QtWidgets import QWidget

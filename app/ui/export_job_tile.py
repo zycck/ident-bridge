@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Presentation tile for a single export job."""
 
 import uuid

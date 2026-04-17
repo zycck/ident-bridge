@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow shell/composite layout."""
 
 from PySide6.QtCore import Qt

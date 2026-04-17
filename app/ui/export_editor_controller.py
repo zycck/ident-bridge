@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Lifecycle/timer orchestration extracted from ExportJobEditor."""
 
 from collections.abc import Callable

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SettingsWidget form persistence/orchestration."""
 
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLineEdit

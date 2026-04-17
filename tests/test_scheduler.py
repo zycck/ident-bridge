@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for app.core.scheduler.SyncScheduler."""
 from datetime import datetime, timedelta
 

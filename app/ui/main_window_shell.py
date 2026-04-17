@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Composite shell/layout for MainWindow."""
 
 from collections.abc import Callable

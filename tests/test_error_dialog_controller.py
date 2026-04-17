@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted ErrorDialog infrastructure helpers."""
 
 from types import SimpleNamespace

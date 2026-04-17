@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for the clear_job_histories helper (now living in
 app.ui.dashboard_activity after audit A-2 merge)."""
 

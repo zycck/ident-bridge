@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow signal routing helpers."""
 
 from datetime import datetime

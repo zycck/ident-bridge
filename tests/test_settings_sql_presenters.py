@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted settings SQL presenter helpers."""
 
 from app.config import SqlInstance

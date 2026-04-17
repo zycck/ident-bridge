@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Reusable layout primitives and small widget helpers.
 

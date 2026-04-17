@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow startup/bootstrap wiring."""
 
 from PySide6.QtCore import QObject, Signal, Qt

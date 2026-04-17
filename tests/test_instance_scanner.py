@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for app.core.instance_scanner."""
 import pytest
 

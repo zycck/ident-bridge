@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Logging bridge extracted from DebugWindow."""
 
 from collections.abc import Callable

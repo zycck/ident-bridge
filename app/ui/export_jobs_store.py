@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Persistence helpers for ExportJobsWidget."""
 
 import uuid

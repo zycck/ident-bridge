@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Central configuration + shared dataclasses + TypedDicts for iDentBridge."""
 
 import base64

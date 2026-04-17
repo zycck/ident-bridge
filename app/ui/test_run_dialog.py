@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """TestRunDialog — выполняет SQL-запрос и отображает результат в таблице."""
 
 from PySide6.QtCore import QTimer, Signal

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SQL highlighter."""
 
 from PySide6.QtGui import QTextDocument

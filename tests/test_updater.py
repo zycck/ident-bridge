@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for updater download/apply helpers."""
 from pathlib import Path
 

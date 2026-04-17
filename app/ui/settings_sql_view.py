@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """View adapter for Settings SQL discovery widgets."""
 
 from PySide6.QtWidgets import QComboBox, QLabel

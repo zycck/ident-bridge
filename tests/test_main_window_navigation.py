@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow navigation shell."""
 
 from PySide6.QtCore import Qt

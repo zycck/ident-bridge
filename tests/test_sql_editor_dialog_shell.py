@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted SQL editor dialog shell."""
 
 from app.ui.sql_editor_dialog_shell import SqlEditorDialogShell

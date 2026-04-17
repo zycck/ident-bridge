@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """ExportJobsWidget — list-detail export job manager (tiles + editor pages)."""
 
 from PySide6.QtCore import Qt, Signal, Slot

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted settings app-side effects controller."""
 
 from PySide6.QtWidgets import QCheckBox

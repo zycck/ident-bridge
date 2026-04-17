@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Signal wiring helper for MainWindow cross-widget routing."""
 
 from PySide6.QtWidgets import QSystemTrayIcon

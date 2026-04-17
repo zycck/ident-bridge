@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Runtime controller for the test-run SQL dialog."""
 
 from collections.abc import Callable

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Page widgets used by ExportJobsWidget."""
 
 from PySide6.QtCore import Qt, Signal

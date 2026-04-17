@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for lazy SQL parser helpers used by export editing."""
 
 from types import SimpleNamespace

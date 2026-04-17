@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Execution/orchestration helper for ExportJobEditor."""
 
 from collections.abc import Callable

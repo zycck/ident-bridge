@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export jobs collection/controller layer."""
 
 from PySide6.QtCore import Signal

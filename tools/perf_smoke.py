@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """Lightweight tracemalloc-based UI lifecycle smoke for iDentBridge.
 
 This script is intentionally non-invasive: it exercises repeated widget

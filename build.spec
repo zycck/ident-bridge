@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 # PyInstaller spec for iDentBridge — single-file windowed .exe
 # Usage: pyinstaller build.spec
 

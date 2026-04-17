@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """State helpers for SettingsWidget SQL discovery/test flows."""
 
 from app.config import SqlInstance

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted export jobs persistence helpers."""
 
 from app.ui.export_jobs_store import (

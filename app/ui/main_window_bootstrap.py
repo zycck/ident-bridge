@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Startup/bootstrap wiring extracted from MainWindow."""
 
 from collections.abc import Callable

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Standalone T-SQL syntax highlighter used by SqlEditor."""
 
 from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QTextDocument

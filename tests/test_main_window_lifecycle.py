@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Tests for extracted MainWindow tray/shutdown lifecycle helpers."""
 
 from PySide6.QtGui import QCloseEvent

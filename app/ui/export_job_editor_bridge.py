@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Bridge/services layer for ExportJobEditor."""
 
 from collections.abc import Callable

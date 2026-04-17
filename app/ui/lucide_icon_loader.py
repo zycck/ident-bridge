@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Path and SVG-loading helpers for Lucide icon resources."""
 
 import sys

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """Settings form load/save/autosave orchestration extracted from SettingsWidget."""
 
 from collections.abc import Callable
