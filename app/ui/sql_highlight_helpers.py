@@ -1,5 +1,8 @@
 """Shared T-SQL highlighting helpers used by the SQL editor."""
 
+from functools import lru_cache
+
+from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QColor, QFont, QTextCharFormat
 
 from app.ui.theme import Theme
@@ -142,6 +145,7 @@ TSQL_FUNCTIONS = {
 }
 
 
+@lru_cache(maxsize=None)
 def make_format(color: str, *, bold: bool = False, italic: bool = False) -> QTextCharFormat:
     fmt = QTextCharFormat()
     fmt.setForeground(QColor(color))
@@ -150,3 +154,37 @@ def make_format(color: str, *, bold: bool = False, italic: bool = False) -> QTex
     if italic:
         fmt.setFontItalic(True)
     return fmt
+
+
+@lru_cache(maxsize=1)
+def build_highlighter_assets():
+    kw_fmt = make_format(Theme.syntax_keyword, bold=True)
+    fn_fmt = make_format(Theme.syntax_function)
+    string_fmt = make_format(Theme.syntax_string)
+    number_fmt = make_format(Theme.syntax_number)
+    comment_fmt = make_format(Theme.syntax_comment, italic=True)
+    operator_fmt = make_format(Theme.syntax_operator)
+
+    kw_pattern = r"\b(?:" + "|".join(TSQL_KEYWORDS) + r")\b"
+    fn_pattern = r"\b(?:" + "|".join(TSQL_FUNCTIONS) + r")\b"
+
+    rules = (
+        (
+            QRegularExpression(
+                kw_pattern,
+                QRegularExpression.PatternOption.CaseInsensitiveOption,
+            ),
+            kw_fmt,
+        ),
+        (
+            QRegularExpression(
+                fn_pattern,
+                QRegularExpression.PatternOption.CaseInsensitiveOption,
+            ),
+            fn_fmt,
+        ),
+        (QRegularExpression(r"\b\d+(?:\.\d+)?\b"), number_fmt),
+        (QRegularExpression(r"[=<>!+\-*/%]+"), operator_fmt),
+    )
+    line_comment_re = QRegularExpression(r"--[^\n]*")
+    return rules, line_comment_re, string_fmt, comment_fmt

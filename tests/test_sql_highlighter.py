@@ -3,6 +3,7 @@
 
 from PySide6.QtGui import QTextDocument
 
+from app.ui.sql_highlight_helpers import build_highlighter_assets
 from app.ui.sql_highlighter import SqlHighlighter
 from app.ui.theme import Theme
 
@@ -37,3 +38,7 @@ def test_sql_highlighter_marks_strings_and_comment_priority(qapp_session) -> Non
     assert (0, 6, Theme.syntax_keyword.lower()) in spans
     assert (7, 4, Theme.syntax_string.lower()) in spans
     assert (12, 9, Theme.syntax_comment.lower()) in spans
+
+
+def test_sql_highlighter_reuses_cached_assets() -> None:
+    assert build_highlighter_assets() is build_highlighter_assets()

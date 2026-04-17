@@ -1,11 +1,9 @@
 # -*- coding: utf-8 -*-
 """Standalone T-SQL syntax highlighter used by SqlEditor."""
 
-from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QSyntaxHighlighter, QTextCharFormat, QTextDocument
 
-from app.ui.sql_highlight_helpers import TSQL_FUNCTIONS, TSQL_KEYWORDS, make_format
-from app.ui.theme import Theme
+from app.ui.sql_highlight_helpers import build_highlighter_assets
 
 
 class SqlHighlighter(QSyntaxHighlighter):
@@ -13,41 +11,12 @@ class SqlHighlighter(QSyntaxHighlighter):
 
     def __init__(self, document: QTextDocument) -> None:
         super().__init__(document)
-
-        self._kw_fmt = make_format(Theme.syntax_keyword, bold=True)
-        self._fn_fmt = make_format(Theme.syntax_function)
-        self._string_fmt = make_format(Theme.syntax_string)
-        self._number_fmt = make_format(Theme.syntax_number)
-        self._comment_fmt = make_format(Theme.syntax_comment, italic=True)
-        self._operator_fmt = make_format(Theme.syntax_operator)
-
-        self._rules: list[tuple[QRegularExpression, QTextCharFormat]] = []
-
-        kw_pattern = r"\b(?:" + "|".join(TSQL_KEYWORDS) + r")\b"
-        self._rules.append(
-            (
-                QRegularExpression(
-                    kw_pattern,
-                    QRegularExpression.PatternOption.CaseInsensitiveOption,
-                ),
-                self._kw_fmt,
-            )
-        )
-
-        fn_pattern = r"\b(?:" + "|".join(TSQL_FUNCTIONS) + r")\b"
-        self._rules.append(
-            (
-                QRegularExpression(
-                    fn_pattern,
-                    QRegularExpression.PatternOption.CaseInsensitiveOption,
-                ),
-                self._fn_fmt,
-            )
-        )
-
-        self._rules.append((QRegularExpression(r"\b\d+(?:\.\d+)?\b"), self._number_fmt))
-        self._rules.append((QRegularExpression(r"[=<>!+\-*/%]+"), self._operator_fmt))
-        self._line_comment_re = QRegularExpression(r"--[^\n]*")
+        (
+            self._rules,
+            self._line_comment_re,
+            self._string_fmt,
+            self._comment_fmt,
+        ) = build_highlighter_assets()
 
     def highlightBlock(self, text: str) -> None:  # noqa: N802
         for regex, fmt in self._rules:
