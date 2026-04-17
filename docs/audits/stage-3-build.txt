@@ -1,0 +1,75 @@
+89 INFO: PyInstaller: 6.19.0, contrib hooks: 2026.4
+89 INFO: Python: 3.14.4
+109 INFO: Platform: Windows-11-10.0.26200-SP0
+109 INFO: Python environment: C:\Users\wwwki\AppData\Local\Python\pythoncore-3.14-64
+111 INFO: Removing temporary files and cleaning cache in C:\Users\wwwki\AppData\Local\pyinstaller
+118 INFO: Module search paths (PYTHONPATH):
+['D:\\ProjectLocal\\identa report',
+ 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\python314.zip',
+ 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\DLLs',
+ 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib',
+ 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64',
+ 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages',
+ 'D:\\ProjectLocal\\identa report']
+295 INFO: Appending 'datas' from .spec
+298 INFO: checking Analysis
+298 INFO: Building Analysis because Analysis-00.toc is non existent
+298 INFO: Looking for Python shared library...
+298 INFO: Using Python shared library: C:\Users\wwwki\AppData\Local\Python\pythoncore-3.14-64\python314.dll
+298 INFO: Running Analysis Analysis-00.toc
+298 INFO: Target bytecode optimization level: 0
+298 INFO: Initializing module dependency graph...
+298 INFO: Initializing module graph hook caches...
+307 INFO: Analyzing modules for base_library.zip ...
+1356 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+1617 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+1771 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+1779 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+3449 INFO: Caching module dependency graph...
+3466 INFO: Analyzing D:\ProjectLocal\identa report\main.py
+3473 INFO: Processing standard module hook 'hook-PySide6.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+3586 INFO: Processing standard module hook 'hook-shiboken6.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+3785 INFO: Processing standard module hook 'hook-PySide6.QtNetwork.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+5434 INFO: Processing standard module hook 'hook-PySide6.QtCore.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+7614 INFO: Processing standard module hook 'hook-PySide6.QtWidgets.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+10029 INFO: Processing standard module hook 'hook-PySide6.QtGui.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+25133 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+25137 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+25208 INFO: Processing standard module hook 'hook-psutil.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+25274 INFO: Processing standard module hook 'hook-PySide6.QtSvg.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+25554 INFO: Processing standard module hook 'hook-pyodbc.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+25762 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+25862 INFO: Processing module hooks (post-graph stage)...
+25871 INFO: Performing binary vs. data reclassification (161 entries)
+25890 INFO: Looking for ctypes DLLs
+25902 INFO: Analyzing run-time hooks ...
+25903 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25905 INFO: Including run-time hook 'pyi_rth_pyside6.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+25906 INFO: Processing pre-find-module-path hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks\\pre_find_module_path'
+25907 INFO: Processing standard module hook 'hook-_pyi_rth_utils.py' from 'C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PyInstaller\\hooks'
+25913 INFO: Creating base_library.zip...
+25923 INFO: Looking for dynamic libraries
+26110 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\shiboken6']
+26110 INFO: Extra DLL search directories (PATH): ['C:\\Users\\wwwki\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\PySide6']
+26733 INFO: Warnings written to D:\ProjectLocal\identa report\build\build\warn-build.txt
+26747 INFO: Graph cross-reference written to D:\ProjectLocal\identa report\build\build\xref-build.html
+26761 INFO: checking PYZ
+26761 INFO: Building PYZ because PYZ-00.toc is non existent
+26761 INFO: Building PYZ (ZlibArchive) D:\ProjectLocal\identa report\build\build\PYZ-00.pyz
+26852 INFO: Building PYZ (ZlibArchive) D:\ProjectLocal\identa report\build\build\PYZ-00.pyz completed successfully.
+26858 INFO: checking PKG
+26858 INFO: Building PKG because PKG-00.toc is non existent
+26858 INFO: Building PKG (CArchive) iDentSync.pkg
+30175 INFO: Building PKG (CArchive) iDentSync.pkg completed successfully.
+30178 INFO: Bootloader C:\Users\wwwki\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+30178 INFO: checking EXE
+30178 INFO: Building EXE because EXE-00.toc is non existent
+30178 INFO: Building EXE from EXE-00.toc
+30182 INFO: Copying bootloader EXE to D:\ProjectLocal\identa report\dist\iDentSync.exe
+30188 INFO: Copying icon to EXE
+30190 INFO: Copying 0 resources to EXE
+30190 INFO: Embedding manifest in EXE
+30191 INFO: Appending PKG archive to EXE
+30207 INFO: Fixing EXE headers
+30432 INFO: Building EXE from EXE-00.toc completed successfully.
+30435 INFO: Build complete! The results are available in: D:\ProjectLocal\identa report\dist
