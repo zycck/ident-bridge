@@ -33,3 +33,12 @@
 - **Tag:** `stage-3-passed-20260417`
 - **Scope:** ExportSink Protocol + WebhookSink + ExportPipeline + thin ExportWorker (audit G-1/J2, partial C3)
 
+## Stage 4 — 2026-04-17
+
+- **N.1 pytest:** PASS — 368 passed in 2.37 s (+7 new DatabaseClient factory tests)
+- **N.2 launch smoke:** PASS — `positive_retained_kib=2072.2` (baseline 2362.7, delta **−12.3 %**)
+- **N.3 build:** PASS — `dist/iDentSync.exe` 40 747 704 bytes (40.7 MB)
+- **N.4 EXE smoke:** PASS — process alive 15 s, killed cleanly
+- **Tag:** `stage-4-passed-20260417`
+- **Scope:** DatabaseClient Protocol + factory (audit G-2/I; API-only, physical move deferred to Stage 5)
+
