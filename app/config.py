@@ -200,6 +200,7 @@ class ConfigManager:
 
             CONFIG_DIR.mkdir(parents=True, exist_ok=True)
             tmp_path: Path | None = None
+            tmp_replaced = False
             try:
                 with tempfile.NamedTemporaryFile(
                     "w",
@@ -213,8 +214,13 @@ class ConfigManager:
                     os.fsync(fh.fileno())
 
                 os.replace(tmp_path, CONFIG_PATH)
+                tmp_replaced = True
             finally:
-                if tmp_path is not None and tmp_path.exists():
+                # After a successful os.replace, tmp_path was atomically
+                # renamed — there's nothing to unlink. Only attempt cleanup
+                # on the failure path where the tempfile may still be
+                # sitting alongside the real config.
+                if not tmp_replaced and tmp_path is not None and tmp_path.exists():
                     try:
                         tmp_path.unlink()
                     except FileNotFoundError:
