@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Tests for extracted dashboard activity store helpers."""
+"""Tests for the clear_job_histories helper (now living in
+app.ui.dashboard_activity after audit A-2 merge)."""
 
-from app.ui.dashboard_activity_store import clear_job_histories
+from app.ui.dashboard_activity import clear_job_histories
 
 
 def test_clear_job_histories_returns_total_and_preserves_other_fields() -> None:

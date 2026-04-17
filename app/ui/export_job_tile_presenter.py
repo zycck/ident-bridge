@@ -2,9 +2,10 @@
 """Presentation helpers for ExportJobTile."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.config import ExportJob
+from app.ui.formatters import format_relative_timestamp
 from app.ui.theme import Theme
 
 
@@ -71,24 +72,12 @@ def _build_schedule_text(job: ExportJob) -> str:
 
 
 def _format_short_ts(ts: str, *, now: datetime) -> str:
-    if not ts or len(ts) < 16:
-        return ts
-
-    parsed = None
-    for fmt, length in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
-        if len(ts) >= length:
-            try:
-                parsed = datetime.strptime(ts[:length], fmt)
-                break
-            except ValueError:
-                continue
-    if parsed is None:
-        return ts
-
-    today = now.date()
-    time_text = parsed.strftime("%H:%M:%S")
-    if parsed.date() == today:
-        return f"сегодня {time_text}"
-    if parsed.date() == today - timedelta(days=1):
-        return f"вчера {time_text}"
-    return f"{parsed.strftime('%d.%m')} {time_text}"
+    # Tile uses lowercase labels and never shows a year suffix — the
+    # display is already compact ("✓ 12 строк · вчера 14:32").
+    return format_relative_timestamp(
+        ts,
+        now=now,
+        today_label="сегодня",
+        yesterday_label="вчера",
+        include_year_on_other=False,
+    )

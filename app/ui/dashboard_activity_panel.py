@@ -14,8 +14,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.config import ConfigManager
-from app.ui.dashboard_activity import refresh_dashboard_activity
-from app.ui.dashboard_activity_store import clear_job_histories
+from app.ui.dashboard_activity import clear_job_histories, refresh_dashboard_activity
 from app.ui.theme import Theme
 
 

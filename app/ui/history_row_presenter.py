@@ -2,9 +2,10 @@
 """Presentation helpers for HistoryRow."""
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.config import ExportHistoryEntry, TriggerType
+from app.ui.formatters import format_relative_timestamp
 from app.ui.theme import Theme
 
 
@@ -28,30 +29,13 @@ _TRIGGER_META: dict[TriggerType, tuple[str, str, str]] = {
 
 def format_history_timestamp(ts: str, *, now: datetime | None = None) -> str:
     """Return a friendly timestamp label for a persisted history entry."""
-    if not ts or len(ts) < 16:
-        return ts
-
-    parsed = None
-    for fmt, length in (("%Y-%m-%d %H:%M:%S", 19), ("%Y-%m-%d %H:%M", 16)):
-        if len(ts) >= length:
-            try:
-                parsed = datetime.strptime(ts[:length], fmt)
-                break
-            except ValueError:
-                continue
-    if parsed is None:
-        return ts
-
-    current = now or datetime.now()
-    today = current.date()
-    time_text = parsed.strftime("%H:%M:%S")
-    if parsed.date() == today:
-        return f"Сегодня {time_text}"
-    if parsed.date() == today - timedelta(days=1):
-        return f"Вчера {time_text}"
-    if parsed.year == current.year:
-        return f"{parsed.strftime('%d.%m')} {time_text}"
-    return f"{parsed.strftime('%d.%m.%y')} {time_text}"
+    return format_relative_timestamp(
+        ts,
+        now=now,
+        today_label="Сегодня",
+        yesterday_label="Вчера",
+        include_year_on_other=True,
+    )
 
 
 def build_history_row_display(

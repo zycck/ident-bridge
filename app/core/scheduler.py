@@ -103,34 +103,35 @@ class SyncScheduler(QObject):
 
         now = _local_now()
 
-        if self._mode == "secondly":
-            n = int(self._value)
-            if n < 1:
-                return
-            base_delay = float(n)
-
-        elif self._mode == "minutely":
-            n = int(self._value)
-            if n < 1:
-                return
-            base_delay = n * 60.0
-
-        elif self._mode == "hourly":
-            n = int(self._value)
-            if n < 1:
-                return
-            base_delay = n * 3600.0
-
-        elif self._mode == "daily":
-            parts = self._value.split(":")
-            hour, minute = int(parts[0]), int(parts[1])
-            candidate = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-            if candidate <= now:
-                candidate += timedelta(days=1)
-            base_delay = (candidate - now).total_seconds()
-
-        else:
-            raise ValueError(f"Unknown mode: {self._mode!r}")
+        match self._mode:
+            case "secondly":
+                n = int(self._value)
+                if n < 1:
+                    return
+                base_delay = float(n)
+            case "minutely":
+                n = int(self._value)
+                if n < 1:
+                    return
+                base_delay = n * 60.0
+            case "hourly":
+                n = int(self._value)
+                if n < 1:
+                    return
+                base_delay = n * 3600.0
+            case "daily":
+                hour_text, minute_text = self._value.split(":")
+                candidate = now.replace(
+                    hour=int(hour_text),
+                    minute=int(minute_text),
+                    second=0,
+                    microsecond=0,
+                )
+                if candidate <= now:
+                    candidate += timedelta(days=1)
+                base_delay = (candidate - now).total_seconds()
+            case _:
+                raise ValueError(f"Unknown mode: {self._mode!r}")
 
         jitter = random.uniform(-base_delay * 0.05, base_delay * 0.05)
         delay = max(1.0, base_delay + jitter)
