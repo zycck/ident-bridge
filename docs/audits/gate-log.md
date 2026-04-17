@@ -52,3 +52,13 @@
 - **Scope:** Canonical paths for `app/domain/`, `app/platform/`, `app/log_ext/` (re-export shims; no physical moves yet)
 - **Deferred (waves 5B / 5C):** split `app/config.py` into `app/config/` package; move UI families into `app/ui/<feature>/` subpackages. Both are mechanical but touch 70+ import sites and are safer to perform in an isolated session with the full focus of the tooling.
 
+## Stage 6 — 2026-04-17
+
+- **N.1 pytest:** PASS — 377 passed in 2.41 s
+- **N.2 launch smoke:** PASS — `positive_retained_kib=2071.7` (baseline 2362.7, delta **−12.3 %**)
+- **N.3 build:** PASS — `dist/iDentSync.exe` 40 747 769 bytes (40.7 MB)
+- **N.4 EXE smoke:** PASS — process alive 15 s, killed cleanly
+- **Tag:** `stage-6-passed-20260417`
+- **Scope:** match in scheduler (E3/J4) + merge dashboard_activity_store (A2) + dedup ts formatters (A3)
+- **Deferred:** SettingsSqlController split (A1) + test_run_dialog rename (A5) — both touch many import sites; rolled into a future focused session
+
