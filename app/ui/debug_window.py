@@ -15,9 +15,11 @@ from PySide6.QtWidgets import (
 )
 
 from app.core.constants import DEBUG_LOG_BLOCK_LIMIT
+from app.core.resource_monitor import ResourceMonitor
 
 from app.ui.debug_window_log_controller import DebugWindowLogController
 from app.ui.debug_window_formatting import format_log_line_html
+from app.ui.resource_monitor_bar import ResourceMonitorBar
 
 _STYLE_LOG = (
     "QPlainTextEdit {"
@@ -39,6 +41,9 @@ class DebugWindow(QDialog):
         self.setWindowTitle("Debug — iDentBridge")
         self.resize(1000, 560)
         self.setWindowFlag(Qt.WindowType.Window, True)
+        # Monitor is constructed eagerly (cheap) but only starts ticking
+        # while the window is visible — see showEvent / closeEvent.
+        self._resource_monitor = ResourceMonitor(interval_ms=1000, parent=self)
         self._build_ui()
         self._log_controller = DebugWindowLogController(
             on_message=self._append_message,
@@ -80,13 +85,18 @@ class DebugWindow(QDialog):
         root.addLayout(hdr)
         root.addWidget(self._log, stretch=1)
 
+        self._resource_bar = ResourceMonitorBar(self._resource_monitor, self)
+        root.addWidget(self._resource_bar)
+
     # ------------------------------------------------------------------
     def showEvent(self, event) -> None:  # type: ignore[override]
         super().showEvent(event)
         self._log_controller.connect()
+        self._resource_monitor.start()
 
     def closeEvent(self, event) -> None:  # type: ignore[override]
         self._log_controller.disconnect()
+        self._resource_monitor.stop()
         event.accept()
 
     # ------------------------------------------------------------------

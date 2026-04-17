@@ -19,6 +19,8 @@ a = Analysis(
     ],
     hiddenimports=[
         "pyodbc",
+        "psutil",
+        "psutil._pswindows",
         "PySide6.QtCore",
         "PySide6.QtWidgets",
         "PySide6.QtGui",
