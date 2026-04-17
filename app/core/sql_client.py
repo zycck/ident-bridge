@@ -115,9 +115,9 @@ class SqlClient:
             columns = [d[0] for d in cursor.description]
             truncated = False
             if max_rows is None:
+                # pyodbc.Cursor.fetchall() contractually returns list[Row];
+                # no defensive coercion needed.
                 rows = cursor.fetchall()
-                if not isinstance(rows, list):
-                    rows = list(rows)
             else:
                 rows = []
                 fetchmany = getattr(cursor, "fetchmany", None)

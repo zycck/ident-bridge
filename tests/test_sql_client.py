@@ -25,7 +25,9 @@ class _FakeCursor:
         self.executed.append((sql, params))
 
     def fetchall(self):
-        return tuple(self._rows)
+        # pyodbc.Cursor.fetchall returns list[Row] per its public contract;
+        # keep the fake faithful so callers don't rely on accidental coercion.
+        return list(self._rows)
 
     def fetchmany(self, size: int):
         self.fetchmany_calls.append(size)
