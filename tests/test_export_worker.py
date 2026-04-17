@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 """Tests for app.workers.export_worker.ExportWorker."""
+import json
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.config import AppConfig, ExportJob, SyncResult
-from app.workers.export_worker import ExportWorker
+from app.workers.export_worker import ExportWorker, build_webhook_payload
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +334,18 @@ def test_webhook_url_in_request(base_cfg, webhook_job, mock_sql_client, monkeypa
     _run_worker_sync(worker)
 
     assert captured[0].full_url == "https://example.com/hook"
+
+
+def test_build_webhook_payload_serializes_rows_without_shape_change(mock_query_result) -> None:
+    payload = build_webhook_payload("Demo Job", mock_query_result)
+    decoded = json.loads(payload.decode("utf-8"))
+
+    assert decoded == {
+        "job": "Demo Job",
+        "rows": 2,
+        "columns": ["id", "name"],
+        "data": [[1, "alice"], [2, "bob"]],
+    }
 
 
 def test_webhook_failure_emits_error_and_finished_failure(

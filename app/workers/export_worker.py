@@ -30,6 +30,20 @@ WEBHOOK_RETRY_BASE_DELAY: float = float(
 )
 
 
+def build_webhook_payload(job_name: str, result) -> bytes:
+    """Serialize one webhook payload without pre-copying all result rows."""
+    return json.dumps(
+        {
+            "job": job_name,
+            "rows": result.count,
+            "columns": result.columns,
+            "data": result.rows,
+        },
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+
+
 class ExportWorker(QObject):
     """QObject worker that runs the SQL query → (optional) webhook pipeline."""
 
@@ -73,12 +87,7 @@ class ExportWorker(QObject):
                 last_exc: Exception | None = None
                 for attempt in range(1, WEBHOOK_RETRY_ATTEMPTS + 1):
                     try:
-                        payload = json.dumps({
-                            "job":     job_name,
-                            "rows":    result.count,
-                            "columns": result.columns,
-                            "data":    [list(row) for row in result.rows],
-                        }, ensure_ascii=False, default=str).encode("utf-8")
+                        payload = build_webhook_payload(job_name, result)
                         req = urllib.request.Request(
                             webhook_url,
                             data=payload,

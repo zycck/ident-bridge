@@ -6,30 +6,14 @@ Loads SVG files from resources/icons/lucide/, replaces `currentColor`
 with the requested color, renders to a hi-DPI QPixmap, and returns a
 QIcon. Cached by (name, color, size) to keep recolored variants warm.
 """
-import sys
 from functools import lru_cache
-from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 
+from app.ui.lucide_icon_loader import read_lucide_svg
 from app.ui.theme import Theme
-
-
-def _icons_dir() -> Path:
-    """Resolve the icons directory for both dev and PyInstaller-frozen modes."""
-    if getattr(sys, "frozen", False):
-        return Path(sys._MEIPASS) / "resources" / "icons" / "lucide"  # type: ignore[attr-defined]
-    return Path(__file__).resolve().parent.parent.parent / "resources" / "icons" / "lucide"
-
-
-@lru_cache(maxsize=128)
-def _read_svg(name: str) -> str:
-    path = _icons_dir() / f"{name}.svg"
-    if not path.exists():
-        raise FileNotFoundError(f"Lucide icon not found: {name} (looked in {path})")
-    return path.read_text(encoding="utf-8")
 
 
 @lru_cache(maxsize=512)
@@ -41,7 +25,7 @@ def lucide(name: str, color: str = Theme.gray_700, size: int = 18) -> QIcon:
     Cached by (name, color, size) so repeated calls with identical args
     return the same QIcon instance.
     """
-    svg_text = _read_svg(name)
+    svg_text = read_lucide_svg(name)
     colored = (
         svg_text
         .replace('stroke="currentColor"', f'stroke="{color}"')

@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `282` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `287` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`294 passed`). `python main.py` now also supports a test-only clean-close override for automation via `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1`.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`299 passed`). `python main.py` now also supports a test-only clean-close override for automation via `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1`.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -79,8 +79,10 @@ Interpretation:
   - [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1) now delegates history replay and live log subscription to [app/ui/debug_window_log_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window_log_controller.py:1).
   - [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) now delegates hover, drag, and maximize-double-click behavior to [app/ui/title_bar_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar_controller.py:1).
   - [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1) now delegates expand-button positioning and tab/dedent behavior to [app/ui/sql_editor_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor_controller.py:1), the full-window dialog shell to [app/ui/sql_editor_dialog_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor_dialog_shell.py:1), and standalone syntax-highlighting to [app/ui/sql_highlighter.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_highlighter.py:1).
+  - [app/ui/lucide_icons.py](/mnt/d/ProjectLocal/identa report/app/ui/lucide_icons.py:1) now delegates resource-path resolution and SVG file loading to [app/ui/lucide_icon_loader.py](/mnt/d/ProjectLocal/identa report/app/ui/lucide_icon_loader.py:1), leaving the module focused on recolor/render/cache behavior.
   - [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:1) now delegates view composition to [app/ui/test_run_dialog_shell.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog_shell.py:1) and worker/result handling to [app/ui/test_run_dialog_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog_controller.py:1).
   - [app/core/sql_client.py](/mnt/d/ProjectLocal/identa report/app/core/sql_client.py:1) now supports bounded result materialization, and [app/ui/test_run_dialog_controller.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog_controller.py:1) uses it to cap large preview results while clearly marking truncated output in the dialog status.
+  - [app/workers/export_worker.py](/mnt/d/ProjectLocal/identa report/app/workers/export_worker.py:1) now builds webhook JSON through a dedicated helper without pre-copying all query rows into a second intermediate list before serialization.
   - [app/core/scheduler.py](/mnt/d/ProjectLocal/identa report/app/core/scheduler.py:1) now owns the shared supported-mode contract and centralized schedule value validation used by both runtime and UI; invalid values fail fast at `configure()` instead of drifting into late timer/runtime behavior.
   - [app/ui/history_row.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row.py:1) now delegates trigger normalization, timestamp formatting, and status-text derivation to [app/ui/history_row_presenter.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row_presenter.py:1).
   - [app/ui/export_job_tile.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile.py:1) now delegates status/schedule/timestamp presentation to [app/ui/export_job_tile_presenter.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile_presenter.py:1).
@@ -107,7 +109,7 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `294 passed in 2.98s`
+  - `python -m pytest tests/ -q` → `299 passed in 2.86s`
   - `python tools/perf_smoke.py --scenario all --cycles 1 --top 8` → `positive_retained_kib=1714.9` with the largest retained buckets dominated by first-load Python/Qt allocations plus `app/ui/export_jobs_pages.py` and `app/ui/main_window_navigation.py`
   - `python tools/perf_smoke.py --scenario export-editor --cycles 5 --top 8` → `positive_retained_kib=993.4`, down from the earlier `1681.1 KiB` after lazy-loading `sqlglot`, removing eager syntax validation on initial editor load, and caching highlighter assets
   - `python main.py` on Windows 11 / Python 3.14.4 with `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1` → started successfully and exited cleanly (`Exited=True`, `ExitCode=0`)
@@ -117,7 +119,7 @@ Interpretation:
 
 ## Executive Summary
 - No confirmed `Critical` findings were reproduced in this audit wave.
-- `High` risk is concentrated in top-level UI orchestration, config/update/release coupling, and a few still-monolithic leaf components.
+- `High` risk is concentrated in top-level UI orchestration and config/update/release coupling.
 - `Medium` risk is concentrated in scalability, contract drift, dependency reproducibility, and several fragile platform/runtime assumptions.
 - `Low` risk is concentrated in portability constraints that appear intentional, plus local cleanup debt such as broad exception handling and inline UI policy.
 
@@ -200,14 +202,13 @@ Interpretation:
    Impact:
    - Clean environments can drift over time even without repo changes.
 
-5. Secondary UI components also carry refactor-hostile debt.
+5. Secondary UI components still carry some cleanup debt, but it is now narrower and mostly composition-level.
    Evidence:
-   - [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1)
-   - [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1)
-   - [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1)
-   - [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1)
+   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1)
+   - [app/ui/test_run_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/test_run_dialog.py:1)
+   - [app/ui/lucide_icons.py](/mnt/d/ProjectLocal/identa report/app/ui/lucide_icons.py:1)
    Impact:
-   - Even after primary screen refactors, several support components remain tightly coupled and weakly testable.
+   - The remaining UI debt is much more localized, but still slightly raises the cost of final cleanup and future polish.
 
 ### Low
 1. Windows-only portability is explicit but still a maintenance constraint.
@@ -241,7 +242,7 @@ Interpretation:
 | [app/core/sql_client.py](/mnt/d/ProjectLocal/identa report/app/core/sql_client.py:1) | `medium` | `fetchall()`, flattened diagnostics, partial retry coverage. |
 | [app/core/startup.py](/mnt/d/ProjectLocal/identa report/app/core/startup.py:1) | `medium` | Tight Run-key coupling and silent drift. |
 | [app/core/updater.py](/mnt/d/ProjectLocal/identa report/app/core/updater.py:1) | `high` | Fragile release assumptions and weak diagnostics. |
-| [app/workers/export_worker.py](/mnt/d/ProjectLocal/identa report/app/workers/export_worker.py:1) | `high` | Full materialization in memory; poor failure semantics. |
+| [app/workers/export_worker.py](/mnt/d/ProjectLocal/identa report/app/workers/export_worker.py:1) | `high` | Query results still materialize fully in memory, but the extra webhook-side row copy has been removed. |
 | [app/workers/update_worker.py](/mnt/d/ProjectLocal/identa report/app/workers/update_worker.py:1) | `medium` | Multiple failure classes collapsed into a single string path. |
 
 ### UI
@@ -259,7 +260,7 @@ Interpretation:
 | [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1) | `medium` | Live log subscription is extracted now, but the window still depends on current log HTML formatting and view-specific behavior. |
 | [app/ui/export_job_tile.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile.py:1) | `low` | Status, schedule, and timestamp presentation are extracted now; the tile mostly owns button/menu wiring and compact card composition. |
 | [app/ui/history_row.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row.py:1) | `low` | Trigger normalization and timestamp/status presentation are extracted now; the widget mostly owns compact row composition. |
-| [app/ui/lucide_icons.py](/mnt/d/ProjectLocal/identa report/app/ui/lucide_icons.py:1) | `medium` | Rendering, recolor, cache policy, and resource-layout knowledge mixed together. |
+| [app/ui/lucide_icons.py](/mnt/d/ProjectLocal/identa report/app/ui/lucide_icons.py:1) | `low` | Resource lookup and SVG loading are extracted now; remaining debt is mostly local render/recolor/cache policy in one small helper. |
 | [app/ui/threading.py](/mnt/d/ProjectLocal/identa report/app/ui/threading.py:1) | `low` | Good helper overall; it now provides an explicit pre-start `connect_signals` hook for fast-path callers. |
 | [app/ui/theme.py](/mnt/d/ProjectLocal/identa report/app/ui/theme.py:1) | `low` | Good central token layer, but consumers still bypass it and values are stringly-typed. |
 | [app/ui/widgets.py](/mnt/d/ProjectLocal/identa report/app/ui/widgets.py:1) | `low` | Useful shared helpers, but still encode UI policy in Python. |
@@ -270,7 +271,7 @@ Interpretation:
 |---|---|---|
 | [main.py](/mnt/d/ProjectLocal/identa report/main.py:1) | `high` | Version/runtime identity still hardcoded and duplicated. |
 | [build.spec](/mnt/d/ProjectLocal/identa report/build.spec:1) | `high` | Packaging identity drifts from runtime and updater metadata. |
-| [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) | `high` | Stale test-count gate and partially drifted verification story. |
+| [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) | `medium` | The automated gate is now current, but the manual Windows verification story still needs regular upkeep as the suite evolves. |
 | [VERSIONING.md](/mnt/d/ProjectLocal/identa report/VERSIONING.md:1) | `medium` | Useful policy doc, but not executable source of truth. |
 | [requirements.txt](/mnt/d/ProjectLocal/identa report/requirements.txt:1) | `medium` | Lower bounds only; no deterministic restore path. |
 | [requirements-dev.txt](/mnt/d/ProjectLocal/identa report/requirements-dev.txt:1) | `medium` | Same reproducibility gap as runtime requirements. |

@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree contains 282 `test_*` functions, and this
+Audit note: the current tree contains 287 `test_*` functions, and this
 workspace is a WSL/Linux negative-control environment. The full gate is
 expected to be validated on Windows 11 with Python 3.14.4 and the
 documented Qt stack; tray, registry, reboot, and background-run checks
@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **282 test functions / 294 collected test items** covering the scheduler engine,
+The fastest sanity check. **287 test functions / 299 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **282 tests**. Keep this number in
+The current tree actually contains **287 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-294 passed in X.XXs
+299 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -98,7 +98,8 @@ normal top-level close request, yielding a clean exit for automation.
 | Test file | What it covers | Tests |
 |---|---|---|
 | `tests/test_scheduler.py` | supported schedule modes, centralized value validation, jitter (±5 %), DST, timezone-aware next\_run, signal emission, stop/start lifecycle, invalid-mode validation | 38 |
-| `tests/test_export_worker.py` | 4-step pipeline (connect → query → webhook → disconnect), DB errors, webhook errors, retry, SyncResult | 16 |
+| `tests/test_export_worker.py` | 4-step pipeline (connect → query → webhook → disconnect), DB errors, webhook errors, retry, SyncResult, direct webhook payload serialization | 17 |
+| `tests/test_lucide_icon_loader.py` | extracted Lucide loader: dev/frozen icon-path resolution and helpful missing-icon diagnostics | 4 |
 | `tests/test_config.py` | DPAPI roundtrip, update/merge, migration of legacy fields, JSON corruption resilience, save/load roundtrip, atomic save, config-dir fallback | 19 |
 | `tests/test_threading.py` | `run_worker` factory, GC pin attribute, thread lifecycle, on\_error / on\_finished callbacks, pre-start `connect_signals`, late signal connection safety | 14 |
 | `tests/test_tray_autostart.py` | tray close-to-tray behaviour, `register`/`unregister`/`sync_path`, registry read/write (mocked), main window construction, import-safe non-Windows autostart | 21 |
@@ -677,7 +678,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 282 test functions, but the
+- The repository tree currently reports 287 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 
