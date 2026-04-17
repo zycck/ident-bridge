@@ -8,6 +8,7 @@ properties come from `app.ui.theme.Theme` — no hardcoded colors.
 from typing import Literal
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor, QPalette
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -24,23 +25,79 @@ from app.ui.theme import Theme
 StatusKind = Literal["neutral", "ok", "error", "warning", "info"]
 
 
+def _apply_light_popup_palette(widget: QWidget) -> None:
+    """Force a light palette so Win11 dark-mode doesn't paint a black frame."""
+    pal = widget.palette()
+    pal.setColor(QPalette.ColorRole.Window, QColor(Theme.surface))
+    pal.setColor(QPalette.ColorRole.Base, QColor(Theme.surface))
+    pal.setColor(QPalette.ColorRole.AlternateBase, QColor(Theme.gray_50))
+    pal.setColor(QPalette.ColorRole.Text, QColor(Theme.gray_900))
+    pal.setColor(QPalette.ColorRole.WindowText, QColor(Theme.gray_900))
+    pal.setColor(QPalette.ColorRole.Highlight, QColor(Theme.primary_200))
+    pal.setColor(QPalette.ColorRole.HighlightedText, QColor(Theme.primary_900))
+    widget.setPalette(pal)
+
+
+_POPUP_QSS = (
+    f"QListView {{"
+    f"  background-color: {Theme.surface};"
+    f"  color: {Theme.gray_900};"
+    f"  border: 1px solid {Theme.border_strong};"
+    f"  border-radius: {Theme.radius}px;"
+    f"  padding: 4px;"
+    f"  outline: 0;"
+    f"}}"
+    f"QListView::item {{"
+    f"  background-color: {Theme.surface};"
+    f"  color: {Theme.gray_900};"
+    f"  padding: 6px 10px;"
+    f"  border-radius: {Theme.radius_sm}px;"
+    f"  min-height: 22px;"
+    f"}}"
+    f"QListView::item:hover {{"
+    f"  background-color: {Theme.primary_50};"
+    f"  color: {Theme.primary_900};"
+    f"}}"
+    f"QListView::item:selected {{"
+    f"  background-color: {Theme.primary_100};"
+    f"  color: {Theme.primary_900};"
+    f"}}"
+)
+
+
 def style_combo_popup(combo: QComboBox) -> None:
     """
-    Strip the Windows default drop-shadow + black frame from a QComboBox
-    popup. Qt's stylesheet alone can't override the popup window's native
-    decoration — we have to set window flags on the underlying view.
+    Force a light-themed, frameless popup for a QComboBox.
+
+    On Windows 11 the QComboBox popup is a top-level window that
+    picks up the system's dark Mica / Acrylic frame when the OS is in
+    dark mode — even if the app stylesheet paints the internals
+    white. The result is a black rectangle around the dropdown. We
+    compensate by:
+
+    * clearing the native drop-shadow / translucent-bg flags,
+    * overriding the popup window's palette with our light tokens,
+    * applying an explicit QSS on the view so the inner list is
+      styled even when the global sheet doesn't propagate.
 
     Call this once after constructing each QComboBox.
     """
     view = combo.view()
     if view is None:
         return
+    view.setStyleSheet(_POPUP_QSS)
+    _apply_light_popup_palette(view)
     # The view lives inside a top-level popup window. Disable the OS
-    # drop-shadow and any native frame.
+    # drop-shadow and force a light palette on the window frame too.
     win = view.window()
-    if win is not None:
+    if win is not None and win is not view:
         win.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint, True)
         win.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, False)
+        _apply_light_popup_palette(win)
+        win.setStyleSheet(
+            f"background-color: {Theme.surface};"
+            f"border: 1px solid {Theme.border_strong};"
+        )
 
 
 def hsep() -> QFrame:
