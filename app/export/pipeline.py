@@ -22,7 +22,8 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
 from app.core.constants import MAX_WEBHOOK_ROWS

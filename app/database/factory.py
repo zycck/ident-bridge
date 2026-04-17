@@ -12,7 +12,7 @@ the audit plan).
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from app.config import AppConfig
 from app.database.protocol import DatabaseClient
