@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree contains 275 `test_*` functions, and this
+Audit note: the current tree contains 276 `test_*` functions, and this
 workspace is a WSL/Linux negative-control environment. The full gate is
 expected to be validated on Windows 11 with Python 3.14.4 and the
 documented Qt stack; tray, registry, reboot, and background-run checks
@@ -41,11 +41,11 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **275 test functions / 276 collected test items** covering the scheduler engine,
+The fastest sanity check. **276 test functions / 277 collected test items** covering the scheduler engine,
 export worker pipeline, config persistence, threading helpers, tray
 behaviour, and Windows autostart.
 
-The current tree actually contains **275 tests**. Keep this number in
+The current tree actually contains **276 tests**. Keep this number in
 sync with the tree, or the release checklist will drift again.
 
 ### One-time setup
@@ -64,7 +64,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-276 passed in X.XXs
+277 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -80,6 +80,18 @@ build\dist\iDentSync.exe
 
 Expected result: the `.exe` is produced successfully, starts, and can be
 closed cleanly.
+
+For an automated source-tree startup smoke that should also close
+cleanly without fighting the normal close-to-tray UX, use a test-only
+override in the same terminal session:
+
+```cmd
+set IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1
+python main.py
+```
+
+Expected result: the app starts successfully and can be closed with a
+normal top-level close request, yielding a clean exit for automation.
 
 ### Coverage map
 
@@ -124,7 +136,7 @@ closed cleanly.
 | `tests/test_settings_sql_flow.py` | extracted settings SQL flow: scan/db-list/test state transitions and restore behavior | 4 |
 | `tests/test_settings_sql_panel.py` | extracted settings SQL panel: stable widget accessors, scan/refresh/test button signals, control defaults | 3 |
 | `tests/test_settings_sql_presenters.py` | extracted settings SQL presenters: instance/database list rendering and next-instance selection | 3 |
-| `tests/test_main_window_lifecycle.py` | extracted main-window lifecycle: tray activation, close-to-tray notice, quit path, shutdown cleanup | 4 |
+| `tests/test_main_window_lifecycle.py` | extracted main-window lifecycle: tray activation, close-to-tray notice, quit path, shutdown cleanup, test-only force-quit override | 5 |
 | `tests/test_main_window_navigation.py` | extracted main-window navigation: page order, button routing, active state/icon switching | 4 |
 | `tests/test_main_window_pages.py` | extracted main-window pages: page construction and stack order | 1 |
 | `tests/test_main_window_signal_router.py` | extracted main-window signal router: dashboard/update wiring, sync/history routing, tray failure alerts | 3 |
@@ -663,7 +675,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 275 test functions, but the
+- The repository tree currently reports 276 test functions, but the
   release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

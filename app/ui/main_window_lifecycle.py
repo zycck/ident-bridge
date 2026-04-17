@@ -2,6 +2,7 @@
 """Tray/shutdown lifecycle helpers extracted from MainWindow."""
 
 from collections.abc import Callable
+import os
 
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtGui import QIcon
@@ -12,6 +13,15 @@ from app.config import ConfigManager
 from app.core.app_logger import get_logger
 
 _log = get_logger(__name__)
+
+
+def _force_quit_on_close() -> bool:
+    return os.environ.get("IDENTBRIDGE_FORCE_QUIT_ON_CLOSE", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 def build_tray(
@@ -97,6 +107,10 @@ class MainWindowLifecycleController(QObject):
         self._close_debug_window()
 
     def handle_close_event(self, event: QCloseEvent) -> None:
+        if _force_quit_on_close():
+            event.accept()
+            self._quit_app()
+            return
         if self._tray.isVisible():
             cfg = self._config.load()
             if not cfg.get("tray_notice_shown"):

@@ -138,6 +138,10 @@ set IDENTBRIDGE_FAST_TRIGGER_SECONDS=
 
 Unset the env var so production behavior is restored.
 
+For automated source-tree smoke only, you may also set
+`IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1` so `python main.py` exits cleanly
+under automation without changing the normal tray UX.
+
 Manual-only remainder: tray visibility, close-to-tray, autostart
 registry writes, reboot persistence, and real background scheduler
 behaviour all require the Windows desktop shell and are not fully

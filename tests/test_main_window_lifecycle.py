@@ -125,6 +125,28 @@ def test_handle_close_event_accepts_and_quits_when_tray_hidden(qtbot, tmp_config
     assert quit_calls == [True]
 
 
+def test_handle_close_event_allows_test_override_even_when_tray_visible(
+    qtbot,
+    tmp_config,
+    monkeypatch,
+) -> None:
+    controller, window, tray, _, _, _, quit_calls = _build_controller(
+        qtbot,
+        tmp_config,
+        tray_visible=True,
+    )
+    window.show()
+    monkeypatch.setenv("IDENTBRIDGE_FORCE_QUIT_ON_CLOSE", "1")
+    event = QCloseEvent()
+
+    controller.handle_close_event(event)
+
+    assert tray.messages == []
+    assert event.isAccepted() is True
+    assert quit_calls == [True]
+    assert window.isHidden() is False
+
+
 def test_tray_activation_restores_window_on_click(qtbot, tmp_config) -> None:
     controller, window, _, _, _, _, _ = _build_controller(qtbot, tmp_config)
 

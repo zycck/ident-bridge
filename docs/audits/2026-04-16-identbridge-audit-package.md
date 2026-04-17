@@ -39,13 +39,13 @@ Pre-snapshot dirty state included these files and was intentionally preserved in
 | `python3 -VV` | `Python 3.10.12` on WSL/Linux |
 | `python3 -m pytest --version` | `pytest 9.0.3` |
 | `python3 -c 'import app.config'` | `app.config: OK` |
-| `rg -n '^def test_' tests \| wc -l` | `275` test functions |
+| `rg -n '^def test_' tests \| wc -l` | `276` test functions |
 
 Interpretation:
 
 - This repository is still not self-verifying in the active WSL environment.
 - The config/runtime base is now import-safe in WSL for non-GUI checks, but the full app still depends on Windows desktop and ODBC-specific behavior for real validation.
-- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`276 passed`). `python main.py` still starts correctly there, but shell-driven close verification currently follows the existing close-to-tray path and requires a force-stop for automated cleanup.
+- The documented test gate in [docs/TESTING.md](/mnt/d/ProjectLocal/identa report/docs/TESTING.md:1) now matches the current tree, and the automated gate has since been reproduced on Windows 11 with Python 3.14.4 (`277 passed`). `python main.py` now also supports a test-only clean-close override for automation via `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1`.
 
 ## Post-Implementation Update
 - Follow-up implementation waves after this audit have already reduced some of the highest-risk areas without changing user-facing behavior:
@@ -83,6 +83,7 @@ Interpretation:
   - [app/ui/history_row.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row.py:1) now delegates trigger normalization, timestamp formatting, and status-text derivation to [app/ui/history_row_presenter.py](/mnt/d/ProjectLocal/identa report/app/ui/history_row_presenter.py:1).
   - [app/ui/export_job_tile.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile.py:1) now delegates status/schedule/timestamp presentation to [app/ui/export_job_tile_presenter.py](/mnt/d/ProjectLocal/identa report/app/ui/export_job_tile_presenter.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates tray visibility, close-to-tray, and shutdown cleanup behavior to [app/ui/main_window_lifecycle.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_lifecycle.py:1).
+  - [app/ui/main_window_lifecycle.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_lifecycle.py:1) now also recognizes the test-only env override `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1`, allowing automated smoke runs to exit cleanly without changing normal close-to-tray behavior.
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates lazy debug-window lifetime and toggling to [app/ui/main_window_debug.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_debug.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates navigation state and sidebar shell wiring to [app/ui/main_window_navigation.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_navigation.py:1).
   - [app/ui/main_window.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window.py:1) now also delegates remaining cross-widget update/export routing and tray failure alerts to [app/ui/main_window_signal_router.py](/mnt/d/ProjectLocal/identa report/app/ui/main_window_signal_router.py:1).
@@ -104,10 +105,10 @@ Interpretation:
   - Leaf UI helpers have been extracted from [app/ui/debug_window.py](/mnt/d/ProjectLocal/identa report/app/ui/debug_window.py:1), [app/ui/error_dialog.py](/mnt/d/ProjectLocal/identa report/app/ui/error_dialog.py:1), [app/ui/sql_editor.py](/mnt/d/ProjectLocal/identa report/app/ui/sql_editor.py:1), and [app/ui/title_bar.py](/mnt/d/ProjectLocal/identa report/app/ui/title_bar.py:1) into focused helper modules.
   - A validated dependency constraints file now exists in [constraints-py314-win.txt](/mnt/d/ProjectLocal/identa report/constraints-py314-win.txt:1) for the known-green Windows 11 / Python 3.14.4 stack.
 - Fresh Windows validation evidence after these changes:
-  - `python -m pytest tests/ -q` → `276 passed in 2.91s`
+  - `python -m pytest tests/ -q` → `277 passed in 3.00s`
   - `python tools/perf_smoke.py --scenario all --cycles 1 --top 8` → `positive_retained_kib=1714.9` with the largest retained buckets dominated by first-load Python/Qt allocations plus `app/ui/export_jobs_pages.py` and `app/ui/main_window_navigation.py`
   - `python tools/perf_smoke.py --scenario export-editor --cycles 5 --top 8` → `positive_retained_kib=993.4`, down from the earlier `1681.1 KiB` after lazy-loading `sqlglot`, removing eager syntax validation on initial editor load, and caching highlighter assets
-  - `python main.py` on Windows 11 / Python 3.14.4 → started successfully; automated shell cleanup still follows the current close-to-tray path and required a force-stop (`Exited=True`, `ExitCode=-1`)
+  - `python main.py` on Windows 11 / Python 3.14.4 with `IDENTBRIDGE_FORCE_QUIT_ON_CLOSE=1` → started successfully and exited cleanly (`Exited=True`, `ExitCode=0`)
   - `python -m PyInstaller build.spec --noconfirm --distpath build/dist --workpath build/work --clean` → built `build/dist/iDentSync.exe`
   - `build/dist/iDentSync.exe` → started and closed cleanly (`Exited=True`)
 - Remaining findings below should be read as the original audit baseline plus any items that still remain open after the first modernization/decomposition wave.
