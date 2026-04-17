@@ -42,3 +42,13 @@
 - **Tag:** `stage-4-passed-20260417`
 - **Scope:** DatabaseClient Protocol + factory (audit G-2/I; API-only, physical move deferred to Stage 5)
 
+## Stage 5A — 2026-04-17
+
+- **N.1 pytest:** PASS — 377 passed in 2.37 s (+9 canonical-path tests)
+- **N.2 launch smoke:** PASS — `positive_retained_kib=2073.0` (baseline 2362.7, delta **−12.3 %**)
+- **N.3 build:** PASS — `dist/iDentSync.exe` 40 747 539 bytes (40.7 MB)
+- **N.4 EXE smoke:** PASS — process alive 15 s, killed cleanly
+- **Tag:** `stage-5a-passed-20260417`
+- **Scope:** Canonical paths for `app/domain/`, `app/platform/`, `app/log_ext/` (re-export shims; no physical moves yet)
+- **Deferred (waves 5B / 5C):** split `app/config.py` into `app/config/` package; move UI families into `app/ui/<feature>/` subpackages. Both are mechanical but touch 70+ import sites and are safer to perform in an isolated session with the full focus of the tooling.
+
