@@ -16,14 +16,18 @@ Pipeline steps (emitted via progress signal):
 
 from __future__ import annotations
 
+import json
 import logging
+import traceback
 from datetime import datetime, timezone
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from app.config import AppConfig, ExportJob, SyncResult
+from app.core.log_sanitizer import mask_secrets
 from app.core.sql_client import SqlClient  # noqa: F401 - kept for test monkeypatch compat
 from app.export.pipeline import build_pipeline_for_job
+from app.export.sinks.google_apps_script import GoogleAppsScriptDeliveryError
 # Backwards-compatible re-exports. Callers (incl. tests) historically
 # imported these names from this module.
 from app.export.sinks.webhook import (  # noqa: F401
@@ -65,6 +69,30 @@ class ExportWorker(QObject):
         try:
             result = pipeline.run(self._job, progress=self.progress.emit)
             self.finished.emit(result)
+        except GoogleAppsScriptDeliveryError as exc:
+            self.error.emit(exc.user_message)
+            _log.error("Ошибка выгрузки '%s': %s", job_name, exc.user_message)
+            debug_context = mask_secrets(
+                json.dumps(
+                    exc.debug_context,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    default=str,
+                )
+            )
+            _log.debug("GAS debug_context: %s", debug_context)
+            tb = "".join(
+                traceback.format_exception(type(exc), exc, exc.__traceback__)
+            )
+            _log.debug("GAS traceback: %s", mask_secrets(tb))
+            self.finished.emit(
+                SyncResult(
+                    success=False,
+                    rows_synced=0,
+                    error=exc.user_message,
+                    timestamp=datetime.now(timezone.utc),
+                )
+            )
         except Exception as exc:  # noqa: BLE001
             msg = str(exc)
             _log.error("Ошибка выгрузки '%s': %s", job_name, msg)

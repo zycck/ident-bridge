@@ -49,6 +49,20 @@ def test_export_job_tile_presenter_formats_error_status_and_interval_modes() -> 
     assert display.schedule_text == "Каждые 5 мин"
 
 
+def test_export_job_tile_presenter_truncates_long_short_error_for_tile_only() -> None:
+    msg = "Не удалось доставить данные: 2/5 чанков. Подробности в Debug. И еще немного текста."
+    display = build_export_job_tile_display(
+        {
+            "history": [
+                {"ts": "2026-04-15 09:15:00", "ok": False, "err": msg},
+            ],
+        },
+        now=datetime(2026, 4, 16, 15, 30, 0),
+    )
+
+    assert display.status_text == f"✗ {msg[:40]}"
+
+
 def test_export_job_tile_presenter_handles_unknown_schedule_modes() -> None:
     display = build_export_job_tile_display(
         {

@@ -59,11 +59,11 @@ def test_progress_and_success_restore_ui_and_emit_sync() -> None:
     controller.start_manual()
 
     _, on_finished, _, on_progress = started[0]
-    on_progress(2, "Отправка webhook…")
+    on_progress(2, "Отправка данных... 2/5")
     on_finished(_success_result())
 
-    assert ("progress", "Отправка webhook…") in events
-    assert ("status", "running", "Отправка webhook…") in events
+    assert ("progress", "Отправка данных... 2/5") in events
+    assert ("status", "running", "Отправка данных... 2/5") in events
     assert ("run_enabled", True) in events
     assert ("sync", 9) in events
     history_events = [item for item in events if item[0] == "history"]

@@ -38,9 +38,14 @@ APP_NAME = "iDentBridge"
 LEGACY_RUNTIME_NAME = "iDentSync"
 CONFIG_DIR_NAME = LEGACY_RUNTIME_NAME
 EXE_NAME = LEGACY_RUNTIME_NAME
-APP_VERSION = "0.0.1"
+APP_VERSION = "0.1.0"
 USER_AGENT = f"{APP_NAME}/{APP_VERSION}"
 
 # ── Misc ─────────────────────────────────────────────────────────────
 MIN_DOWNLOAD_BYTES = 1_000_000
 MAX_WEBHOOK_ROWS   = 50_000   # safety cap to prevent OOM on huge query results
+GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK = 10_000
+GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES = 5 * 1024 * 1024
+GOOGLE_SCRIPT_RETRIES = 3
+GOOGLE_SCRIPT_TIMEOUT = 20.0
+GOOGLE_SCRIPT_HOSTS = ("script.google.com", "script.googleusercontent.com")

@@ -24,11 +24,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
-from app.core.constants import MAX_WEBHOOK_ROWS
+from app.core.constants import GOOGLE_SCRIPT_HOSTS, MAX_WEBHOOK_ROWS
 from app.core.sql_client import SqlClient
 from app.export.protocol import ExportSink
+from app.export.sinks.google_apps_script import GoogleAppsScriptSink
 from app.export.sinks.webhook import WebhookSink
 
 _log = logging.getLogger(__name__)
@@ -76,7 +78,11 @@ class ExportPipeline:
 
             progress(2, "Отправка данных...")
             if self.sink is not None:
-                self.sink.push(job_name, result)
+                self.sink.push(
+                    job_name,
+                    result,
+                    on_progress=lambda text: progress(2, text),
+                )
             else:
                 self.logger.info(
                     "Выгрузка '%s': %d строк (webhook не настроен)",
@@ -110,15 +116,27 @@ def build_pipeline_for_job(
     DatabaseClient-factory wiring (see audit plan I.4).
     """
     db = sql_client_cls(cfg)
-
-    webhook_url = (job.get("webhook_url") or "").strip()
-    sink: ExportSink | None
-    if webhook_url:
-        sink = WebhookSink(webhook_url, max_rows=MAX_WEBHOOK_ROWS)
-    else:
-        sink = None
+    sink = resolve_export_sink(job.get("webhook_url") or "")
 
     return ExportPipeline(db=db, sink=sink)
 
 
-__all__ = ["ExportPipeline", "ProgressCallback", "build_pipeline_for_job"]
+def resolve_export_sink(webhook_url: str) -> ExportSink | None:
+    """Return the appropriate sink for a configured export URL."""
+    url = webhook_url.strip()
+    if not url:
+        return None
+
+    parsed = urlsplit(url)
+    host = (parsed.hostname or "").lower()
+    if host in GOOGLE_SCRIPT_HOSTS:
+        return GoogleAppsScriptSink(url)
+    return WebhookSink(url, max_rows=MAX_WEBHOOK_ROWS)
+
+
+__all__ = [
+    "ExportPipeline",
+    "ProgressCallback",
+    "build_pipeline_for_job",
+    "resolve_export_sink",
+]

@@ -129,6 +129,19 @@ def test_push_calls_urlopen_once_on_success(monkeypatch):
     assert calls[0].full_url == "https://example.com/hook"
 
 
+def test_push_accepts_progress_callback_but_stays_one_shot(monkeypatch):
+    calls = []
+    progress = []
+    monkeypatch.setattr(
+        "app.export.sinks.webhook.urllib.request.urlopen",
+        lambda req, **kw: (calls.append(req), _FakeResp(200))[1],
+    )
+    sink = WebhookSink("https://example.com/hook")
+    sink.push("Job", _qr(), on_progress=progress.append)
+    assert len(calls) == 1
+    assert progress == []
+
+
 def test_push_retries_then_succeeds(monkeypatch):
     attempts = {"n": 0}
 

@@ -64,7 +64,7 @@ def _mask_url(match: re.Match[str]) -> str:
     return masked + trailing
 
 
-def _mask_str(text: str) -> str:
+def mask_secrets(text: str) -> str:
     """Apply all mask rules to a single string."""
     text = _URL_RE.sub(_mask_url, text)
     text = _PWD_RE.sub(r"\1***", text)
@@ -75,7 +75,7 @@ def _mask_str(text: str) -> str:
 def _mask_any(value: Any) -> Any:
     """Mask strings inside arbitrary values; return non-strings unchanged."""
     if isinstance(value, str):
-        return _mask_str(value)
+        return mask_secrets(value)
     return value
 
 
@@ -94,8 +94,8 @@ class SecretFilter(logging.Filter):
             elif isinstance(record.args, dict):
                 record.args = {k: _mask_any(v) for k, v in record.args.items()}
         if isinstance(record.msg, str):
-            record.msg = _mask_str(record.msg)
+            record.msg = mask_secrets(record.msg)
         return True
 
 
-__all__ = ["SecretFilter"]
+__all__ = ["SecretFilter", "mask_secrets"]

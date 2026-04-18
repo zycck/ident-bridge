@@ -8,8 +8,13 @@ from typing import Any
 import pytest
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
-from app.export.pipeline import ExportPipeline, build_pipeline_for_job
+from app.export.pipeline import (
+    ExportPipeline,
+    build_pipeline_for_job,
+    resolve_export_sink,
+)
 from app.export.protocol import ExportSink
+from app.export.sinks.google_apps_script import GoogleAppsScriptSink
 
 
 # --- fakes ---------------------------------------------------------------
@@ -47,8 +52,22 @@ class _CountingSink:
     def __post_init__(self) -> None:
         self.pushes = []
 
-    def push(self, job_name: str, result: QueryResult) -> None:
+    def push(self, job_name: str, result: QueryResult, *, on_progress=None) -> None:
         self.pushes.append((job_name, result))
+
+
+@dataclass
+class _ProgressSink:
+    name: str = "progress"
+    callbacks: list[str] = None  # type: ignore
+
+    def __post_init__(self) -> None:
+        self.callbacks = []
+
+    def push(self, job_name: str, result: QueryResult, *, on_progress=None) -> None:
+        assert on_progress is not None
+        on_progress("Отправка данных... 1/1")
+        self.callbacks.append(job_name)
 
 
 def _job(*, webhook: str = "", sql: str = "SELECT 1") -> ExportJob:
@@ -103,6 +122,14 @@ def test_progress_callback_receives_all_four_steps():
     assert [s for s, _ in events] == [0, 1, 2, 3]
 
 
+def test_pipeline_forwards_step_two_updates_from_sink():
+    db = _FakeDb(_qr())
+    events: list[tuple[int, str]] = []
+    p = ExportPipeline(db=db, sink=_ProgressSink())
+    p.run(_job(), progress=lambda s, m: events.append((s, m)))
+    assert (2, "Отправка данных... 1/1") in events
+
+
 # --- error paths ---------------------------------------------------------
 
 
@@ -136,7 +163,7 @@ def test_sink_failure_propagates_and_disconnects():
     class _BadSink:
         name = "bad"
 
-        def push(self, job_name, result):
+        def push(self, job_name, result, *, on_progress=None):
             raise RuntimeError("network down")
 
     db = _FakeDb(_qr())
@@ -163,12 +190,28 @@ def test_factory_picks_webhook_sink_when_url_set():
     assert p.sink.name == "webhook"
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://script.google.com/macros/s/abc/exec",
+        "https://script.googleusercontent.com/macros/s/abc/exec",
+    ],
+)
+def test_resolve_export_sink_detects_google_apps_script_hosts(url: str) -> None:
+    sink = resolve_export_sink(url)
+    assert isinstance(sink, GoogleAppsScriptSink)
+
+
 def test_factory_no_sink_when_url_empty():
     class _Spy:
         def __init__(self, cfg): pass
 
     p = build_pipeline_for_job(AppConfig(), _job(webhook=""), sql_client_cls=_Spy)
     assert p.sink is None
+
+
+def test_resolve_export_sink_returns_none_for_empty_url():
+    assert resolve_export_sink("") is None
 
 
 def test_factory_uses_provided_sql_client_class():

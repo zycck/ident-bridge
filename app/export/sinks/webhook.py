@@ -110,7 +110,13 @@ class WebhookSink:
 
     # ------------------------------------------------------------------
 
-    def push(self, job_name: str, result: QueryResult) -> None:
+    def push(
+        self,
+        job_name: str,
+        result: QueryResult,
+        *,
+        on_progress=None,
+    ) -> None:
         if self._max_rows is not None and result.count > self._max_rows:
             msg = (
                 f"Слишком много строк для webhook ({result.count} > "

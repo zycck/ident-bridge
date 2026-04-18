@@ -1,0 +1,13 @@
+{
+  "ok": false,
+  "error_code": "SCHEMA_MISMATCH_RENAME_OR_REMOVE",
+  "retryable": false,
+  "run_id": "run-2026-04-18-001",
+  "chunk_index": 1,
+  "message": "Incoming columns removed or renamed existing columns",
+  "details": {
+    "missing_columns": ["email"],
+    "existing_columns": ["id", "email", "status"],
+    "incoming_columns": ["id", "status"]
+  }
+}

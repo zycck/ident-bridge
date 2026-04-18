@@ -1,10 +1,12 @@
 """Tests for app.workers.export_worker.ExportWorker."""
 import json
+import logging
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.config import AppConfig, ExportJob, SyncResult
+from app.export.sinks.google_apps_script import GoogleAppsScriptDeliveryError
 from app.workers.export_worker import ExportWorker, build_webhook_payload
 
 
@@ -378,3 +380,47 @@ def test_finished_always_emitted_on_webhook_failure(
     c = _run_worker_sync(worker)
 
     assert len(c.finished_emissions) == 1
+
+
+def test_gas_delivery_error_emits_user_message_and_sanitized_debug_logs(
+    base_cfg, monkeypatch, mock_sql_client, caplog, qtbot,
+):
+    gas_job = ExportJob(
+        id="gas",
+        name="GAS Export",
+        sql_query="SELECT id FROM users",
+        webhook_url="https://script.googleusercontent.com/macros/s/secret/exec?token=abc",
+        schedule_enabled=False,
+        schedule_mode="daily",
+        schedule_value="",
+        history=[],
+    )
+
+    def _fail_push(self, job_name, result, *, on_progress=None):
+        raise GoogleAppsScriptDeliveryError(
+            "Не удалось доставить данные: 0/1 чанков",
+            run_id="run-1",
+            delivered_chunks=0,
+            delivered_rows=0,
+            failed_chunk_index=1,
+            debug_context={
+                "url": "https://script.googleusercontent.com/macros/s/secret/exec?token=abc",
+                "credentials": "UID=admin;PWD=top_secret",
+            },
+        )
+
+    monkeypatch.setattr(
+        "app.export.sinks.google_apps_script.GoogleAppsScriptSink.push",
+        _fail_push,
+    )
+    caplog.set_level(logging.DEBUG)
+
+    worker = ExportWorker(base_cfg, gas_job)
+    c = _run_worker_sync(worker)
+
+    assert c.error_emissions == ["Не удалось доставить данные: 0/1 чанков"]
+    assert c.finished_emissions[0].success is False
+    assert "top_secret" not in caplog.text
+    assert "token=abc" not in caplog.text
+    assert "GAS debug_context:" in caplog.text
+    assert "GAS traceback:" in caplog.text

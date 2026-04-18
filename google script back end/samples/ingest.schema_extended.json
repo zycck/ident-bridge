@@ -1,0 +1,27 @@
+{
+  "protocol_version": "gas-sheet.v1",
+  "job_name": "nightly_export",
+  "run_id": "run-2026-04-18-001",
+  "chunk_index": 1,
+  "total_chunks": 2,
+  "total_rows": 4,
+  "chunk_rows": 2,
+  "chunk_bytes": 240,
+  "schema": {
+    "mode": "append_only_v1",
+    "columns": ["id", "email", "status"],
+    "checksum": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
+  },
+  "records": [
+    {
+      "id": "3",
+      "email": "c@example.com",
+      "status": "active"
+    },
+    {
+      "id": "4",
+      "email": "d@example.com",
+      "status": "paused"
+    }
+  ]
+}

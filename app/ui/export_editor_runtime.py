@@ -52,18 +52,19 @@ class ExportEditorRuntimeState:
         now: datetime,
         alert_threshold: int,
     ) -> ExportEditorRuntimeUpdate:
+        normalized = self._normalize_error_message(msg)
         self.consecutive_failures += 1
         alert_count = None
         if self.consecutive_failures >= alert_threshold:
             alert_count = self.consecutive_failures
         return ExportEditorRuntimeUpdate(
             status_kind="error",
-            status_text=f"✗ {msg[:70]}",
+            status_text=f"✗ {normalized[:70]}",
             entry=self._history_entry(
                 trigger=self._current_trigger,
                 ok=False,
                 ts=now.strftime("%Y-%m-%d %H:%M:%S"),
-                err=msg,
+                err=normalized,
             ),
             alert_count=alert_count,
         )
@@ -97,7 +98,8 @@ class ExportEditorRuntimeState:
             else:
                 ts_short = ts_text
             return "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}"
-        return "error", f"✗ {latest.get('err', 'Ошибка')[:70]}"
+        err = ExportEditorRuntimeState._normalize_error_message(latest.get("err", "Ошибка"))
+        return "error", f"✗ {err[:70]}"
 
     @staticmethod
     def _history_entry(
@@ -115,3 +117,12 @@ class ExportEditorRuntimeState:
             "rows": rows,
             "err": err,
         }
+
+    @staticmethod
+    def _normalize_error_message(msg: str) -> str:
+        lines = [line.strip() for line in (msg or "").splitlines() if line.strip()]
+        if not lines:
+            return "Ошибка"
+        if lines[0].startswith("Traceback"):
+            return lines[-1]
+        return lines[0]

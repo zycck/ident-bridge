@@ -48,3 +48,19 @@ def test_build_history_row_display_falls_back_to_manual_and_preserves_error_tool
     assert display.trigger_label == "Вручную"
     assert display.status_text.startswith("✗  ")
     assert display.status_tooltip == "Очень длинная ошибка"
+
+
+def test_build_history_row_display_keeps_full_short_error_in_tooltip() -> None:
+    msg = "Не удалось доставить данные: 2/5 чанков. Подробности в Debug."
+    display = build_history_row_display(
+        {
+            "ts": "2026-04-14 09:15:00",
+            "trigger": "manual",
+            "ok": False,
+            "err": msg,
+        },
+        now=datetime(2026, 4, 16, 15, 30, 0),
+    )
+
+    assert display.status_text.startswith("✗  Не удалось доставить данные")
+    assert display.status_tooltip == msg

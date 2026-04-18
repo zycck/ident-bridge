@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "status": "schema_extended",
+  "run_id": "run-2026-04-18-001",
+  "chunk_index": 1,
+  "rows_received": 2,
+  "rows_written": 2,
+  "retryable": false,
+  "schema_action": "extended",
+  "added_columns": ["id", "email"],
+  "message": "Chunk written successfully"
+}

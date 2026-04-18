@@ -34,6 +34,7 @@ App identity constants live in `app/core/constants.py`.
 | Failure notifications | manual | ~1 min |
 | Settings persistence | manual | 1 min |
 | Debug console | manual | 30 sec |
+| GAS chunked webhook | manual with real GAS endpoint | ~3 min |
 | Performance smoke | `python tools/perf_smoke.py --scenario all --cycles 5` | ~10 sec |
 | Full release checklist | `docs/VERIFICATION.md` | 15 min |
 
@@ -99,6 +100,7 @@ normal top-level close request, yielding a clean exit for automation.
 |---|---|---|
 | `tests/test_scheduler.py` | supported schedule modes, centralized value validation, jitter (±5 %), DST, timezone-aware next\_run, signal emission, stop/start lifecycle, invalid-mode validation | 38 |
 | `tests/test_export_worker.py` | 4-step pipeline (connect → query → webhook → disconnect), DB errors, webhook errors, retry, SyncResult, direct webhook payload serialization | 17 |
+| `tests/test_google_apps_script_sink.py` | chunk planning, JSON envelope, ack parsing, duplicate/retryable/non-retryable ack handling, partial delivery, UTF-8 byte boundaries | 15 |
 | `tests/test_lucide_icon_loader.py` | extracted Lucide loader: dev/frozen icon-path resolution and helpful missing-icon diagnostics | 4 |
 | `tests/test_config.py` | DPAPI roundtrip, update/merge, migration of legacy fields, JSON corruption resilience, save/load roundtrip, atomic save, config-dir fallback | 19 |
 | `tests/test_threading.py` | `run_worker` factory, GC pin attribute, thread lifecycle, on\_error / on\_finished callbacks, pre-start `connect_signals`, late signal connection safety | 14 |
@@ -153,6 +155,9 @@ These are tested by the manual sections that follow:
 - **Real ODBC connection** — the SQL client is mocked; no actual
   SQL Server is contacted
 - **Real webhook call** — HTTP is mocked; no actual POST is sent
+- **Real Google Apps Script backend** — no actual GAS deployment,
+  sheet append, schema extension, or duplicate replay is exercised
+  by unit tests
 - **Real Windows registry** — winreg is mocked; nothing is written
   to HKCU during tests
 - **Real tray icon rendering** — the tray is created offscreen;
@@ -176,6 +181,17 @@ These are tested by the manual sections that follow:
   prefer the pinned constraints file:
   `pip install -r requirements.txt -r requirements-dev.txt -c constraints-py314-win.txt`
 
+### Google Apps Script manual focus
+
+After the automated suite is green, manually validate the GAS path on a
+real deployed endpoint:
+
+- multi-chunk delivery for a result larger than `10000` rows
+- duplicate-safe replay for the same `run_id/chunk_index/checksum`
+- additive schema extension when one new SQL column appears
+- clean failure when a previously existing column disappears or is renamed
+- debug panel sanitization: no raw payload rows, URL tokens, or `UID/PWD`
+
 ---
 
 ## 2. Headless smoke (5 seconds)
@@ -198,7 +214,7 @@ qss = main._load_theme()
 app.setStyleSheet(qss)
 from app.config import ConfigManager
 from app.ui.main_window import MainWindow
-window = MainWindow(ConfigManager(), '0.0.1-test')
+window = MainWindow(ConfigManager(), '0.1.0-test')
 print('MainWindow constructs OK')
 "
 ```

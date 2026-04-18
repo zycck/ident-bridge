@@ -6,7 +6,7 @@ import logging
 
 import pytest
 
-from app.core.log_sanitizer import SecretFilter
+from app.core.log_sanitizer import SecretFilter, mask_secrets
 
 
 def _make_record(msg: str, args: object = ()) -> logging.LogRecord:
@@ -24,6 +24,14 @@ def sanitized() -> SecretFilter:
 def _render(record: logging.LogRecord) -> str:
     """Format the record the same way a real handler would."""
     return logging.Formatter("%(message)s").format(record)
+
+
+def test_mask_secrets_is_public_helper():
+    masked = mask_secrets("https://example.com/hook?token=abc;PWD=secret;UID=user")
+    assert "abc" not in masked
+    assert "secret" not in masked
+    assert "user" not in masked
+    assert "example.com" in masked
 
 
 # --- URL masking ---------------------------------------------------------

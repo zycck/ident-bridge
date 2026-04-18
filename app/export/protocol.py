@@ -3,8 +3,8 @@
 A sink is anything with:
 
 * a string ``name`` (used for logging and future selection/registry),
-* a ``push(job_name, result)`` method that does whatever I/O the sink
-  needs and raises on failure.
+* a ``push(job_name, result, *, on_progress=None)`` method that does
+  whatever I/O the sink needs and raises on failure.
 
 Marking the protocol ``runtime_checkable`` lets tests assert structural
 conformance without forcing inheritance.
@@ -12,7 +12,7 @@ conformance without forcing inheritance.
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from app.config import QueryResult
 
@@ -28,7 +28,13 @@ class ExportSink(Protocol):
 
     name: str
 
-    def push(self, job_name: str, result: QueryResult) -> None:
+    def push(
+        self,
+        job_name: str,
+        result: QueryResult,
+        *,
+        on_progress: Callable[[str], None] | None = None,
+    ) -> None:
         """Deliver ``result`` to the sink. Raise on failure."""
         ...
 

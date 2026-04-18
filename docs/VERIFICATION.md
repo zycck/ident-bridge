@@ -131,6 +131,34 @@ behaviour are not meaningful from WSL/Linux.
 5. Close the packaged app
 6. **Verify:** the process exits cleanly
 
+## 12. Google Apps Script chunked webhook
+This verifies the new Google Apps Script path with chunking, schema
+evolution, duplicate-safe retries, and sanitized failure handling.
+
+1. Deploy the backend from `google script back end/` as a web app
+2. Configure the spreadsheet/sheet target as described in
+   `google script back end/README.md`
+3. In the app create a new export job and paste the deployed GAS web
+   app URL into **Webhook URL**
+4. Use a query that returns more than `10000` rows
+5. Run the export manually
+6. **Verify:** progress text advances through
+   `Отправка данных... 1/N`, `2/N`, ..., `N/N`
+7. **Verify:** the target sheet receives all rows without duplicates
+8. **Verify:** the run finishes successfully and history stores only a
+   short user-facing message
+9. Add one new extra column to the SQL query and run again
+10. **Verify:** the sheet header extends only to the right and old
+    columns stay on their original positions
+11. Remove or effectively rename one previously existing column and run again
+12. **Verify:** the run fails cleanly, the app stays alive, and the
+    debug console shows a sanitized technical dump without raw payload
+    rows, URL tokens, or credentials
+13. Re-send the same chunk payload manually using the sample files or a
+    replay against the same `run_id/chunk_index/checksum`
+14. **Verify:** the backend returns duplicate-safe success and the sheet
+    does not receive duplicated rows
+
 ---
 
 ## Cleanup after verification

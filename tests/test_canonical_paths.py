@@ -56,8 +56,9 @@ def test_log_ext_qt_handler_reexports():
 
 def test_log_ext_sanitizer_reexports():
     from app.core.log_sanitizer import SecretFilter as LegacyFilter
-    from app.log_ext.sanitizer import SecretFilter
+    from app.log_ext.sanitizer import SecretFilter, mask_secrets
     assert SecretFilter is LegacyFilter
+    assert mask_secrets("https://example.com/x?token=1").startswith("https://example.com")
 
 
 def test_log_ext_package_bundles_common_api():

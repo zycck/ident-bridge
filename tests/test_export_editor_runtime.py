@@ -52,6 +52,22 @@ def test_runtime_state_counts_failures_and_alert_threshold() -> None:
     assert state.consecutive_failures == 3
     assert payload.entry["trigger"] == TriggerType.MANUAL.value
     assert payload.entry["ok"] is False
+    assert payload.entry["err"] == "db down"
+
+
+def test_runtime_state_normalizes_traceback_like_error_to_last_meaningful_line() -> None:
+    state = ExportEditorRuntimeState()
+    state.mark_manual_trigger()
+    state.begin_run()
+
+    payload = state.on_error(
+        "Traceback (most recent call last):\n  File \"x\", line 1\nValueError: broken ack",
+        now=datetime(2026, 1, 1, 12, 0, 0),
+        alert_threshold=3,
+    )
+
+    assert payload.status_text == "✗ ValueError: broken ack"
+    assert payload.entry["err"] == "ValueError: broken ack"
 
 
 def test_runtime_state_restores_status_from_latest_history_entry() -> None:

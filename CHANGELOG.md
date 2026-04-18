@@ -3,12 +3,10 @@
 ## [Unreleased]
 
 ### Added
-- Initial project structure
-- SQL Server auto-discovery via winreg + sqlcmd
-- DPAPI-encrypted credential storage
-- System tray + Windows startup registration
-- GitHub auto-update mechanism
-- Scheduled sync (daily / hourly / cron)
+- Chunked Google Apps Script webhook delivery with per-chunk retries
+- Automatic Google Apps Script sink selection for supported webhook hosts
+- Structured partial-delivery error handling with sanitized debug logging
+- Google Apps Script backend template with schema evolution and idempotency examples
 
-## [0.0.1] - TBD
+## [0.1.0] - TBD
 - Initial release
