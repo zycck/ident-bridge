@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.config import ExportJob
+from app.ui.export_editor_runtime import format_short_user_error
 from app.ui.formatters import format_relative_timestamp
 from app.ui.theme import Theme
 
@@ -42,7 +43,7 @@ def _build_status_text(job: ExportJob, now: datetime) -> str:
         return f"✓ {latest.get('rows', 0)} строк · {ts_short}"
 
     err = latest.get("err", "Ошибка")
-    return f"✗ {err[:40]}"
+    return f"✗ {format_short_user_error(err, max_length=40)}"
 
 
 def _build_status_color(job: ExportJob) -> str:

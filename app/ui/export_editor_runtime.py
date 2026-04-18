@@ -5,6 +5,8 @@ from datetime import datetime
 
 from app.config import ExportHistoryEntry, SyncResult, TriggerType
 
+_SHORT_ERROR_STATUS_LIMIT = 70
+
 
 @dataclass(frozen=True)
 class ExportEditorRuntimeUpdate:
@@ -52,19 +54,20 @@ class ExportEditorRuntimeState:
         now: datetime,
         alert_threshold: int,
     ) -> ExportEditorRuntimeUpdate:
-        normalized = self._normalize_error_message(msg)
         self.consecutive_failures += 1
         alert_count = None
         if self.consecutive_failures >= alert_threshold:
             alert_count = self.consecutive_failures
         return ExportEditorRuntimeUpdate(
             status_kind="error",
-            status_text=f"✗ {normalized[:70]}",
+            status_text=(
+                f"✗ {format_short_user_error(msg, max_length=_SHORT_ERROR_STATUS_LIMIT)}"
+            ),
             entry=self._history_entry(
                 trigger=self._current_trigger,
                 ok=False,
                 ts=now.strftime("%Y-%m-%d %H:%M:%S"),
-                err=normalized,
+                err=normalize_short_user_error(msg),
             ),
             alert_count=alert_count,
         )
@@ -82,7 +85,7 @@ class ExportEditorRuntimeState:
             ok=ok,
             ts=now.strftime("%Y-%m-%d %H:%M"),
             rows=rows,
-            err=err,
+            err=normalize_short_user_error(err, default="") if err else "",
         )
 
     @staticmethod
@@ -98,8 +101,9 @@ class ExportEditorRuntimeState:
             else:
                 ts_short = ts_text
             return "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}"
-        err = ExportEditorRuntimeState._normalize_error_message(latest.get("err", "Ошибка"))
-        return "error", f"✗ {err[:70]}"
+        return "error", (
+            f"✗ {format_short_user_error(latest.get('err', ''), max_length=_SHORT_ERROR_STATUS_LIMIT)}"
+        )
 
     @staticmethod
     def _history_entry(
@@ -118,11 +122,43 @@ class ExportEditorRuntimeState:
             "err": err,
         }
 
-    @staticmethod
-    def _normalize_error_message(msg: str) -> str:
-        lines = [line.strip() for line in (msg or "").splitlines() if line.strip()]
-        if not lines:
-            return "Ошибка"
-        if lines[0].startswith("Traceback"):
-            return lines[-1]
-        return lines[0]
+
+def normalize_short_user_error(message: str | None, *, default: str = "Ошибка") -> str:
+    """Collapse a transport error down to a single short user-facing line."""
+    text = (message or "").strip()
+    if not text:
+        return default
+
+    lines = [raw_line.strip() for raw_line in text.splitlines() if raw_line.strip()]
+    if lines and lines[0].startswith("Traceback"):
+        return " ".join(lines[-1].split()) or default
+
+    for line in lines:
+        if _looks_technical_error_line(line):
+            continue
+        short = " ".join(line.split())
+        if short:
+            return short
+    return default
+
+
+def format_short_user_error(message: str | None, *, max_length: int) -> str:
+    """Format a short user error for compact labels."""
+    text = normalize_short_user_error(message)
+    if len(text) <= max_length:
+        return text
+    if max_length <= 1:
+        return "…"
+    return f"{text[: max_length - 1].rstrip()}…"
+
+
+def _looks_technical_error_line(line: str) -> bool:
+    technical_prefixes = (
+        "Traceback (most recent call last):",
+        "File ",
+        "During handling of the above exception:",
+        "The above exception was the direct cause of the following exception:",
+        "Exception in",
+        "Caused by:",
+    )
+    return line.startswith(technical_prefixes)

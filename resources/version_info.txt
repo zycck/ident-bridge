@@ -22,7 +22,7 @@ VSVersionInfo(
           '040904B0',
           [
             StringStruct('CompanyName',      'iDentBridge'),
-            StringStruct('FileDescription',  'iDentBridge — SQL to webhook bridge'),
+            StringStruct('FileDescription',  'iDentBridge'),
             StringStruct('FileVersion',      '0.1.0'),
             StringStruct('InternalName',     'iDentBridge'),
             StringStruct('LegalCopyright',   '(c) 2026 iDentBridge'),

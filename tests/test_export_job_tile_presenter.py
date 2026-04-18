@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from app.ui.export_editor_runtime import format_short_user_error
 from app.ui.export_job_tile_presenter import build_export_job_tile_display
 
 
@@ -39,13 +40,17 @@ def test_export_job_tile_presenter_formats_error_status_and_interval_modes() -> 
             "schedule_mode": "minutely",
             "schedule_value": "5",
             "history": [
-                {"ts": "2026-04-15 09:15:00", "ok": False, "err": "Очень длинная ошибка"},
+                {
+                    "ts": "2026-04-15 09:15:00",
+                    "ok": False,
+                    "err": "Ошибка публикации в Apps Script.\n\nTraceback (most recent call last):\n  File \"worker.py\", line 1",
+                },
             ],
         },
         now=datetime(2026, 4, 16, 15, 30, 0),
     )
 
-    assert display.status_text == "✗ Очень длинная ошибка"
+    assert display.status_text == "✗ Ошибка публикации в Apps Script."
     assert display.schedule_text == "Каждые 5 мин"
 
 
@@ -60,7 +65,7 @@ def test_export_job_tile_presenter_truncates_long_short_error_for_tile_only() ->
         now=datetime(2026, 4, 16, 15, 30, 0),
     )
 
-    assert display.status_text == f"✗ {msg[:40]}"
+    assert display.status_text == f"✗ {format_short_user_error(msg, max_length=40)}"
 
 
 def test_export_job_tile_presenter_handles_unknown_schedule_modes() -> None:

@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.config import ExportHistoryEntry, TriggerType
+from app.ui.export_editor_runtime import (
+    format_short_user_error,
+    normalize_short_user_error,
+)
 from app.ui.formatters import format_relative_timestamp
 from app.ui.theme import Theme
 
@@ -54,9 +58,9 @@ def build_history_row_display(
         status_tooltip = ""
     else:
         err = entry.get("err", "Ошибка")
-        status_text = f"✗  {err[:55]}"
+        status_text = f"✗ {format_short_user_error(err, max_length=55)}"
         status_color = Theme.error
-        status_tooltip = err
+        status_tooltip = normalize_short_user_error(err)
 
     return HistoryRowDisplay(
         icon_name=icon_name,

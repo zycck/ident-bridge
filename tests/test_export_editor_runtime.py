@@ -42,7 +42,7 @@ def test_runtime_state_counts_failures_and_alert_threshold() -> None:
         state.mark_manual_trigger()
         state.begin_run()
         payload = state.on_error(
-            "db down",
+            "Ошибка отправки данных.\n\nTraceback (most recent call last):\n  File \"worker.py\", line 1",
             now=datetime(2026, 1, 1, 12, 0, 0),
             alert_threshold=3,
         )
@@ -52,7 +52,8 @@ def test_runtime_state_counts_failures_and_alert_threshold() -> None:
     assert state.consecutive_failures == 3
     assert payload.entry["trigger"] == TriggerType.MANUAL.value
     assert payload.entry["ok"] is False
-    assert payload.entry["err"] == "db down"
+    assert payload.entry["err"] == "Ошибка отправки данных."
+    assert payload.status_text == "✗ Ошибка отправки данных."
 
 
 def test_runtime_state_normalizes_traceback_like_error_to_last_meaningful_line() -> None:
@@ -86,9 +87,9 @@ def test_runtime_state_restores_status_from_latest_history_entry() -> None:
             "trigger": TriggerType.MANUAL.value,
             "ok": False,
             "rows": 0,
-            "err": "permission denied",
+            "err": "Ошибка отправки данных.\n\nTraceback (most recent call last):\n  File \"worker.py\", line 1",
         }
     )
 
     assert (ok_kind, ok_text) == ("ok", "✓ 3 строк · 09:10:11")
-    assert (err_kind, err_text) == ("error", "✗ permission denied")
+    assert (err_kind, err_text) == ("error", "✗ Ошибка отправки данных.")

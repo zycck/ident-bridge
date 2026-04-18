@@ -39,15 +39,15 @@ def test_build_history_row_display_falls_back_to_manual_and_preserves_error_tool
             "ts": "2026-04-14 09:15:00",
             "trigger": "unexpected",
             "ok": False,
-            "err": "Очень длинная ошибка",
+            "err": "Ошибка публикации в Apps Script.\n\nTraceback (most recent call last):\n  File \"worker.py\", line 1",
         },
         now=datetime(2026, 4, 16, 15, 30, 0),
     )
 
     assert display.icon_name == "mouse-pointer-click"
     assert display.trigger_label == "Вручную"
-    assert display.status_text.startswith("✗  ")
-    assert display.status_tooltip == "Очень длинная ошибка"
+    assert display.status_text == "✗ Ошибка публикации в Apps Script."
+    assert display.status_tooltip == "Ошибка публикации в Apps Script."
 
 
 def test_build_history_row_display_keeps_full_short_error_in_tooltip() -> None:
@@ -62,5 +62,5 @@ def test_build_history_row_display_keeps_full_short_error_in_tooltip() -> None:
         now=datetime(2026, 4, 16, 15, 30, 0),
     )
 
-    assert display.status_text.startswith("✗  Не удалось доставить данные")
+    assert display.status_text.startswith("✗ Не удалось доставить данные")
     assert display.status_tooltip == msg

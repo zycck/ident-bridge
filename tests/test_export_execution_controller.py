@@ -76,11 +76,12 @@ def test_error_emits_alert_on_threshold() -> None:
     for _ in range(3):
         controller.start_manual()
         _, _, on_error, _ = started[-1]
-        on_error("db down")
+        on_error("Ошибка отправки данных.\n\nTraceback (most recent call last):\n  File \"worker.py\", line 1")
 
     assert ("alert", "Nightly", 3) in events
     history_events = [item for item in events if item[0] == "history"]
     assert history_events[-1][1]["ok"] is False
+    assert history_events[-1][1]["err"] == "Ошибка отправки данных."
     assert controller.consecutive_failures == 3
 
 
