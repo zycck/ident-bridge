@@ -22,6 +22,7 @@ venv/
 tests/__pycache__/
 .mypy_cache/
 .ruff_cache/
+.worktrees/
 
 # Local user config (DPAPI-encrypted but per-user)
 config.json
