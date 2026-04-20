@@ -181,6 +181,108 @@ def test_do_get_supports_sheet_and_header_actions() -> None:
     assert result["headers"]["target"] == {"sheet_name": "Archive", "header_row": 2}
 
 
+def test_do_post_accepts_matching_auth_token_in_json_body() -> None:
+    result = _run_backend_probe(
+        """
+        __propertyStore.set('AUTH_TOKEN', 'secret-token');
+        const response = JSON.parse(doPost({
+          postData: {
+            contents: JSON.stringify({
+              protocol_version: 'gas-sheet.v1',
+              job_name: 'job',
+              run_id: 'run-auth',
+              chunk_index: 1,
+              total_chunks: 1,
+              total_rows: 1,
+              chunk_rows: 1,
+              chunk_bytes: 128,
+              auth_token: 'secret-token',
+              schema: {
+                mode: 'append_only_v1',
+                columns: ['id'],
+                checksum: 'abc'
+              },
+              records: [{ id: 1 }]
+            })
+          }
+        }));
+
+        console.log(JSON.stringify(response));
+        """
+    )
+
+    assert result["ok"] is True
+    assert result["run_id"] == "run-auth"
+    assert result["chunk_index"] == 1
+
+
+def test_do_post_rejects_mismatched_auth_token() -> None:
+    result = _run_backend_probe(
+        """
+        __propertyStore.set('AUTH_TOKEN', 'secret-token');
+        const response = JSON.parse(doPost({
+          postData: {
+            contents: JSON.stringify({
+              protocol_version: 'gas-sheet.v1',
+              job_name: 'job',
+              run_id: 'run-auth',
+              chunk_index: 1,
+              total_chunks: 1,
+              total_rows: 1,
+              chunk_rows: 1,
+              chunk_bytes: 128,
+              auth_token: 'wrong-token',
+              schema: {
+                mode: 'append_only_v1',
+                columns: ['id'],
+                checksum: 'abc'
+              },
+              records: [{ id: 1 }]
+            })
+          }
+        }));
+
+        console.log(JSON.stringify(response));
+        """
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "UNAUTHORIZED"
+
+
+def test_do_post_rejects_missing_auth_token() -> None:
+    result = _run_backend_probe(
+        """
+        __propertyStore.set('AUTH_TOKEN', 'secret-token');
+        const response = JSON.parse(doPost({
+          postData: {
+            contents: JSON.stringify({
+              protocol_version: 'gas-sheet.v1',
+              job_name: 'job',
+              run_id: 'run-auth',
+              chunk_index: 1,
+              total_chunks: 1,
+              total_rows: 1,
+              chunk_rows: 1,
+              chunk_bytes: 128,
+              schema: {
+                mode: 'append_only_v1',
+                columns: ['id'],
+                checksum: 'abc'
+              },
+              records: [{ id: 1 }]
+            })
+          }
+        }));
+
+        console.log(JSON.stringify(response));
+        """
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "UNAUTHORIZED"
+
+
 def test_backend_normalizes_target_and_dedupe_blocks() -> None:
     result = _run_backend_probe(
         """

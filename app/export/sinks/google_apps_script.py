@@ -155,6 +155,7 @@ def _normalize_gas_options(gas_options: GasOptions | None) -> GasOptions:
             for column in dedupe_columns
             if str(column).strip()
         ],
+        "auth_token": str(raw.get("auth_token", "") or "").strip(),
     }
 
 
@@ -182,6 +183,9 @@ def _payload_object(
         "records": chunk.records,
     }
     normalized_gas_options = _normalize_gas_options(gas_options)
+    auth_token = str(normalized_gas_options.get("auth_token", "") or "").strip()
+    if auth_token:
+        payload["auth_token"] = auth_token
     target = _payload_target_block(normalized_gas_options)
     if target is not None:
         payload["target"] = target
@@ -279,6 +283,9 @@ def _estimate_payload_size(
     checksum_json = json.dumps("0" * 64, ensure_ascii=False)
     normalized_gas_options = _normalize_gas_options(gas_options)
     optional_suffix = ""
+    auth_token = str(normalized_gas_options.get("auth_token", "") or "").strip()
+    if auth_token:
+        optional_suffix += ',"auth_token":' + json.dumps(auth_token, ensure_ascii=False, cls=_SqlJSONEncoder)
     target = _payload_target_block(normalized_gas_options)
     dedupe = _payload_dedupe_block(normalized_gas_options)
     if target is not None:

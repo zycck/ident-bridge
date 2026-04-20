@@ -235,6 +235,7 @@ def test_factory_passes_gas_options_to_google_apps_script_sink():
         "sheet_name": "Exports",
         "header_row": 2,
         "dedupe_key_columns": ["id", "updated_at"],
+        "auth_token": "secret-token",
     }
 
     pipeline = build_pipeline_for_job(AppConfig(), job, sql_client_cls=lambda cfg: object())
@@ -244,4 +245,5 @@ def test_factory_passes_gas_options_to_google_apps_script_sink():
         "sheet_name": "Exports",
         "header_row": 2,
         "dedupe_key_columns": ["id", "updated_at"],
+        "auth_token": "secret-token",
     }

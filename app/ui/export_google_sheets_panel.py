@@ -460,6 +460,11 @@ class ExportGoogleSheetsPanel(QWidget):
         self._dedupe_edit.textChanged.connect(self.changed)
         form.addRow("Dedupe key columns", self._dedupe_edit)
 
+        self._auth_token_edit = QLineEdit(self)
+        self._auth_token_edit.setPlaceholderText("Shared auth token")
+        self._auth_token_edit.textChanged.connect(self.changed)
+        form.addRow("Auth token", self._auth_token_edit)
+
         self._status_label = QLabel("", self)
         self._status_label.setStyleSheet(
             f"color: {Theme.gray_500}; font-size: {Theme.font_size_xs}pt;"
@@ -487,24 +492,31 @@ class ExportGoogleSheetsPanel(QWidget):
             if part.strip()
         ]
 
+    def auth_token(self) -> str:
+        return self._auth_token_edit.text().strip()
+
     def set_gas_options(
         self,
         *,
         sheet_name: str,
         header_row: int,
         dedupe_key_columns: list[str],
+        auth_token: str,
     ) -> None:
         self._sheet_name_field.blockSignals(True)
         self._header_row_spin.blockSignals(True)
         self._dedupe_edit.blockSignals(True)
+        self._auth_token_edit.blockSignals(True)
         try:
             self._sheet_name_field.setText(sheet_name)
             self._header_row_spin.setValue(max(1, int(header_row or 1)))
             self._dedupe_edit.setText(", ".join(dedupe_key_columns))
+            self._auth_token_edit.setText(auth_token)
         finally:
             self._sheet_name_field.blockSignals(False)
             self._header_row_spin.blockSignals(False)
             self._dedupe_edit.blockSignals(False)
+            self._auth_token_edit.blockSignals(False)
 
     def set_sheet_options(self, options: list[str]) -> None:
         current = self.sheet_name()

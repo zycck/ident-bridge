@@ -13,8 +13,8 @@ else:
 
 from app.config import AppConfig, QueryResult
 from app.core.connection import build_sql_connection_string
+from app.core.formatters import format_duration_compact
 from app.core.odbc_utils import best_driver
-from app.ui.formatters import format_duration_compact
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     import pyodbc as _pyodbc

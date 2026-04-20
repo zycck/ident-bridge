@@ -270,6 +270,38 @@ def test_credentials_stored_encrypted_on_disk(tmp_config, tmp_path):
     assert "s3cret" not in raw
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="DPAPI is Windows-only")
+def test_dpapi_encrypt_raises_winerror_on_failure(monkeypatch):
+    import app.core.dpapi as dpapi
+
+    class _FakeCrypt32:
+        def CryptProtectData(self, *args, **kwargs):
+            return False
+
+    class _FakeKernel32:
+        def GetLastError(self):
+            return 123
+
+        def LocalFree(self, *args, **kwargs):
+            raise AssertionError("cleanup should not run on failed encrypt")
+
+    winerror_calls: list[tuple[object, ...]] = []
+
+    def _fake_winerror(*args):
+        winerror_calls.append(args)
+        raise OSError("winerror")
+
+    monkeypatch.setattr(dpapi, "_IS_WINDOWS", True)
+    monkeypatch.setattr(dpapi, "_crypt32", _FakeCrypt32())
+    monkeypatch.setattr(dpapi, "_kernel32", _FakeKernel32())
+    monkeypatch.setattr(dpapi.ctypes, "WinError", _fake_winerror)
+
+    with pytest.raises(OSError, match="winerror"):
+        dpapi.encrypt("secret")
+
+    assert winerror_calls == [()]
+
+
 def test_empty_credentials_no_warning(tmp_config, caplog):
     """sql_user/sql_password = "" should NOT log a warning."""
     import logging

@@ -64,6 +64,7 @@ class ExportEditorController:
             sheet_name=str(gas_options.get("sheet_name", "") or ""),
             header_row=int(gas_options.get("header_row", 1) or 1),
             dedupe_key_columns=list(gas_options.get("dedupe_key_columns") or []),
+            auth_token=str(gas_options.get("auth_token", "") or ""),
         )
         self._shell.set_schedule(
             bool(job.get("schedule_enabled", False)),

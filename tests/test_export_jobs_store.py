@@ -1,5 +1,6 @@
 """Tests for extracted export jobs persistence helpers."""
 
+from app.config import AppConfig
 from app.ui.export_jobs_store import (
     load_export_jobs,
     new_export_job,
@@ -20,6 +21,7 @@ class _DummyConfig:
                         "sheet_name": "Exports",
                         "header_row": "2",
                         "dedupe_key_columns": ["id", "updated_at", ""],
+                        "auth_token": "  secret-token  ",
                     },
                     "history": [{"ts": "2026-01-01 00:00:00"}],
                 }
@@ -47,6 +49,7 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
                 "sheet_name": "Exports",
                 "header_row": 2,
                 "dedupe_key_columns": ["id", "updated_at"],
+                "auth_token": "secret-token",
             },
             "schedule_enabled": False,
             "schedule_mode": "daily",
@@ -54,6 +57,40 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
             "history": [{"ts": "2026-01-01 00:00:00"}],
         }
     ]
+
+
+def test_load_export_jobs_normalizes_auth_token_through_config_manager(tmp_config) -> None:
+    tmp_config.save(
+        AppConfig(
+            export_jobs=[
+                {
+                    "id": "job-3",
+                    "name": "Nightly",
+                    "sql_query": "SELECT 1",
+                    "webhook_url": "",
+                    "gas_options": {
+                        "sheet_name": "Exports",
+                        "header_row": "2",
+                        "dedupe_key_columns": ["id", ""],
+                        "auth_token": "  secret-token  ",
+                    },
+                    "schedule_enabled": False,
+                    "schedule_mode": "daily",
+                    "schedule_value": "",
+                    "history": [],
+                }
+            ]
+        )
+    )
+
+    jobs = load_export_jobs(tmp_config)
+
+    assert jobs[0]["gas_options"] == {
+        "sheet_name": "Exports",
+        "header_row": 2,
+        "dedupe_key_columns": ["id"],
+        "auth_token": "secret-token",
+    }
 
 
 def test_persist_export_jobs_preserves_other_config_fields() -> None:
@@ -71,6 +108,7 @@ def test_persist_export_jobs_preserves_other_config_fields() -> None:
                     "sheet_name": "Archive",
                     "header_row": 3,
                     "dedupe_key_columns": ["id"],
+                    "auth_token": "token-2",
                 },
                 "schedule_enabled": True,
                 "schedule_mode": "hourly",
@@ -96,5 +134,6 @@ def test_new_export_job_starts_blank_with_generated_id() -> None:
         "sheet_name": "",
         "header_row": 1,
         "dedupe_key_columns": [],
+        "auth_token": "",
     }
     assert job["history"] == []

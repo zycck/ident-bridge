@@ -22,6 +22,7 @@ def _normalize_gas_options(raw: object) -> dict[str, object]:
             for column in dedupe_columns
             if str(column).strip()
         ],
+        "auth_token": str(source.get("auth_token", "") or "").strip(),
     }
 
 
@@ -65,6 +66,7 @@ def new_export_job() -> ExportJob:
             "sheet_name": "",
             "header_row": 1,
             "dedupe_key_columns": [],
+            "auth_token": "",
         },
         schedule_enabled=False,
         schedule_mode="daily",

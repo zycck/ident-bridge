@@ -30,6 +30,9 @@ class _FakeShell(QObject):
     def gas_dedupe_key_columns(self) -> list[str]:
         return ["id", "updated_at"]
 
+    def gas_auth_token(self) -> str:
+        return "secret-token"
+
     def schedule_enabled(self) -> bool:
         return True
 
@@ -88,6 +91,7 @@ def test_export_job_editor_bridge_builds_job_payload_and_prepends_history() -> N
         "sheet_name": "Exports",
         "header_row": 2,
         "dedupe_key_columns": ["id", "updated_at"],
+        "auth_token": "secret-token",
     }
     assert job["schedule_enabled"] is True
     assert job["schedule_mode"] == "hourly"

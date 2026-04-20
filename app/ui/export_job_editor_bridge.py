@@ -41,6 +41,7 @@ class ExportJobEditorBridge:
                 "sheet_name": self._shell.gas_sheet_name(),
                 "header_row": self._shell.gas_header_row(),
                 "dedupe_key_columns": self._shell.gas_dedupe_key_columns(),
+                "auth_token": self._shell.gas_auth_token(),
             },
             schedule_enabled=self._shell.schedule_enabled(),
             schedule_mode=self._shell.schedule_mode(),

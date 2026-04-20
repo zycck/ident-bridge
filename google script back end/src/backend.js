@@ -290,6 +290,40 @@ function trimString_(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function protocolValidateAuthToken_(payload) {
+  const expectedToken = trimString_(
+    PropertiesService.getScriptProperties().getProperty('AUTH_TOKEN')
+  );
+  const providedToken = trimString_(payload && payload.auth_token);
+
+  if (!expectedToken) {
+    throw createWebhookError_(
+      'UNAUTHORIZED',
+      false,
+      'Auth token is not configured',
+      { field: 'auth_token' }
+    );
+  }
+
+  if (!providedToken) {
+    throw createWebhookError_(
+      'UNAUTHORIZED',
+      false,
+      'Missing auth_token',
+      { field: 'auth_token' }
+    );
+  }
+
+  if (providedToken !== expectedToken) {
+    throw createWebhookError_(
+      'UNAUTHORIZED',
+      false,
+      'Invalid auth token',
+      { field: 'auth_token' }
+    );
+  }
+}
+
 function normalizeColumnName_(value) {
   if (value === null || value === undefined) {
     return '';
@@ -619,6 +653,8 @@ function protocolParseRequest_(event) {
       field: 'body',
     });
   }
+
+  protocolValidateAuthToken_(payload);
 
   return protocolNormalizeRequest_(payload);
 }

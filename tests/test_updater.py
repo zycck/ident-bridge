@@ -7,6 +7,7 @@ from app.core import updater
 class _FakeResponse:
     def __init__(self, payload: bytes) -> None:
         self._payload = payload
+        self._offset = 0
 
     def __enter__(self):
         return self
@@ -14,8 +15,14 @@ class _FakeResponse:
     def __exit__(self, *args):
         return False
 
-    def read(self) -> bytes:
-        return self._payload
+    def read(self, size: int = -1) -> bytes:
+        if size < 0:
+            raise AssertionError("download_update should stream with bounded reads")
+        if self._offset >= len(self._payload):
+            return b""
+        chunk = self._payload[self._offset : self._offset + size]
+        self._offset += len(chunk)
+        return chunk
 
 
 class _FakeOpener:
@@ -46,6 +53,20 @@ def test_download_update_writes_temp_payload(monkeypatch, tmp_path):
     assert timeout == 120
     assert request.full_url == "https://example.com/update.exe"
     assert request.headers["User-agent"] == updater.USER_AGENT
+
+
+def test_download_update_streams_response_to_disk(monkeypatch, tmp_path):
+    target = tmp_path / "downloads"
+    target.mkdir()
+    opener = _FakeOpener(b"streamed-payload")
+
+    monkeypatch.setattr("app.core.updater.MIN_DOWNLOAD_BYTES", 1)
+    monkeypatch.setattr("app.core.updater.tempfile.gettempdir", lambda: str(target))
+    monkeypatch.setattr("app.core.updater.urllib.request.build_opener", lambda *a, **k: opener)
+
+    path = updater.download_update("https://example.com/update.exe")
+
+    assert Path(path).read_bytes() == b"streamed-payload"
 
 
 def test_pick_download_url_prefers_expected_exe_name():

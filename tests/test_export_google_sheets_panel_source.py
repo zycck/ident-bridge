@@ -21,3 +21,4 @@ def test_google_sheets_panel_keeps_sheet_picker_as_overlay_popup() -> None:
     assert "self.window()" in source
     assert "self._sheet_name_field.setText(normalized[0])" not in source
     assert 'self._count_badge.setText(f"{len(self._all_options)} листов")' in source
+    assert "auth_token" in source

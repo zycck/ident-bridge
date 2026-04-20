@@ -29,11 +29,11 @@ from urllib.parse import urlsplit
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
 from app.core.constants import GOOGLE_SCRIPT_HOSTS, MAX_WEBHOOK_ROWS
+from app.core.formatters import format_duration_compact
 from app.core.sql_client import SqlClient
 from app.export.protocol import ExportSink
 from app.export.sinks.google_apps_script import GoogleAppsScriptSink
 from app.export.sinks.webhook import WebhookSink
-from app.ui.formatters import format_duration_compact
 
 _log = logging.getLogger(__name__)
 

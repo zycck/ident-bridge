@@ -184,6 +184,28 @@ def test_build_gas_chunk_payload_includes_target_and_dedupe_blocks_when_configur
     assert "gas_options" not in payload
 
 
+def test_build_gas_chunk_payload_includes_auth_token_in_body():
+    chunk = plan_gas_chunks(
+        "Authenticated",
+        _qr(columns=("id",), rows=((1,),)),
+        run_id="run-auth",
+        max_rows_per_chunk=10_000,
+        max_payload_bytes=5 * 1024 * 1024,
+    )[0]
+
+    payload = json.loads(
+        build_gas_chunk_payload(
+            "Authenticated",
+            chunk,
+            gas_options={
+                "auth_token": "secret-token",
+            },
+        ).decode("utf-8")
+    )
+
+    assert payload["auth_token"] == "secret-token"
+
+
 def test_parse_gas_ack_accepts_success_and_ignores_extra_fields():
     ack = parse_gas_ack(
         json.dumps(
@@ -276,6 +298,39 @@ def test_push_reports_progress_for_each_chunk(monkeypatch):
 
     assert len(attempts) == 2
     assert progress == ["Отправка данных... 1/2", "Отправка данных... 2/2"]
+
+
+def test_push_sends_auth_token_in_json_body_not_headers(monkeypatch):
+    seen = {}
+
+    def _urlopen(req, **kwargs):
+        seen["headers"] = dict(req.headers)
+        seen["body"] = json.loads(req.data.decode("utf-8"))
+        return _FakeResp(
+            {
+                "ok": True,
+                "status": "accepted",
+                "run_id": seen["body"]["run_id"],
+                "chunk_index": seen["body"]["chunk_index"],
+                "rows_received": seen["body"]["chunk_rows"],
+                "rows_written": seen["body"]["chunk_rows"],
+                "retryable": False,
+                "schema_action": "unchanged",
+                "added_columns": [],
+                "message": "ok",
+            }
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink(
+        "https://script.google.com/macros/s/abc/exec",
+        gas_options={"auth_token": "secret-token"},
+    )
+    sink.push("Body auth", _qr())
+
+    assert seen["body"]["auth_token"] == "secret-token"
+    assert "X-iDentBridge-Token" not in seen["headers"]
 
 
 def test_push_treats_duplicate_ack_as_success(monkeypatch):

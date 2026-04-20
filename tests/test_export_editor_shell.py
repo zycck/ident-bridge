@@ -14,6 +14,7 @@ def test_export_editor_shell_roundtrips_core_fields(qtbot) -> None:
         sheet_name="Exports",
         header_row=2,
         dedupe_key_columns=["id", "updated_at"],
+        auth_token="secret-token",
     )
     shell.set_schedule(True, "hourly", "4")
 
@@ -23,6 +24,7 @@ def test_export_editor_shell_roundtrips_core_fields(qtbot) -> None:
     assert shell.gas_sheet_name() == "Exports"
     assert shell.gas_header_row() == 2
     assert shell.gas_dedupe_key_columns() == ["id", "updated_at"]
+    assert shell.gas_auth_token() == "secret-token"
     assert shell.schedule_enabled() is True
     assert shell.schedule_mode() == "hourly"
     assert shell.schedule_value() == "4"

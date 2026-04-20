@@ -110,17 +110,22 @@ class ExportEditorShell(QWidget):
     def gas_dedupe_key_columns(self) -> list[str]:
         return self._google_sheets_panel.dedupe_key_columns()
 
+    def gas_auth_token(self) -> str:
+        return self._google_sheets_panel.auth_token()
+
     def set_gas_options(
         self,
         *,
         sheet_name: str,
         header_row: int,
         dedupe_key_columns: list[str],
+        auth_token: str,
     ) -> None:
         self._google_sheets_panel.set_gas_options(
             sheet_name=sheet_name,
             header_row=header_row,
             dedupe_key_columns=dedupe_key_columns,
+            auth_token=auth_token,
         )
 
     def schedule_enabled(self) -> bool:

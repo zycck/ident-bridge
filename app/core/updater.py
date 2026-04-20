@@ -1,6 +1,6 @@
 import json
-import os
 import ssl
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,11 +66,11 @@ def get_exe_path() -> str:
 
 def cleanup_old_exe() -> None:
     """Remove leftover self-update artifacts from a previous run."""
-    old_exe = os.path.join(os.path.dirname(get_exe_path()), f"{EXE_NAME}_old.exe")
+    old_exe = Path(get_exe_path()).parent / f"{EXE_NAME}_old.exe"
     for attempt in range(5):
         try:
-            if os.path.exists(old_exe):
-                os.remove(old_exe)
+            if old_exe.exists():
+                old_exe.unlink()
             return
         except (OSError, PermissionError):
             if attempt < 4:
@@ -95,22 +95,23 @@ def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
 
 def download_update(download_url: str) -> str:
     """Download the update payload to a temporary file and return its path."""
-    new_exe = os.path.join(tempfile.gettempdir(), f"{EXE_NAME}_new.exe")
+    new_exe = Path(tempfile.gettempdir()) / f"{EXE_NAME}_new.exe"
 
     ssl_ctx = ssl.create_default_context()
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl_ctx)
     )
     request = urllib.request.Request(download_url, headers={"User-Agent": USER_AGENT})
-    with opener.open(request, timeout=120) as resp, open(new_exe, "wb") as fh:
-        fh.write(resp.read())
+    with opener.open(request, timeout=120) as resp, new_exe.open("wb") as fh:
+        shutil.copyfileobj(resp, fh)
 
-    if os.path.getsize(new_exe) <= MIN_DOWNLOAD_BYTES:
+    size = new_exe.stat().st_size
+    if size <= MIN_DOWNLOAD_BYTES:
         raise ValueError(
-            f"Downloaded file is too small ({os.path.getsize(new_exe)} bytes); "
+            f"Downloaded file is too small ({size} bytes); "
             "aborting update to avoid replacing the app with a corrupt file."
         )
-    return new_exe
+    return str(new_exe)
 
 
 def apply_downloaded_update(
@@ -125,16 +126,16 @@ def apply_downloaded_update(
     while keeping the fast script-generation + process-launch phase on the
     main thread.
     """
-    exe_path = get_exe_path()
-    new_exe = downloaded_path
+    exe_path = Path(get_exe_path())
+    new_exe = Path(downloaded_path)
 
-    old_exe = os.path.join(os.path.dirname(exe_path), f"{EXE_NAME}_old.exe")
+    old_exe = exe_path.with_name(f"{EXE_NAME}_old.exe")
     # Write script next to the exe (not world-writable tempdir) to prevent TOCTOU attacks.
-    script_dir = os.path.dirname(exe_path) if getattr(sys, "frozen", False) else tempfile.gettempdir()
+    script_dir = exe_path.parent if getattr(sys, "frozen", False) else Path(tempfile.gettempdir())
 
     if getattr(sys, "frozen", False):
         # В замороженном .exe нет интерпретатора Python — используем .bat через cmd.exe
-        script_path = os.path.join(script_dir, "_ident_updater.bat")
+        script_path = script_dir / "_ident_updater.bat"
         script = (
             "@echo off\n"
             ":wait\n"
@@ -145,10 +146,10 @@ def apply_downloaded_update(
             f'start "" "{exe_path}"\n'
             'del "%~f0"\n'
         )
-        with open(script_path, "w", encoding="ascii") as fh:
+        with script_path.open("w", encoding="ascii") as fh:
             fh.write(script)
         subprocess.Popen(
-            ["cmd.exe", "/c", script_path],
+            ["cmd.exe", "/c", str(script_path)],
             creationflags=_DETACHED_FLAGS,
             close_fds=True,
             stdin=subprocess.DEVNULL,
@@ -156,12 +157,12 @@ def apply_downloaded_update(
             stderr=subprocess.DEVNULL,
         )
     else:
-        script_path = os.path.join(script_dir, "_ident_updater.py")
+        script_path = script_dir / "_ident_updater.py"
         script = (
             "import os, shutil, time\n"
-            f"src = {new_exe!r}\n"
-            f"dst = {exe_path!r}\n"
-            f"old = {old_exe!r}\n"
+            f"src = {str(new_exe)!r}\n"
+            f"dst = {str(exe_path)!r}\n"
+            f"old = {str(old_exe)!r}\n"
             "for _ in range(10):\n"
             "    try:\n"
             "        os.rename(dst, old)\n"
@@ -171,10 +172,10 @@ def apply_downloaded_update(
             "shutil.move(src, dst)\n"
             "os.startfile(dst)\n"
         )
-        with open(script_path, "w", encoding="utf-8") as fh:
+        with script_path.open("w", encoding="utf-8") as fh:
             fh.write(script)
         subprocess.Popen(
-            [sys.executable, script_path],
+            [sys.executable, str(script_path)],
             creationflags=_DETACHED_FLAGS,
             close_fds=True,
             stdin=subprocess.DEVNULL,
