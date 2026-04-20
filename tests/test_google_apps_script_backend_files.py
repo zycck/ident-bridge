@@ -84,6 +84,13 @@ def test_library_project_keeps_connection_template_outside_src() -> None:
     assert LIBRARY_SCRIPT_ID in shim_text
 
 
+def test_library_exposes_top_level_handle_request_entrypoint() -> None:
+    backend_source = (SRC_DIR / "backend.js").read_text(encoding="utf-8")
+
+    assert "function handleRequest(event, method, context)" in backend_source
+    assert "var iDBBackend =" not in backend_source
+
+
 def test_do_get_supports_only_ping_and_sheets() -> None:
     result = _run_backend_probe(
         """
@@ -643,12 +650,22 @@ global.__checksum__ = (payload) => {{
   return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
 }};
 
+global.__entrypoint__ = (...args) => {{
+  if (typeof handleRequest === 'function') {{
+    return handleRequest(...args);
+  }}
+  if (typeof iDBBackend !== 'undefined' && iDBBackend && typeof iDBBackend.handleRequest === 'function') {{
+    return iDBBackend.handleRequest(...args);
+  }}
+  throw new Error('No public handleRequest entrypoint found');
+}};
+
 global.__callGet = (parameter = {{}}, context = null) => (
-  iDBBackend.handleRequest({{ parameter }}, 'GET', context)
+  __entrypoint__({{ parameter }}, 'GET', context)
 );
 
 global.__callPost = (payload, context = null) => (
-  iDBBackend.handleRequest({{
+  __entrypoint__({{
     postData: {{
       contents: JSON.stringify(payload)
     }}
