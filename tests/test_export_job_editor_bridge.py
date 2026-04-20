@@ -3,6 +3,7 @@
 from PySide6.QtCore import QObject
 
 from app.config import ExportHistoryEntry
+from app.core.scheduler import ScheduleMode
 from app.ui.export_job_editor_bridge import ExportJobEditorBridge
 
 
@@ -36,8 +37,8 @@ class _FakeShell(QObject):
     def schedule_enabled(self) -> bool:
         return True
 
-    def schedule_mode(self) -> str:
-        return "hourly"
+    def schedule_mode(self) -> ScheduleMode:
+        return ScheduleMode.HOURLY
 
     def schedule_value(self) -> str:
         return "4"

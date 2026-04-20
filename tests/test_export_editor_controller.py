@@ -1,6 +1,7 @@
 """Tests for extracted ExportEditorController."""
 
 from app.config import ExportJob, TriggerType
+from app.core.scheduler import ScheduleMode
 from app.ui.export_editor_controller import ExportEditorController
 
 
@@ -70,7 +71,7 @@ class _FakeShell:
         self._sql = ""
         self._webhook = ""
         self._schedule_enabled = False
-        self._schedule_mode = "daily"
+        self._schedule_mode = ScheduleMode.DAILY
         self._schedule_value = ""
         self._gas_sheet_name = ""
         self._gas_header_row = 1
@@ -101,13 +102,13 @@ class _FakeShell:
     def schedule_enabled(self) -> bool:
         return self._schedule_enabled
 
-    def schedule_mode(self) -> str:
+    def schedule_mode(self) -> ScheduleMode:
         return self._schedule_mode
 
     def schedule_value(self) -> str:
         return self._schedule_value
 
-    def set_schedule(self, enabled: bool, mode: str, value: str) -> None:
+    def set_schedule(self, enabled: bool, mode: ScheduleMode | str, value: str) -> None:
         self._schedule_enabled = enabled
         self._schedule_mode = mode
         self._schedule_value = value
@@ -229,13 +230,13 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
     assert shell.refresh_calls == 0
     assert single_shot_calls == []
     assert scheduler.stop_calls == 1
-    assert scheduler.configure_calls == [("hourly", "2")]
+    assert scheduler.configure_calls == [(ScheduleMode.HOURLY, "2")]
     assert scheduler.start_calls == 1
 
 
 def test_export_editor_controller_wires_query_schedule_history_and_run_signals() -> None:
     shell = _FakeShell()
-    shell.set_schedule(True, "daily", "08:30")
+    shell.set_schedule(True, ScheduleMode.DAILY, "08:30")
     scheduler = _FakeScheduler()
     query_timer = _FakeTimer()
     syntax_timer = _FakeTimer()
@@ -264,7 +265,7 @@ def test_export_editor_controller_wires_query_schedule_history_and_run_signals()
     assert query_timer.start_calls == 1
     assert syntax_timer.start_calls == 1
     assert scheduler.stop_calls == 1
-    assert scheduler.configure_calls == [("daily", "08:30")]
+    assert scheduler.configure_calls == [(ScheduleMode.DAILY, "08:30")]
     assert scheduler.start_calls == 1
     assert changed_calls == ["changed", "changed"]
     assert history_calls == ["history"]

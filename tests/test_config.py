@@ -21,6 +21,7 @@ def test_trigger_type_values():
     assert TriggerType.MANUAL.value == "manual"
     assert TriggerType.SCHEDULED.value == "scheduled"
     assert TriggerType.TEST.value == "test"
+    assert issubclass(TriggerType, str)
 
 
 def test_trigger_type_can_be_constructed_from_string():
@@ -32,6 +33,10 @@ def test_trigger_type_can_be_constructed_from_string():
 def test_trigger_type_invalid_raises():
     with pytest.raises(ValueError):
         TriggerType("bogus")
+
+
+def test_export_job_requires_identity_fields():
+    assert {"id", "name"} <= set(ExportJob.__required_keys__)
 
 
 # ── ConfigManager basic load/save ─────────────────────────────────────
@@ -370,6 +375,27 @@ def test_legacy_auto_trigger_migrated_to_scheduled_on_load(tmp_config, tmp_path)
     assert "auto" not in triggers, "legacy 'auto' should be migrated"
     assert triggers[0] == "scheduled"
     assert triggers[1] == "manual"  # unchanged
+
+
+def test_export_jobs_missing_identity_fields_are_normalized_on_load(tmp_config, tmp_path):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(
+        json.dumps({
+            "export_jobs": [
+                {
+                    "history": [],
+                    "sql_query": "SELECT 1",
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    cfg = tmp_config.load()
+    jobs = cfg.get("export_jobs") or []
+    assert len(jobs) == 1
+    assert jobs[0]["id"]
+    assert jobs[0]["name"] == ""
 
 
 # ── Invalid JSON resilience ───────────────────────────────────────────

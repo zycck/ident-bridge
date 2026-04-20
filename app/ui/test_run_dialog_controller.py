@@ -17,9 +17,9 @@ if TYPE_CHECKING:
 
 _log = get_logger(__name__)
 
-RunWorkerFn = Callable[..., object]
-EmitTestCompletedFn = Callable[[bool, int, str, int], None]
-QueryWorkerFactory = Callable[[AppConfig, str], object]
+type RunWorkerFn = Callable[..., object]
+type EmitTestCompletedFn = Callable[[bool, int, str, int], None]
+type QueryWorkerFactory = Callable[[AppConfig, str], object]
 
 
 class _QueryWorker(QObject):

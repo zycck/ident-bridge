@@ -59,6 +59,24 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
     ]
 
 
+def test_load_export_jobs_fills_missing_identity_fields() -> None:
+    class _Config:
+        def load(self):
+            return {
+                "export_jobs": [
+                    {
+                        "sql_query": "SELECT 1",
+                        "history": [],
+                    }
+                ]
+            }
+
+    jobs = load_export_jobs(_Config())
+
+    assert jobs[0]["id"]
+    assert jobs[0]["name"] == ""
+
+
 def test_load_export_jobs_normalizes_auth_token_through_config_manager(tmp_config) -> None:
     tmp_config.save(
         AppConfig(

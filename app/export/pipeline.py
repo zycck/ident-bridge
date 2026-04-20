@@ -38,7 +38,7 @@ from app.export.sinks.webhook import WebhookSink
 _log = logging.getLogger(__name__)
 
 # ProgressCallback: step_number (0–3), human-readable message.
-ProgressCallback = Callable[[int, str], None]
+type ProgressCallback = Callable[[int, str], None]
 
 
 def _noop_progress(step: int, message: str) -> None:

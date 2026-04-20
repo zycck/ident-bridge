@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from app.config import ExportHistoryEntry, ExportJob
+from app.core.scheduler import schedule_mode_to_raw
 from app.ui.threading import run_worker
 
 if TYPE_CHECKING:
@@ -44,7 +45,7 @@ class ExportJobEditorBridge:
                 "auth_token": self._shell.gas_auth_token(),
             },
             schedule_enabled=self._shell.schedule_enabled(),
-            schedule_mode=self._shell.schedule_mode(),
+            schedule_mode=schedule_mode_to_raw(self._shell.schedule_mode()),
             schedule_value=self._shell.schedule_value(),
             history=self._shell.history(),
         )

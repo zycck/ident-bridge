@@ -4,6 +4,7 @@ from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
 from app.config import ExportHistoryEntry
+from app.core.scheduler import ScheduleMode
 from app.ui.export_google_sheets_panel import ExportGoogleSheetsPanel
 from app.ui.export_editor_header import ExportEditorHeader
 from app.ui.export_history_panel import ExportHistoryPanel
@@ -128,13 +129,13 @@ class ExportEditorShell(QWidget):
     def schedule_enabled(self) -> bool:
         return self._schedule_panel.schedule_enabled()
 
-    def schedule_mode(self) -> str:
+    def schedule_mode(self) -> ScheduleMode:
         return self._schedule_panel.schedule_mode()
 
     def schedule_value(self) -> str:
         return self._schedule_panel.schedule_value()
 
-    def set_schedule(self, enabled: bool, mode: str, value: str) -> None:
+    def set_schedule(self, enabled: bool, mode: ScheduleMode | str, value: str) -> None:
         self._schedule_panel.set_schedule(enabled, mode, value)
 
     def set_progress_text(self, text: str) -> None:

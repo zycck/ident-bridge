@@ -6,15 +6,16 @@ import base64
 import json
 import logging
 import os
+import uuid
 import threading
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
-from collections.abc import Iterator
+from enum import StrEnum, UNIQUE, verify
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 from app.core import dpapi
 from app.core.constants import CONFIG_DIR_NAME
@@ -82,24 +83,25 @@ class ExportHistoryEntry(TypedDict, total=False):
     sql_duration_us: int
 
 
-class TriggerType(str, Enum):
+@verify(UNIQUE)
+class TriggerType(StrEnum):
     """How an export run was initiated."""
     MANUAL    = "manual"
     SCHEDULED = "scheduled"   # was "auto" in older configs — migrated on read
     TEST      = "test"        # dry-run via TestRunDialog
 
 
-class ExportJob(TypedDict, total=False):
+class ExportJob(TypedDict):
     """Configuration for a single named export job."""
     id:               str
     name:             str
-    sql_query:        str
-    webhook_url:      str
-    gas_options:      GasOptions
-    schedule_enabled: bool
-    schedule_mode:    str   # "daily" | "hourly"
-    schedule_value:   str   # "14:30" | "4"
-    history:          list[ExportHistoryEntry]
+    sql_query:        NotRequired[str]
+    webhook_url:      NotRequired[str]
+    gas_options:      NotRequired[GasOptions]
+    schedule_enabled: NotRequired[bool]
+    schedule_mode:    NotRequired[str]
+    schedule_value:   NotRequired[str]
+    history:          NotRequired[list[ExportHistoryEntry]]
 
 
 class AppConfig(TypedDict, total=False):
@@ -145,6 +147,19 @@ def _default_config_dir() -> Path:
         return Path(xdg_config_home) / CONFIG_DIR_NAME
 
     return Path.home() / ".config" / CONFIG_DIR_NAME
+
+
+def _normalize_export_jobs(raw_jobs: object) -> list[dict]:
+    normalized: list[dict] = []
+    if not isinstance(raw_jobs, list):
+        return normalized
+
+    for raw_job in raw_jobs:
+        job = dict(raw_job) if isinstance(raw_job, Mapping) else {}
+        job["id"] = str(job.get("id") or uuid.uuid4())
+        job["name"] = str(job.get("name", "") or "")
+        normalized.append(job)
+    return normalized
 
 
 # ---------------------------------------------------------------------------
@@ -230,6 +245,9 @@ class ConfigManager:
                         except (TypeError, ValueError):
                             entry["sql_duration_us"] = 0
 
+            if "export_jobs" in data:
+                data["export_jobs"] = _normalize_export_jobs(data.get("export_jobs"))
+
             self._cfg = AppConfig(
                 **{k: v for k, v in data.items() if k in _APP_CONFIG_KEYS}
             )  # type: ignore[typeddict-item]
@@ -237,10 +255,12 @@ class ConfigManager:
 
     def save(self, cfg: AppConfig) -> None:
         with self._lock:
-            self._cfg = AppConfig(
-                **{k: v for k, v in dict(cfg).items() if k in _APP_CONFIG_KEYS}
-            )  # type: ignore[typeddict-item]
             out: dict = dict(cfg)
+            if "export_jobs" in out:
+                out["export_jobs"] = _normalize_export_jobs(out.get("export_jobs"))
+            self._cfg = AppConfig(
+                **{k: v for k, v in out.items() if k in _APP_CONFIG_KEYS}
+            )  # type: ignore[typeddict-item]
             for key in ENCRYPTED_KEYS:
                 if key in out and out[key]:
                     encrypted_bytes = dpapi.encrypt(out[key])

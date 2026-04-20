@@ -6,7 +6,12 @@ from PySide6.QtCore import QTimer, Slot
 
 from app.config import ExportHistoryEntry, ExportJob
 from app.core.app_logger import get_logger
-from app.core.scheduler import SyncScheduler, schedule_value_is_valid
+from app.core.scheduler import (
+    ScheduleMode,
+    SyncScheduler,
+    schedule_mode_from_raw,
+    schedule_value_is_valid,
+)
 from app.ui.export_editor_runtime import ExportEditorRuntimeState
 
 _log = get_logger(__name__)
@@ -68,7 +73,7 @@ class ExportEditorController:
         )
         self._shell.set_schedule(
             bool(job.get("schedule_enabled", False)),
-            job.get("schedule_mode", "daily"),
+            schedule_mode_from_raw(job.get("schedule_mode", ScheduleMode.DAILY)),
             job.get("schedule_value", ""),
         )
         self._shell.set_history(list(job.get("history") or []))
@@ -93,12 +98,12 @@ class ExportEditorController:
         value = self._shell.schedule_value()
         if not schedule_value_is_valid(mode, value):
             return
-        self._scheduler.configure(mode, value)  # type: ignore[arg-type]
+        self._scheduler.configure(mode, value)
         self._scheduler.start()
         _log.debug(
             "Job '%s': scheduler started (%s %s)",
             self._shell.job_name(),
-            mode,
+            mode.value,
             value,
         )
 

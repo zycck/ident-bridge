@@ -4,6 +4,7 @@ import uuid
 from collections.abc import Iterable, Mapping
 
 from app.config import ConfigManager, ExportJob
+from app.core.scheduler import ScheduleMode, schedule_mode_from_raw
 
 
 def _normalize_gas_options(raw: object) -> dict[str, object]:
@@ -29,14 +30,14 @@ def _normalize_gas_options(raw: object) -> dict[str, object]:
 def job_from_raw(raw: Mapping[str, object]) -> ExportJob:
     """Normalize a raw config payload into the widget's job shape."""
     return ExportJob(
-        id=str(raw.get("id", str(uuid.uuid4()))),
-        name=str(raw.get("name", "")),
-        sql_query=str(raw.get("sql_query", "")),
-        webhook_url=str(raw.get("webhook_url", "")),
+        id=str(raw.get("id") or uuid.uuid4()),
+        name=str(raw.get("name", "") or ""),
+        sql_query=str(raw.get("sql_query", "") or ""),
+        webhook_url=str(raw.get("webhook_url", "") or ""),
         gas_options=_normalize_gas_options(raw.get("gas_options")),
         schedule_enabled=bool(raw.get("schedule_enabled", False)),
-        schedule_mode=str(raw.get("schedule_mode", "daily")),
-        schedule_value=str(raw.get("schedule_value", "")),
+        schedule_mode=schedule_mode_from_raw(raw.get("schedule_mode", ScheduleMode.DAILY)).value,
+        schedule_value=str(raw.get("schedule_value", "") or ""),
         history=list(raw.get("history") or []),  # type: ignore[typeddict-item]
     )
 
@@ -52,7 +53,7 @@ def persist_export_jobs(
     jobs: Iterable[ExportJob],
 ) -> None:
     cfg = config.load()
-    cfg["export_jobs"] = list(jobs)  # type: ignore[typeddict-unknown-key]
+    cfg["export_jobs"] = list(jobs)
     config.save(cfg)
 
 
@@ -69,7 +70,7 @@ def new_export_job() -> ExportJob:
             "auth_token": "",
         },
         schedule_enabled=False,
-        schedule_mode="daily",
+        schedule_mode=ScheduleMode.DAILY.value,
         schedule_value="",
-        history=[],  # type: ignore[typeddict-unknown-key]
+        history=[],
     )

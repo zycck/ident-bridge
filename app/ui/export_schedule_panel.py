@@ -3,11 +3,17 @@
 from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
-from app.core.scheduler import SUPPORTED_SCHEDULE_MODES
+from app.core.scheduler import ScheduleMode, SUPPORTED_SCHEDULE_MODES, schedule_mode_from_raw
 from app.ui.theme import Theme
 from app.ui.widgets import HeaderLabel, style_combo_popup
 
-SCHEDULE_MODE_BY_INDEX: tuple[str, ...] = SUPPORTED_SCHEDULE_MODES
+SCHEDULE_MODE_BY_INDEX: tuple[ScheduleMode, ...] = SUPPORTED_SCHEDULE_MODES
+SCHEDULE_MODE_LABELS: tuple[str, ...] = (
+    "Ежедневно",
+    "Каждые N часов",
+    "Каждые N минут",
+    "Каждые N секунд",
+)
 _PLACEHOLDERS: dict[int, str] = {
     0: "ЧЧ:ММ",
     1: "N часов",
@@ -41,12 +47,7 @@ class ExportSchedulePanel(QWidget):
 
         self._mode_combo = QComboBox()
         style_combo_popup(self._mode_combo)
-        self._mode_combo.addItems([
-            "Ежедневно",
-            "Каждые N часов",
-            "Каждые N минут",
-            "Каждые N секунд",
-        ])
+        self._mode_combo.addItems(list(SCHEDULE_MODE_LABELS))
         self._mode_combo.currentIndexChanged.connect(self._on_changed)
         self._mode_combo.setFixedWidth(180)
         controls.addWidget(self._mode_combo, alignment=Qt.AlignmentFlag.AlignVCenter)
@@ -72,13 +73,14 @@ class ExportSchedulePanel(QWidget):
     def schedule_enabled(self) -> bool:
         return self._sched_check.isChecked()
 
-    def schedule_mode(self) -> str:
+    def schedule_mode(self) -> ScheduleMode:
         return SCHEDULE_MODE_BY_INDEX[self._mode_combo.currentIndex()]
 
     def schedule_value(self) -> str:
         return self._value_edit.text().strip()
 
-    def set_schedule(self, enabled: bool, mode: str, value: str) -> None:
+    def set_schedule(self, enabled: bool, mode: ScheduleMode | str, value: str) -> None:
+        mode_enum = schedule_mode_from_raw(mode)
         with (
             QSignalBlocker(self._sched_check),
             QSignalBlocker(self._mode_combo),
@@ -86,7 +88,7 @@ class ExportSchedulePanel(QWidget):
         ):
             self._sched_check.setChecked(enabled)
             try:
-                index = SCHEDULE_MODE_BY_INDEX.index(mode)
+                index = SCHEDULE_MODE_BY_INDEX.index(mode_enum)
             except ValueError:
                 index = 0
             self._mode_combo.setCurrentIndex(index)

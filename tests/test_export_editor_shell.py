@@ -1,5 +1,6 @@
 """Tests for extracted export editor shell/view."""
 
+from app.core.scheduler import ScheduleMode
 from app.ui.export_editor_shell import ExportEditorShell
 
 
@@ -16,7 +17,7 @@ def test_export_editor_shell_roundtrips_core_fields(qtbot) -> None:
         dedupe_key_columns=["id", "updated_at"],
         auth_token="secret-token",
     )
-    shell.set_schedule(True, "hourly", "4")
+    shell.set_schedule(True, ScheduleMode.HOURLY, "4")
 
     assert shell.job_name() == "Nightly"
     assert shell.sql_text() == "SELECT 1"
@@ -26,7 +27,7 @@ def test_export_editor_shell_roundtrips_core_fields(qtbot) -> None:
     assert shell.gas_dedupe_key_columns() == ["id", "updated_at"]
     assert shell.gas_auth_token() == "secret-token"
     assert shell.schedule_enabled() is True
-    assert shell.schedule_mode() == "hourly"
+    assert shell.schedule_mode() is ScheduleMode.HOURLY
     assert shell.schedule_value() == "4"
 
 

@@ -24,11 +24,11 @@ from app.ui.widgets import set_status
 
 _log = get_logger(__name__)
 
-LoadConfigFn = Callable[[], AppConfig]
-RunWorkerFn = Callable[..., object]
-ScanWorkerFactory = Callable[[], object]
-DatabaseListWorkerFactory = Callable[[SqlInstance, str, str], object]
-TestConnectionWorkerFactory = Callable[[AppConfig], object]
+type LoadConfigFn = Callable[[], AppConfig]
+type RunWorkerFn = Callable[..., object]
+type ScanWorkerFactory = Callable[[], object]
+type DatabaseListWorkerFactory = Callable[[SqlInstance, str, str], object]
+type TestConnectionWorkerFactory = Callable[[AppConfig], object]
 
 
 class SettingsSqlController(QObject):
