@@ -7,6 +7,7 @@ def test_perf_smoke_registers_recent_ui_scenarios() -> None:
     assert "export-editor" in perf_smoke.SCENARIOS
     assert "settings-widget" in perf_smoke.SCENARIOS
     assert "test-run-dialog" in perf_smoke.SCENARIOS
+    assert "gas-chunking" in perf_smoke.SCENARIOS
 
 
 def test_perf_smoke_run_cycles_executes_selected_scenarios(monkeypatch) -> None:
