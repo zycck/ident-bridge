@@ -1,10 +1,20 @@
-function buildBackendV2_() {
-  return {
-    handleRequest: backendHandleRequest_,
-  };
-}
+var BACKEND_V2_CONFIG = Object.freeze({
+  apiVersion: '2.0',
+  protocolVersion: 'gas-sheet.v2',
+  runStatePrefix: 'gasv2:run:',
+  technicalDateColumnName: '__\u0414\u0430\u0442\u0430\u0412\u044b\u0433\u0440\u0443\u0437\u043a\u0438',
+  technicalSourceColumnName: '__idb_source',
+  technicalSourceValue: 'iDentBridge:gas-sheet:v2',
+  stagingSheetPrefix: '__stage__',
+  pingMessage: 'pong',
+  defaultLockTimeoutMs: 2000,
+  maxPayloadBytes: 5 * 1024 * 1024,
+  maxSheetNameLength: 100,
+  staleRunTtlMs: 12 * 60 * 60 * 1000,
+});
 
 function backendHandleRequest_(event, method, context) {
+  void context;
   try {
     var normalizedMethod = backendTrimString_(method).toUpperCase();
 
@@ -41,13 +51,11 @@ function backendHandleGetRequest_(event) {
   }
 
   if (action === 'sheets') {
-    var sheetNames = backendListVisibleSheetNames_();
     return backendMakeJsonResponse_({
       ok: true,
       status: 'ready',
       action: 'sheets',
-      sheets: sheetNames,
-      sheet_names: sheetNames,
+      sheets: backendListVisibleSheetNames_(),
     });
   }
 
@@ -61,62 +69,70 @@ function backendHandleGetRequest_(event) {
 
 
 function backendHandlePostRequest_(event, context) {
+  void context;
   return backendWithScriptLock_(function handleLockedPost() {
-    var request = backendParseV2Request_(event, context);
+    var request = backendParseV2Request_(event);
     var spreadsheet = backendGetSpreadsheet_();
     backendCollectStaleRuns_(spreadsheet);
-    var state = backendLoadRunState_(request.runId);
+    var mainSheet = backendEnsureMainSheet_(spreadsheet, request);
 
-    if (state && state.promoted) {
-      return backendMakeJsonResponse_(backendBuildPromotedAck_(request, 0, 'Run already promoted'));
+    if (request.totalChunks === 1) {
+      backendRewriteMainSheet_(mainSheet, request, backendBuildMainRows_(request));
+      return backendMakeJsonResponse_(
+        backendBuildAck_(request, 'promoted', request.chunkRows, 'Chunk promoted')
+      );
+    }
+
+    var state = backendLoadRunState_(request.runId);
+    if (state && state.completed) {
+      return backendMakeJsonResponse_(
+        backendBuildAck_(request, 'promoted', 0, 'Run already promoted')
+      );
     }
 
     if (!state) {
-      state = backendCreateInitialRunState_(request, backendBuildStagingSheetName_(request.sheetName, request.runId));
+      state = backendCreateRunState_(request, backendBuildStagingSheetName_(request.sheetName, request.runId));
     } else {
       backendValidateExistingRunState_(state, request);
-      state.updated_at = backendNowIso_();
     }
 
-    var mainSheet = backendEnsureMainSheet_(spreadsheet, request);
-    var stagingSheetName = state.staging_sheet_name || backendBuildStagingSheetName_(request.sheetName, request.runId);
-    state.staging_sheet_name = stagingSheetName;
-    var stagingSheet = backendEnsureStagingSheet_(spreadsheet, request, stagingSheetName);
+    state.updated_at = backendNowIso_();
+    backendSaveRunState_(state);
 
+    var stagingSheet = backendEnsureStagingSheet_(spreadsheet, request, state.staging_sheet_name);
     var stagingResult = backendReplaceStagingChunkRows_(stagingSheet, request);
     state.updated_at = backendNowIso_();
     backendSaveRunState_(state);
 
-    var stagedChunkSet = backendReadStageChunkIndexSet_(stagingSheet);
-    var complete = Object.keys(stagedChunkSet).length === request.totalChunks;
-
-    if (complete) {
-      var promotedRows = backendBuildPromotedRows_(request, stagingSheet);
-      backendRewriteMainSheet_(mainSheet, request, promotedRows);
-      state.promoted = true;
-      state.promoted_at = backendNowIso_();
-      state.promoted_rows = promotedRows.length;
-      state.updated_at = backendNowIso_();
-      backendSaveRunState_(state);
-      backendCleanupStagingSheet_(stagingSheet);
-
-      return backendMakeJsonResponse_(backendBuildPromotedAck_(
-        request,
-        stagingResult.duplicate ? 0 : request.records.length,
-        stagingResult.duplicate ? 'Run promoted from existing staging data' : 'Chunk promoted'
-      ));
+    if (!backendHasAllChunks_(stagingSheet, request.totalChunks)) {
+      return backendMakeJsonResponse_(
+        backendBuildAck_(
+          request,
+          stagingResult.duplicate ? 'duplicate' : 'staged',
+          stagingResult.duplicate ? 0 : request.chunkRows,
+          stagingResult.duplicate ? 'Chunk already staged' : 'Chunk staged'
+        )
+      );
     }
 
-    return backendMakeJsonResponse_(backendBuildChunkAck_(
-      request,
-      stagingResult.duplicate ? 'duplicate' : 'staged',
-      stagingResult.duplicate ? 0 : request.records.length,
-      stagingResult.duplicate ? 'Chunk already staged' : 'Chunk staged'
-    ));
+    backendRewriteMainSheet_(mainSheet, request, backendBuildPromotedRows_(stagingSheet));
+    backendDeleteStagingSheet_(spreadsheet, stagingSheet);
+    state.completed = true;
+    state.updated_at = backendNowIso_();
+    backendSaveRunState_(state);
+
+    return backendMakeJsonResponse_(
+      backendBuildAck_(
+        request,
+        'promoted',
+        stagingResult.duplicate ? 0 : request.chunkRows,
+        stagingResult.duplicate ? 'Run promoted from existing staging data' : 'Chunk promoted'
+      )
+    );
   });
 }
 
-function backendParseV2Request_(event, context) {
+function backendParseV2Request_(event) {
   var raw = event && event.postData && typeof event.postData.contents === 'string'
     ? event.postData.contents
     : '';
@@ -153,8 +169,6 @@ function backendParseV2Request_(event, context) {
 
   return backendNormalizeV2Payload_(payload);
 }
-
-
 
 function backendNormalizeRequiredString_(value, fieldName) {
   var normalized = backendTrimString_(value);
@@ -362,8 +376,7 @@ function backendValidateExistingRunState_(state, request) {
     backendTrimString_(state.sheet_name) !== request.sheetName ||
     backendTrimString_(state.export_date) !== request.exportDate ||
     state.total_chunks !== request.totalChunks ||
-    state.total_rows !== request.totalRows ||
-    !backendSequenceEquals_(backendCloneArray_(state.columns), request.columns)
+    state.total_rows !== request.totalRows
   ) {
     throw backendCreateError_(
       'INVALID_RUN_STATE',
@@ -374,30 +387,19 @@ function backendValidateExistingRunState_(state, request) {
   }
 }
 
-function backendBuildChunkAck_(request, status, rowsWritten, message) {
+function backendBuildAck_(request, status, rowsWritten, message) {
   return {
     ok: true,
     status: status,
-    run_id: request.runId,
-    chunk_index: request.chunkIndex,
-    total_chunks: request.totalChunks,
-    total_rows: request.totalRows,
     rows_received: request.chunkRows,
     rows_written: rowsWritten,
-    sheet_name: request.sheetName,
-    export_date: request.exportDate,
     retryable: false,
     message: message,
   };
 }
 
-function backendBuildPromotedAck_(request, rowsWritten, message) {
-  var ack = backendBuildChunkAck_(request, 'promoted', rowsWritten, message);
-  ack.promoted = true;
-  return ack;
-}
-
 function backendBuildFailurePayload_(request, error) {
+  void request;
   var backendError = error && error.backendError
     ? error
     : backendCreateError_(
@@ -413,18 +415,16 @@ function backendBuildFailurePayload_(request, error) {
     ok: false,
     error_code: backendError.errorCode || 'INTERNAL_ERROR',
     retryable: backendError.retryable === true,
-    run_id: request && request.runId ? request.runId : undefined,
-    chunk_index: request && request.chunkIndex ? request.chunkIndex : undefined,
     message: backendError.message,
     details: backendError.details || {},
   };
 }
 
 function backendBuildStagingSheetName_(sheetName, runId) {
-  var base = BACKEND_V2_CONFIG.stagingSheetPrefix
-    + backendSanitizeSheetName_(sheetName)
-    + '__'
-    + backendSanitizeSheetName_(runId);
+  var safeSheetName = backendSanitizeSheetName_(sheetName);
+  var safeRunId = backendSanitizeSheetName_(runId);
+  var runSuffix = safeRunId.length > 12 ? safeRunId.substring(safeRunId.length - 12) : safeRunId;
+  var base = BACKEND_V2_CONFIG.stagingSheetPrefix + safeSheetName + '__' + runSuffix;
 
   if (base.length <= BACKEND_V2_CONFIG.maxSheetNameLength) {
     return base;

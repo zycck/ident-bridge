@@ -317,17 +317,13 @@ def test_parse_gas_ack_accepts_success_and_ignores_extra_fields():
             {
                 "ok": True,
                 "status": "accepted",
-                "run_id": "run-6",
-                "chunk_index": 1,
                 "rows_received": 2,
                 "rows_written": 2,
                 "retryable": False,
                 "message": "ok",
                 "extra": "ignored",
             }
-        ).encode("utf-8"),
-        expected_run_id="run-6",
-        expected_chunk_index=1,
+        ).encode("utf-8")
     )
 
     assert isinstance(ack, GasAck)
@@ -338,42 +334,33 @@ def test_parse_gas_ack_accepts_success_and_ignores_extra_fields():
 
 def test_parse_gas_ack_rejects_invalid_json():
     with pytest.raises(ValueError):
-        parse_gas_ack(b"not-json", expected_run_id="run-7", expected_chunk_index=1)
+        parse_gas_ack(b"not-json")
 
 
-def test_parse_gas_ack_rejects_wrong_run_or_chunk():
+def test_parse_gas_ack_rejects_success_ack_without_status():
     with pytest.raises(ValueError):
         parse_gas_ack(
             json.dumps(
                 {
                     "ok": True,
-                    "status": "accepted",
-                    "run_id": "other-run",
-                    "chunk_index": 1,
                     "retryable": False,
                     "message": "ok",
                 }
-            ).encode("utf-8"),
-            expected_run_id="run-8",
-            expected_chunk_index=1,
+            ).encode("utf-8")
         )
 
 
-def test_parse_gas_ack_accepts_failure_ack_without_matching_run_id():
+def test_parse_gas_ack_accepts_minimal_failure_ack():
     ack = parse_gas_ack(
         json.dumps(
             {
                 "ok": False,
                 "error_code": "UNAUTHORIZED",
                 "retryable": False,
-                "run_id": "",
-                "chunk_index": "",
                 "message": "Invalid auth token",
                 "details": {"field": "auth_token"},
             }
-        ).encode("utf-8"),
-        expected_run_id="run-auth-fail",
-        expected_chunk_index=1,
+        ).encode("utf-8")
     )
 
     assert ack.ok is False
@@ -593,6 +580,7 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
     assert exc.delivered_rows == 2
     assert exc.run_id
     assert "missing columns" not in exc.user_message
+    assert "run_id" not in exc.debug_context
 
 
 def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
@@ -606,11 +594,8 @@ def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
             return _FakeResp(
                 {
                     "ok": False,
-                    "status": "rejected",
                     "error_code": "UNAUTHORIZED",
                     "retryable": False,
-                    "run_id": "",
-                    "chunk_index": "",
                     "message": "Invalid auth token",
                     "details": {"field": "auth_token"},
                 }
@@ -618,11 +603,8 @@ def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
         return _FakeResp(
             {
                 "ok": False,
-                "status": "rejected",
                 "error_code": "UNAUTHORIZED",
                 "retryable": False,
-                "run_id": "",
-                "chunk_index": "",
                 "message": "Invalid auth token",
                 "details": {"field": "auth_token"},
             }

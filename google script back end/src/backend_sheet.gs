@@ -95,41 +95,57 @@ function backendWriteSheetValues_(sheet, rows) {
     sheet.clearContents();
   }
 
-  var width = normalized[0].length;
-  sheet.getRange(1, 1, normalized.length, width).setValues(normalized);
+  sheet.getRange(1, 1, normalized.length, normalized[0].length).setValues(normalized);
 }
 
 function backendMainHeader_(columns) {
-  return backendCloneArray_(columns).concat([BACKEND_V2_CONFIG.technicalColumnName]);
+  return backendCloneArray_(columns).concat([
+    BACKEND_V2_CONFIG.technicalDateColumnName,
+    BACKEND_V2_CONFIG.technicalSourceColumnName,
+  ]);
 }
 
 function backendStagingHeader_(columns) {
-  return ['__chunk_index', '__row_index'].concat(backendCloneArray_(columns)).concat([BACKEND_V2_CONFIG.technicalColumnName]);
+  return ['__chunk_index', '__row_index'].concat(backendMainHeader_(columns));
 }
 
 function backendCanonicalColumnName_(value) {
   return backendTrimString_(value).replace(/\s+/g, ' ').toLowerCase();
 }
 
+function backendIsTechnicalColumn_(value) {
+  return value === BACKEND_V2_CONFIG.technicalDateColumnName
+    || value === BACKEND_V2_CONFIG.technicalSourceColumnName;
+}
+
 function backendSplitMainHeader_(header) {
   var userColumns = [];
-  var technicalIndex = -1;
+  var dateIndex = -1;
+  var sourceIndex = -1;
 
   for (var index = 0; index < header.length; index += 1) {
     var columnName = backendTrimString_(header[index]);
     if (!columnName) {
       continue;
     }
-    if (columnName === BACKEND_V2_CONFIG.technicalColumnName) {
-      technicalIndex = index;
+
+    if (columnName === BACKEND_V2_CONFIG.technicalDateColumnName) {
+      dateIndex = index;
       continue;
     }
+
+    if (columnName === BACKEND_V2_CONFIG.technicalSourceColumnName) {
+      sourceIndex = index;
+      continue;
+    }
+
     userColumns.push(columnName);
   }
 
   return {
     userColumns: userColumns,
-    technicalIndex: technicalIndex,
+    dateIndex: dateIndex,
+    sourceIndex: sourceIndex,
   };
 }
 
@@ -145,7 +161,7 @@ function backendMergeMainHeader_(currentHeader, requestColumns) {
   for (var requestIndex = 0; requestIndex < requestColumns.length; requestIndex += 1) {
     var requestColumn = backendTrimString_(requestColumns[requestIndex]);
     var key = backendCanonicalColumnName_(requestColumn);
-    if (!requestColumn || seen[key]) {
+    if (!requestColumn || backendIsTechnicalColumn_(requestColumn) || seen[key]) {
       continue;
     }
     seen[key] = true;
@@ -156,7 +172,7 @@ function backendMergeMainHeader_(currentHeader, requestColumns) {
     mergedUserColumns = backendCloneArray_(requestColumns);
   }
 
-  return mergedUserColumns.concat([BACKEND_V2_CONFIG.technicalColumnName]);
+  return backendMainHeader_(mergedUserColumns);
 }
 
 function backendBuildHeaderIndexMap_(header) {
@@ -191,6 +207,36 @@ function backendProjectRowsToHeader_(sourceHeader, rows, targetHeader) {
   return projectedRows;
 }
 
+function backendApplyLegacyMarkerMigration_(rows, header) {
+  var split = backendSplitMainHeader_(header);
+  if (split.dateIndex < 0 || split.sourceIndex < 0) {
+    return false;
+  }
+
+  var changed = false;
+  for (var index = 0; index < rows.length; index += 1) {
+    var row = rows[index];
+    if (!backendTrimString_(row[split.dateIndex])) {
+      continue;
+    }
+    if (backendTrimString_(row[split.sourceIndex])) {
+      continue;
+    }
+    row[split.sourceIndex] = BACKEND_V2_CONFIG.technicalSourceValue;
+    changed = true;
+  }
+
+  return changed;
+}
+
+function backendHideTechnicalColumns_(sheet, header) {
+  if (!sheet.hideColumns || header.length < 2) {
+    return;
+  }
+
+  sheet.hideColumns(header.length - 1, 2);
+}
+
 function backendEnsureMainSheet_(spreadsheet, request) {
   var sheet = backendGetOrCreateSheet_(spreadsheet, request.sheetName);
   if (sheet.getFrozenRows && sheet.getFrozenRows() !== 1) {
@@ -199,22 +245,25 @@ function backendEnsureMainSheet_(spreadsheet, request) {
 
   var currentRows = backendSheetReadValues_(sheet);
   var currentHeader = currentRows.length ? backendTrimTrailingBlankCells_(currentRows[0]) : [];
+  var currentSplit = backendSplitMainHeader_(currentHeader);
   var mergedHeader = backendMergeMainHeader_(currentHeader, request.columns);
+  var existingDataRows = currentRows.length > 1 ? currentRows.slice(1) : [];
+  var projectedRows = currentHeader.length
+    ? backendProjectRowsToHeader_(currentHeader, existingDataRows, mergedHeader)
+    : existingDataRows;
+  var migrated = currentHeader.length
+    && currentSplit.dateIndex >= 0
+    && currentSplit.sourceIndex < 0
+    ? backendApplyLegacyMarkerMigration_(projectedRows, mergedHeader)
+    : false;
 
-  if (!backendSequenceEquals_(currentHeader, mergedHeader)) {
-    var existingDataRows = currentRows.length > 1 ? currentRows.slice(1) : [];
-    var projectedRows = currentHeader.length
-      ? backendProjectRowsToHeader_(currentHeader, existingDataRows, mergedHeader)
-      : existingDataRows;
-    backendWriteSheetValues_(sheet, [mergedHeader].concat(projectedRows));
-  } else if (!currentRows.length) {
+  if (!currentRows.length) {
     backendWriteSheetValues_(sheet, [mergedHeader]);
+  } else if (!backendSequenceEquals_(currentHeader, mergedHeader) || migrated) {
+    backendWriteSheetValues_(sheet, [mergedHeader].concat(projectedRows));
   }
 
-  if (sheet.hideColumns) {
-    sheet.hideColumns(mergedHeader.length, 1);
-  }
-
+  backendHideTechnicalColumns_(sheet, mergedHeader);
   return sheet;
 }
 
@@ -238,11 +287,12 @@ function backendEnsureStagingSheet_(spreadsheet, request, stagingSheetName) {
   return sheet;
 }
 
-function backendBuildStagingRows_(request) {
+function backendBuildMainRows_(request) {
   var rows = [];
+
   for (var rowIndex = 0; rowIndex < request.records.length; rowIndex += 1) {
     var record = request.records[rowIndex];
-    var row = [request.chunkIndex, rowIndex + 1];
+    var row = [];
 
     for (var columnIndex = 0; columnIndex < request.columns.length; columnIndex += 1) {
       var columnName = request.columns[columnIndex];
@@ -250,10 +300,18 @@ function backendBuildStagingRows_(request) {
     }
 
     row.push(backendCoerceCellValue_(request.exportDate));
+    row.push(BACKEND_V2_CONFIG.technicalSourceValue);
     rows.push(row);
   }
 
   return rows;
+}
+
+function backendBuildStagingRows_(request) {
+  var directRows = backendBuildMainRows_(request);
+  return directRows.map(function mapDirectRow(row, index) {
+    return [request.chunkIndex, index + 1].concat(row);
+  });
 }
 
 function backendReadStagedChunkRows_(sheet) {
@@ -265,21 +323,20 @@ function backendReplaceStagingChunkRows_(sheet, request) {
   var header = backendStagingHeader_(request.columns);
   var existingRows = backendReadStagedChunkRows_(sheet);
   var retainedRows = [];
-  var chunkIndex = request.chunkIndex;
+  var duplicate = false;
 
   for (var index = 0; index < existingRows.length; index += 1) {
     var row = existingRows[index];
-    if (backendToInteger_(row[0]) === chunkIndex) {
+    if (backendToInteger_(row[0]) === request.chunkIndex) {
+      duplicate = true;
       continue;
     }
     retainedRows.push(row);
   }
 
-  var nextRows = retainedRows.concat(backendBuildStagingRows_(request));
-  backendWriteSheetValues_(sheet, [header].concat(nextRows));
+  backendWriteSheetValues_(sheet, [header].concat(retainedRows).concat(backendBuildStagingRows_(request)));
   return {
-    duplicate: retainedRows.length !== existingRows.length,
-    rows: nextRows,
+    duplicate: duplicate,
   };
 }
 
@@ -297,7 +354,12 @@ function backendReadStageChunkIndexSet_(sheet) {
   return set;
 }
 
-function backendBuildPromotedRows_(request, sheet) {
+function backendHasAllChunks_(sheet, totalChunks) {
+  var chunkSet = backendReadStageChunkIndexSet_(sheet);
+  return Object.keys(chunkSet).length === totalChunks;
+}
+
+function backendBuildPromotedRows_(sheet) {
   var rows = backendReadStagedChunkRows_(sheet);
   var promotedRows = [];
 
@@ -314,7 +376,6 @@ function backendBuildPromotedRows_(request, sheet) {
     if (left.chunkIndex !== right.chunkIndex) {
       return left.chunkIndex - right.chunkIndex;
     }
-
     return left.rowIndex - right.rowIndex;
   });
 
@@ -323,32 +384,153 @@ function backendBuildPromotedRows_(request, sheet) {
   });
 }
 
-function backendRewriteMainSheet_(sheet, request, stagedRows) {
+function backendRewriteMainSheet_(sheet, request, promotedRows) {
   var currentRows = backendSheetReadValues_(sheet);
-  var header = currentRows.length ? backendTrimTrailingBlankCells_(currentRows[0]) : backendMainHeader_(request.columns);
-  var split = backendSplitMainHeader_(header);
-  var techIndex = split.technicalIndex >= 0 ? split.technicalIndex : header.length - 1;
+  var currentHeader = currentRows.length ? backendTrimTrailingBlankCells_(currentRows[0]) : [];
+  var header = currentHeader.length ? backendMergeMainHeader_(currentHeader, request.columns) : backendMainHeader_(request.columns);
   var dataRows = currentRows.length > 1 ? currentRows.slice(1) : [];
+  var split = backendSplitMainHeader_(header);
   var retainedRows = [];
 
   for (var index = 0; index < dataRows.length; index += 1) {
     var row = dataRows[index];
-    if (backendTrimString_(row[techIndex]) === request.exportDate) {
+    var sameDate = backendTrimString_(row[split.dateIndex]) === request.exportDate;
+    var sameSource = backendTrimString_(row[split.sourceIndex]) === BACKEND_V2_CONFIG.technicalSourceValue;
+    if (sameDate && sameSource) {
       continue;
     }
     retainedRows.push(row);
   }
 
-  var stagingHeader = backendMainHeader_(request.columns);
-  var promotedRows = backendProjectRowsToHeader_(stagingHeader, stagedRows, header);
-  backendWriteSheetValues_(sheet, [header].concat(retainedRows).concat(promotedRows));
-  if (sheet.hideColumns) {
-    sheet.hideColumns(header.length, 1);
-  }
+  var promoted = backendProjectRowsToHeader_(backendMainHeader_(request.columns), promotedRows, header);
+  backendWriteSheetValues_(sheet, [header].concat(retainedRows).concat(promoted));
+  backendHideTechnicalColumns_(sheet, header);
 }
 
-function backendCleanupStagingSheet_(sheet) {
+function backendDeleteStagingSheet_(spreadsheet, sheet) {
+  if (spreadsheet.deleteSheet) {
+    spreadsheet.deleteSheet(sheet);
+    return;
+  }
+
   if (sheet.clearContents) {
     sheet.clearContents();
   }
+}
+
+function backendRunStateKey_(runId) {
+  return BACKEND_V2_CONFIG.runStatePrefix + backendTrimString_(runId);
+}
+
+function backendLoadRunState_(runId) {
+  var raw = PropertiesService.getScriptProperties().getProperty(backendRunStateKey_(runId));
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw);
+  } catch (_error) {
+    return null;
+  }
+}
+
+function backendSaveRunState_(state) {
+  var runId = backendTrimString_(state && state.run_id);
+  if (!runId) {
+    throw backendCreateError_(
+      'INVALID_RUN_STATE',
+      false,
+      'Run state is missing run_id',
+      {}
+    );
+  }
+
+  PropertiesService.getScriptProperties().setProperty(
+    backendRunStateKey_(runId),
+    JSON.stringify(state)
+  );
+}
+
+function backendParseIsoTimestampMs_(value) {
+  var text = backendTrimString_(value);
+  if (!text) {
+    return null;
+  }
+
+  var parsed = Date.parse(text);
+  if (isNaN(parsed)) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function backendCollectStaleRuns_(spreadsheet) {
+  var properties = PropertiesService.getScriptProperties().getProperties();
+  var keys = Object.keys(properties || {});
+  var now = Date.now();
+
+  for (var index = 0; index < keys.length; index += 1) {
+    var key = keys[index];
+    if (key.indexOf(BACKEND_V2_CONFIG.runStatePrefix) !== 0) {
+      continue;
+    }
+
+    var state;
+    try {
+      state = JSON.parse(properties[key]);
+    } catch (_error) {
+      PropertiesService.getScriptProperties().deleteProperty(key);
+      continue;
+    }
+
+    var updatedAt = backendParseIsoTimestampMs_(state && state.updated_at);
+    if (updatedAt !== null && (now - updatedAt) <= BACKEND_V2_CONFIG.staleRunTtlMs) {
+      continue;
+    }
+
+    var stagingSheetName = backendTrimString_(state && state.staging_sheet_name);
+    if (stagingSheetName) {
+      var stagingSheet = spreadsheet.getSheetByName(stagingSheetName);
+      if (stagingSheet) {
+        backendDeleteStagingSheet_(spreadsheet, stagingSheet);
+      }
+    }
+
+    PropertiesService.getScriptProperties().deleteProperty(key);
+  }
+}
+
+function backendWithScriptLock_(callback) {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(BACKEND_V2_CONFIG.defaultLockTimeoutMs)) {
+    throw backendCreateError_(
+      'LOCK_UNAVAILABLE',
+      true,
+      'Could not acquire script lock',
+      {}
+    );
+  }
+
+  try {
+    return callback();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function backendCreateRunState_(request, stagingSheetName) {
+  return {
+    protocol_version: request.protocolVersion,
+    job_name: request.jobName,
+    run_id: request.runId,
+    sheet_name: request.sheetName,
+    export_date: request.exportDate,
+    total_chunks: request.totalChunks,
+    total_rows: request.totalRows,
+    staging_sheet_name: stagingSheetName,
+    completed: false,
+    updated_at: backendNowIso_(),
+  };
 }

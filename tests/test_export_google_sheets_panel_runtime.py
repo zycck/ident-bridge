@@ -52,8 +52,10 @@ def test_google_sheets_panel_closes_overlay_popup_with_host(qtbot) -> None:
 
 def test_fetch_google_sheet_options_reports_non_json_response(monkeypatch) -> None:
     def fake_urlopen(request, timeout):  # noqa: ANN001
-        assert "action=sheets" in request.full_url
         assert timeout == 5.0
+        if "action=ping" in request.full_url:
+            return _FakeResponse('{"ok": true, "status": "ready", "message": "pong"}')
+        assert "action=sheets" in request.full_url
         return _FakeResponse("<html>not json</html>")
 
     monkeypatch.setattr(panel_module.urllib.request, "urlopen", fake_urlopen)
@@ -64,6 +66,7 @@ def test_fetch_google_sheet_options_reports_non_json_response(monkeypatch) -> No
 
 def test_fetch_google_sheet_options_surfaces_access_errors(monkeypatch) -> None:
     def fake_urlopen(request, timeout):  # noqa: ANN001
+        assert timeout == 5.0
         return _FakeResponse('{"ok": false, "error_code": "UNAUTHORIZED", "message": "forbidden"}')
 
     monkeypatch.setattr(panel_module.urllib.request, "urlopen", fake_urlopen)

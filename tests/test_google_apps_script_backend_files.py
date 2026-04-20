@@ -13,6 +13,8 @@ LIBRARY_SCRIPT_ID = "1gCHuAaNHvQmelAnG2bLBlCoiuj1EPx0uu8D0e3leBp1XQ6X6sukBm5iu"
 LIBRARY_SYMBOL = "iDBBackend"
 TECH_COLUMN = "__\u0414\u0430\u0442\u0430\u0412\u044b\u0433\u0440\u0443\u0437\u043a\u0438"
 TECH_COLUMN_JS = "__\\u0414\\u0430\\u0442\\u0430\\u0412\\u044b\\u0433\\u0440\\u0443\\u0437\\u043a\\u0438"
+SOURCE_COLUMN = "__idb_source"
+SOURCE_MARKER = "iDentBridge:gas-sheet:v2"
 
 
 def _v2_checksum(
@@ -52,9 +54,12 @@ def _v2_checksum(
 def test_google_apps_script_backend_is_split_into_v2_modules() -> None:
     source_files = sorted(path.name for path in SRC_DIR.iterdir() if path.is_file())
 
-    assert "backend.js" in source_files
-    assert any(name.startswith("backend_") for name in source_files)
-    assert len(source_files) >= 4
+    assert source_files == [
+        "backend.js",
+        "backend_api.gs",
+        "backend_sheet.gs",
+        "backend_utils.gs",
+    ]
     assert "Подключение.gs" not in source_files
 
     combined_source = "\n".join(
@@ -115,8 +120,8 @@ def test_do_get_supports_only_ping_and_sheets() -> None:
     assert result["ping"]["ok"] is True
     assert result["ping"]["status"] == "ready"
     assert result["ping"]["message"] == "pong"
-    assert result["sheets"]["sheet_names"] == ["Reports"]
     assert result["sheets"]["sheets"] == ["Reports"]
+    assert "sheet_names" not in result["sheets"]
     assert result["invalid"]["ok"] is False
     assert result["invalid"]["error_code"] == "INVALID_ACTION"
 
@@ -170,14 +175,13 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
         }));
 
         const mainSheet = __spreadsheet.getSheetByName('Reports');
-        const stagingSheet = __spreadsheet.getSheetByName('__stage__Reports__run-2026-04-20-001');
 
         console.log(JSON.stringify({
           first,
           second,
           mainValues: mainSheet.getDataRange().getValues(),
           hiddenColumns: mainSheet.getHiddenColumns ? mainSheet.getHiddenColumns() : [],
-          stagingValues: stagingSheet.getDataRange().getValues(),
+          stageExists: Boolean(__spreadsheet.getSheetByName(JSON.parse(__propertyStore.get('gasv2:run:run-2026-04-20-001')).staging_sheet_name)),
           state: JSON.parse(__propertyStore.get('gasv2:run:run-2026-04-20-001'))
         }));
         """
@@ -190,15 +194,15 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
     assert result["second"]["status"] == "promoted"
     assert result["second"]["rows_written"] == 1
     assert result["mainValues"] == [
-        ["id", "name", TECH_COLUMN],
-        [50, "Keep", "2026-04-19"],
-        [1, "Ana", "2026-04-20"],
-        [2, "Boris", "2026-04-20"],
-        [3, "Vera", "2026-04-20"],
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [50, "Keep", "2026-04-19", SOURCE_MARKER],
+        [1, "Ana", "2026-04-20", SOURCE_MARKER],
+        [2, "Boris", "2026-04-20", SOURCE_MARKER],
+        [3, "Vera", "2026-04-20", SOURCE_MARKER],
     ]
-    assert result["hiddenColumns"] == [3]
-    assert result["stagingValues"] == []
-    assert result["state"]["promoted"] is True
+    assert result["hiddenColumns"] == [3, 4]
+    assert result["stageExists"] is False
+    assert result["state"]["completed"] is True
     assert result["state"]["sheet_name"] == "Reports"
 
 
@@ -229,7 +233,8 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
         payload.checksum = __checksum__(payload);
         const first = JSON.parse(__callPost(payload));
         const second = JSON.parse(__callPost(payload));
-        const stagingSheet = __spreadsheet.getSheetByName('__stage__Reports__run-duplicate');
+        const state = JSON.parse(__propertyStore.get('gasv2:run:run-duplicate'));
+        const stagingSheet = __spreadsheet.getSheetByName(state.staging_sheet_name);
 
         console.log(JSON.stringify({
           first,
@@ -243,9 +248,9 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
     assert result["second"]["status"] == "duplicate"
     assert result["second"]["rows_written"] == 0
     assert result["stagingValues"] == [
-        ['__chunk_index', '__row_index', 'id', 'name', TECH_COLUMN],
-        [1, 1, 1, 'Ana', '2026-04-20'],
-        [1, 2, 2, 'Boris', '2026-04-20'],
+        ['__chunk_index', '__row_index', 'id', 'name', TECH_COLUMN, SOURCE_COLUMN],
+        [1, 1, 1, 'Ana', '2026-04-20', SOURCE_MARKER],
+        [1, 2, 2, 'Boris', '2026-04-20', SOURCE_MARKER],
     ]
 
 
@@ -309,11 +314,68 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
     assert result["repeat"]["status"] == "promoted"
     assert result["repeat"]["rows_written"] == 0
     assert result["mainValues"] == [
-        ["id", "name", TECH_COLUMN],
-        [1, "Ana", "2026-04-20"],
-        [2, "Boris", "2026-04-20"],
-        [3, "Vera", "2026-04-20"],
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "Ana", "2026-04-20", SOURCE_MARKER],
+        [2, "Boris", "2026-04-20", SOURCE_MARKER],
+        [3, "Vera", "2026-04-20", SOURCE_MARKER],
     ]
+
+
+def test_do_post_single_chunk_writes_directly_without_staging_or_run_state() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [91, 'Old app row', '2026-04-20', '__SOURCE_MARKER__'],
+            [77, 'Manual row', '2026-04-20', '']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'nightly_export',
+          run_id: 'run-single',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 2,
+          chunk_rows: 2,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          columns: ['id', 'name'],
+          records: [
+            { id: 1, name: 'Ana' },
+            { id: 2, name: 'Boris' }
+          ]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({
+          ack,
+          mainValues: mainSheet.getDataRange().getValues(),
+          hiddenColumns: mainSheet.getHiddenColumns ? mainSheet.getHiddenColumns() : [],
+          stageCount: Object.keys(__sheets).filter((name) => name.startsWith('__stage__')).length,
+          stateExists: Boolean(__propertyStore.get('gasv2:run:run-single'))
+        }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert result["ack"]["status"] == "promoted"
+    assert result["ack"]["rows_written"] == 2
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [77, "Manual row", "2026-04-20", ""],
+        [1, "Ana", "2026-04-20", SOURCE_MARKER],
+        [2, "Boris", "2026-04-20", SOURCE_MARKER],
+    ]
+    assert result["hiddenColumns"] == [3, 4]
+    assert result["stageCount"] == 0
+    assert result["stateExists"] is False
 
 
 def test_do_post_rejects_bad_checksum() -> None:
@@ -390,11 +452,60 @@ def test_do_post_maps_new_rows_by_column_name_and_keeps_existing_header_order() 
     assert result["ack"]["ok"] is True
     assert result["ack"]["status"] == "promoted"
     assert result["mainValues"] == [
-        ["name", "id", TECH_COLUMN],
-        ["Keep", "", "2026-04-19"],
-        ["Ana", 1, "2026-04-20"],
+        ["name", "id", TECH_COLUMN, SOURCE_COLUMN],
+        ["Keep", "", "2026-04-19", SOURCE_MARKER],
+        ["Ana", 1, "2026-04-20", SOURCE_MARKER],
     ]
-    assert result["hiddenColumns"] == [3]
+    assert result["hiddenColumns"] == [3, 4]
+
+
+def test_do_post_removes_only_rows_owned_by_identbridge_for_the_same_day() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [10, 'Old app row', '2026-04-20', '__SOURCE_MARKER__'],
+            [11, 'Manual same day', '2026-04-20', 'manual-import'],
+            [12, 'Manual blank marker', '2026-04-20', ''],
+            [13, 'Old app other day', '2026-04-19', '__SOURCE_MARKER__']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'nightly_export',
+          run_id: 'run-owned-delete',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          columns: ['id', 'name'],
+          records: [{ id: 1, name: 'Ana' }]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({
+          ack,
+          mainValues: mainSheet.getDataRange().getValues()
+        }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [11, "Manual same day", "2026-04-20", "manual-import"],
+        [12, "Manual blank marker", "2026-04-20", ""],
+        [13, "Old app other day", "2026-04-19", SOURCE_MARKER],
+        [1, "Ana", "2026-04-20", SOURCE_MARKER],
+    ]
 
 
 def test_ping_cleans_stale_stage_sheet_and_run_state() -> None:
@@ -428,6 +539,8 @@ def test_ping_cleans_stale_stage_sheet_and_run_state() -> None:
 
 def _run_backend_probe(probe: str) -> dict[str, object]:
     probe = probe.replace("__TECH_COLUMN__", TECH_COLUMN_JS)
+    probe = probe.replace("__SOURCE_COLUMN__", SOURCE_COLUMN)
+    probe = probe.replace("__SOURCE_MARKER__", SOURCE_MARKER)
     source_files = sorted(
         path
         for path in SRC_DIR.iterdir()

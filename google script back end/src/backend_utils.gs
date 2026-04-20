@@ -190,12 +190,6 @@ function backendEscapeFormulaValue_(value) {
   return value;
 }
 
-function backendCopyRows_(rows) {
-  return rows.map(function copyRow(row) {
-    return Array.isArray(row) ? row.slice(0) : [];
-  });
-}
-
 function backendComputeRequestChecksum_(request) {
   return backendSha256Hex_(backendStableStringify_({
     protocol_version: request.protocolVersion,
@@ -210,10 +204,6 @@ function backendComputeRequestChecksum_(request) {
     columns: request.columns,
     records: request.records,
   }));
-}
-
-function backendNormalizeSheetName_(value) {
-  return backendTrimString_(value);
 }
 
 function backendSanitizeSheetName_(value) {

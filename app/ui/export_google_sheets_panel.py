@@ -44,6 +44,22 @@ def _looks_like_gas_url(url: str) -> bool:
     return (parsed.hostname or "").lower() in GOOGLE_SCRIPT_HOSTS
 
 
+def _build_action_url(url: str, *, action: str) -> str:
+    parsed = urllib.parse.urlsplit((url or "").strip())
+    query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    filtered_query = [(key, value) for key, value in query_items if key != "action"]
+    filtered_query.append(("action", action))
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urllib.parse.urlencode(filtered_query),
+            parsed.fragment,
+        )
+    )
+
+
 def _preview_sheet_options_body(raw_body: bytes) -> str:
     preview = raw_body.decode("utf-8", errors="replace").strip()
     if not preview:
@@ -70,6 +86,8 @@ def _build_sheet_options_user_message(*, error_code: str = "", message: str = ""
     if text:
         return text
     return fallback
+
+
 def _parse_sheet_options_payload(raw_body: bytes, *, target_url: str) -> dict[str, object]:
     if not raw_body or not raw_body.strip():
         raise _SheetOptionsFetchError(
@@ -113,24 +131,7 @@ def _parse_sheet_options_payload(raw_body: bytes, *, target_url: str) -> dict[st
     return payload
 
 
-def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
-    parsed = urllib.parse.urlsplit((url or "").strip())
-    if not parsed.scheme or not parsed.netloc:
-        return []
-
-    query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    filtered_query = [(key, value) for key, value in query_items if key != "action"]
-    filtered_query.append(("action", "sheets"))
-    target_url = urllib.parse.urlunsplit(
-        (
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            urllib.parse.urlencode(filtered_query),
-            parsed.fragment,
-        )
-    )
-
+def _fetch_sheet_action_payload(target_url: str, *, timeout: float) -> dict[str, object]:
     request = urllib.request.Request(
         target_url,
         headers={"Accept": "application/json", "User-Agent": USER_AGENT},
@@ -138,7 +139,7 @@ def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
     )
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            payload = _parse_sheet_options_payload(response.read(), target_url=target_url)
+            return _parse_sheet_options_payload(response.read(), target_url=target_url)
     except urllib.error.HTTPError as exc:
         raw_body = exc.read()
         preview = _preview_sheet_options_body(raw_body) or "<empty>"
@@ -150,9 +151,8 @@ def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
                 debug_message=f"HTTP {exc.code}; {payload_exc.debug_message}",
             ) from exc
         raise _SheetOptionsFetchError(
-            "Не удалось открыть адрес обработки. Проверьте, что скрипт опубликован как "
-            "веб-приложение и указан адрес /exec.",
-            debug_message=f"HTTP {exc.code}; URL={target_url}; response_preview={preview}",
+            "Не удалось открыть адрес обработки. Проверьте, что скрипт опубликован как веб-приложение и указан адрес /exec.",
+            debug_message=f"HTTP {exc.code}; URL={target_url}; response_preview={preview}; payload={payload}",
         ) from exc
     except urllib.error.URLError as exc:
         raise _SheetOptionsFetchError(
@@ -160,10 +160,16 @@ def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
             debug_message=f"URL={target_url}; reason={exc.reason}",
         ) from exc
 
-    raw = payload.get("sheets")
-    if raw is None:
-        raw = payload.get("sheet_names")
 
+def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
+    parsed = urllib.parse.urlsplit((url or "").strip())
+    if not parsed.scheme or not parsed.netloc:
+        return []
+
+    _fetch_sheet_action_payload(_build_action_url(url, action="ping"), timeout=timeout)
+    payload = _fetch_sheet_action_payload(_build_action_url(url, action="sheets"), timeout=timeout)
+
+    raw = payload.get("sheets")
     values: list[str] = []
     if isinstance(raw, str) and raw.strip():
         values.append(raw.strip())

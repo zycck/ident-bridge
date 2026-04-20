@@ -310,21 +310,13 @@ class GoogleAppsScriptSink:
                 )
                 with urllib.request.urlopen(req, timeout=self._timeout, context=self._ssl) as resp:
                     raw_body = resp.read()
-                ack = parse_gas_ack(
-                    raw_body,
-                    expected_run_id=chunk.run_id,
-                    expected_chunk_index=chunk.chunk_index,
-                )
+                ack = parse_gas_ack(raw_body)
             except urllib.error.HTTPError as exc:
                 http_status = getattr(exc, "code", None)
                 raw_body = exc.read()
                 body_preview = _preview_response_body(raw_body)
                 try:
-                    ack = parse_gas_ack(
-                        raw_body,
-                        expected_run_id=chunk.run_id,
-                        expected_chunk_index=chunk.chunk_index,
-                    )
+                    ack = parse_gas_ack(raw_body)
                 except Exception:  # noqa: BLE001
                     last_exc = _ChunkDeliveryError(
                         _build_http_failure_message(http_status, body_preview),
@@ -400,7 +392,6 @@ class GoogleAppsScriptSink:
         user_message = base_user_message
         debug_context = {
             "url": self._url,
-            "run_id": run_id,
             "delivered_chunks": delivered_chunks,
             "delivered_rows": delivered_rows,
             "failed_chunk_index": failed_chunk.chunk_index,
