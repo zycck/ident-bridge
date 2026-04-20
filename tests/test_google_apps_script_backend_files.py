@@ -61,15 +61,15 @@ def test_google_apps_script_backend_is_split_into_v2_modules() -> None:
 
     assert source_files == [
         "backend.js",
-        "backend_api.gs",
+        "backend_core.gs",
         "backend_sheet.gs",
-        "backend_utils.gs",
     ]
     assert "Подключение.gs" not in source_files
 
     combined_source = "\n".join(
         (SRC_DIR / name).read_text(encoding="utf-8") for name in source_files
     )
+    assert "var " not in combined_source
     for legacy_token in [
         "_dedupe_index_v1",
         "_dedupe_index_v2",
@@ -129,6 +129,45 @@ def test_do_get_supports_only_ping_and_sheets() -> None:
     assert "sheet_names" not in result["sheets"]
     assert result["invalid"]["ok"] is False
     assert result["invalid"]["error_code"] == "INVALID_ACTION"
+
+
+def test_do_get_does_not_run_cleanup_or_touch_advanced_sheets_calls() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [['id', 'name', '__TECH_COLUMN__']]
+        });
+        __registerSheet('__stage__Reports__stale-run', {
+          sheetId: 11,
+          hidden: true,
+          values: [['__chunk_index', '__row_index', 'id', 'name', '__TECH_COLUMN__']]
+        });
+        __propertyStore.set('gasv2:run:stale-run', JSON.stringify({
+          run_id: 'stale-run',
+          staging_sheet_name: '__stage__Reports__stale-run',
+          updated_at: '2000-01-01T00:00:00.000Z'
+        }));
+
+        const ping = JSON.parse(__callGet({ action: 'ping' }));
+        const sheets = JSON.parse(__callGet({ action: 'sheets' }));
+
+        console.log(JSON.stringify({
+          ping,
+          sheets,
+          stageExists: Boolean(__spreadsheet.getSheetByName('__stage__Reports__stale-run')),
+          stateExists: Boolean(__propertyStore.get('gasv2:run:stale-run')),
+          calls: __calls__
+        }));
+        """
+    )
+
+    assert result["ping"]["ok"] is True
+    assert result["sheets"]["ok"] is True
+    assert result["stageExists"] is True
+    assert result["stateExists"] is True
+    assert result["calls"]["batchGet"] == []
+    assert result["calls"]["batchUpdate"] == []
 
 
 def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
@@ -741,8 +780,86 @@ def test_ping_cleans_stale_stage_sheet_and_run_state() -> None:
     )
 
     assert result["ping"]["ok"] is True
-    assert result["stageExists"] is False
-    assert result["stateExists"] is False
+    assert result["stageExists"] is True
+    assert result["stateExists"] is True
+
+
+def test_do_post_append_mode_avoids_full_sheet_read_and_batch_update() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [10, 'Old app row', '2026-04-20', '__SOURCE_ID__']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'append_export',
+          run_id: 'run-append-budget',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'append',
+          columns: ['id', 'name'],
+          records: [{ id: 11, name: 'Ana' }]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        console.log(JSON.stringify({ ack, calls: __calls__ }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert result["calls"]["batchGet"] == []
+    assert result["calls"]["batchUpdate"] == []
+    assert result["calls"]["getDataRange"] == []
+
+
+def test_do_post_replace_by_date_source_uses_one_batch_get_and_one_batch_update() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [10, 'Old app row', '2026-04-20', '__SOURCE_ID__'],
+            [11, 'Manual row', '2026-04-20', 'manual-import']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'nightly_export',
+          run_id: 'run-batch-budget',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
+          columns: ['id', 'name'],
+          records: [{ id: 1, name: 'Ana' }]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        console.log(JSON.stringify({ ack, calls: __calls__ }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert len(result["calls"]["batchGet"]) == 1
+    assert len(result["calls"]["batchUpdate"]) == 1
 
 
 def _run_backend_probe(probe: str) -> dict[str, object]:
@@ -755,14 +872,143 @@ def _run_backend_probe(probe: str) -> dict[str, object]:
         for path in SRC_DIR.iterdir()
         if path.is_file() and path.suffix in {".gs", ".js"}
     )
-    source_loading = "\n".join(
-        f"eval(fs.readFileSync({json.dumps(str(path))}, 'utf8'));"
+    source_loading = "eval([\n" + ",\n".join(
+        f"fs.readFileSync({json.dumps(str(path))}, 'utf8')"
         for path in source_files
-    )
+    ) + "\n].join('\\n'));"
 
     harness = f"""
 const crypto = require('crypto');
 const fs = require('fs');
+
+const __calls__ = {{
+  batchGet: [],
+  batchUpdate: [],
+  getDataRange: [],
+  getRange: [],
+  getSheetByName: [],
+  insertSheet: [],
+  getSheets: [],
+  getActiveSpreadsheet: [],
+  openById: []
+}};
+
+function __columnIndexToLetters__(index) {{
+  let value = Number(index);
+  let output = '';
+  while (value > 0) {{
+    const offset = (value - 1) % 26;
+    output = String.fromCharCode(65 + offset) + output;
+    value = Math.floor((value - 1) / 26);
+  }}
+  return output || 'A';
+}}
+
+function __columnLettersToIndex__(letters) {{
+  let value = 0;
+  for (const ch of String(letters || '').toUpperCase()) {{
+    value = (value * 26) + (ch.charCodeAt(0) - 64);
+  }}
+  return value;
+}}
+
+function __parseA1Range__(rawRange) {{
+  const text = String(rawRange || '');
+  const [sheetPart, rangePartRaw] = text.split('!');
+  const sheetName = sheetPart.replace(/^'/, '').replace(/'$/, '');
+  const rangePart = String(rangePartRaw || '');
+
+  if (/^\\d+:\\d+$/.test(rangePart)) {{
+    const [startRowText, endRowText] = rangePart.split(':');
+    return {{
+      sheetName,
+      startRow: Number(startRowText),
+      endRow: Number(endRowText),
+      startColumn: 1,
+      endColumn: null,
+      rowOnly: true,
+      columnOnly: false,
+    }};
+  }}
+
+  const match = rangePart.match(/^([A-Z]+)(\\d+):([A-Z]+)?(\\d+)?$/);
+  if (!match) {{
+    throw new Error(`Unsupported A1 range in test harness: ${{text}}`);
+  }}
+
+  const startColumn = __columnLettersToIndex__(match[1]);
+  const startRow = Number(match[2]);
+  const endColumn = __columnLettersToIndex__(match[3] || match[1]);
+  const endRow = match[4] ? Number(match[4]) : null;
+
+  return {{
+    sheetName,
+    startRow,
+    endRow,
+    startColumn,
+    endColumn,
+    rowOnly: false,
+    columnOnly: true,
+  }};
+}}
+
+function __readA1Values__(rangeText) {{
+  const parsed = __parseA1Range__(rangeText);
+  const sheet = __sheets[parsed.sheetName];
+  if (!sheet) {{
+    return [];
+  }}
+
+  if (parsed.rowOnly) {{
+    const rowIndex = parsed.startRow - 1;
+    const row = sheet.__values[rowIndex] || [];
+    const width = Math.max(sheet.getLastColumn(), row.length, 1);
+    return [Array.from({{ length: width }}, (_, idx) => row[idx] ?? '')];
+  }}
+
+  const maxRow = parsed.endRow || Math.max(sheet.getLastRow(), parsed.startRow);
+  const values = [];
+  for (let rowIndex = parsed.startRow - 1; rowIndex < maxRow; rowIndex += 1) {{
+    const sourceRow = sheet.__values[rowIndex] || [];
+    const row = [];
+    for (let columnIndex = parsed.startColumn - 1; columnIndex < parsed.endColumn; columnIndex += 1) {{
+      row.push(sourceRow[columnIndex] ?? '');
+    }}
+    values.push(row);
+  }}
+  return values;
+}}
+
+function __applyBatchUpdateRequests__(requests) {{
+  for (const request of requests || []) {{
+    if (request.deleteDimension) {{
+      const dim = request.deleteDimension.range;
+      const sheet = Object.values(__sheets).find((item) => item.getSheetId() === dim.sheetId);
+      if (!sheet || dim.dimension !== 'ROWS') {{
+        continue;
+      }}
+      const startRow = dim.startIndex + 1;
+      const count = dim.endIndex - dim.startIndex;
+      if (count > 0) {{
+        sheet.deleteRows(startRow, count);
+      }}
+      continue;
+    }}
+
+    if (request.insertDimension) {{
+      const dim = request.insertDimension.range;
+      const sheet = Object.values(__sheets).find((item) => item.getSheetId() === dim.sheetId);
+      if (!sheet || dim.dimension !== 'ROWS') {{
+        continue;
+      }}
+      const startRow = dim.startIndex + 1;
+      const count = dim.endIndex - dim.startIndex;
+      if (count > 0) {{
+        sheet.insertRowsBefore(startRow, count);
+      }}
+    }}
+  }}
+}}
 
 function __cloneRows__(rows) {{
   return rows.map((row) => Array.isArray(row) ? row.slice() : []);
@@ -836,8 +1082,14 @@ function __makeSheet__(name, options = {{}}) {{
     getLastRow: () => sheet.__values.length,
     getLastColumn: () => __maxColumns__(sheet.__values),
     getMaxColumns: () => options.maxColumns !== undefined ? options.maxColumns : 50,
-    getDataRange: () => __makeRange__(sheet, 1, 1, sheet.__values.length, Math.max(sheet.getLastColumn(), 1)),
-    getRange: (row, column, numRows = 1, numColumns = 1) => __makeRange__(sheet, row, column, numRows, numColumns),
+    getDataRange: () => {{
+      __calls__.getDataRange.push({{ sheetName: name }});
+      return __makeRange__(sheet, 1, 1, sheet.__values.length, Math.max(sheet.getLastColumn(), 1));
+    }},
+    getRange: (row, column, numRows = 1, numColumns = 1) => {{
+      __calls__.getRange.push({{ sheetName: name, row, column, numRows, numColumns }});
+      return __makeRange__(sheet, row, column, numRows, numColumns);
+    }},
     clearContents: () => {{
       sheet.__values = [];
       return sheet;
@@ -873,8 +1125,12 @@ function __makeSheet__(name, options = {{}}) {{
 const __sheets = Object.create(null);
 const __spreadsheet = {{
   getId: () => 'spreadsheet-id',
-  getSheetByName: (name) => __sheets[name] || null,
+  getSheetByName: (name) => {{
+    __calls__.getSheetByName.push(name);
+    return __sheets[name] || null;
+  }},
   insertSheet: (name) => {{
+    __calls__.insertSheet.push(name);
     const sheet = __makeSheet__(name, {{ sheetId: Object.keys(__sheets).length + 1 }});
     __sheets[name] = sheet;
     return sheet;
@@ -882,7 +1138,10 @@ const __spreadsheet = {{
   deleteSheet: (sheet) => {{
     delete __sheets[sheet.getName()];
   }},
-  getSheets: () => Object.values(__sheets)
+  getSheets: () => {{
+    __calls__.getSheets.push(true);
+    return Object.values(__sheets);
+  }}
 }};
 
 global.__spreadsheet = __spreadsheet;
@@ -912,17 +1171,36 @@ global.ContentService = {{
 
 global.Logger = {{ log: () => {{}} }};
 global.SpreadsheetApp = {{
-  getActiveSpreadsheet: () => __spreadsheet,
-  openById: () => __spreadsheet
+  getActiveSpreadsheet: () => {{
+    __calls__.getActiveSpreadsheet.push(true);
+    return __spreadsheet;
+  }},
+  openById: () => {{
+    __calls__.openById.push(true);
+    return __spreadsheet;
+  }}
 }};
 global.Sheets = {{
   Spreadsheets: {{
     Values: {{
-      batchGet: () => ({{ valueRanges: [] }})
+      batchGet: (spreadsheetId, params) => {{
+        __calls__.batchGet.push({{ spreadsheetId, params }});
+        return {{
+          valueRanges: (params.ranges || []).map((range) => ({{
+            range,
+            values: __readA1Values__(range)
+          }}))
+        }};
+      }}
     }},
-    batchUpdate: () => ({{}})
+    batchUpdate: (payload, spreadsheetId) => {{
+      __calls__.batchUpdate.push({{ spreadsheetId, payload }});
+      __applyBatchUpdateRequests__(payload.requests || []);
+      return {{}};
+    }}
   }}
 }};
+global.__calls__ = __calls__;
 
 const __propertyStore = new Map();
 global.__propertyStore = {{

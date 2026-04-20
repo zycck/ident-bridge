@@ -1,80 +1,68 @@
-function backendGetSpreadsheet_() {
-  var spreadsheetId = backendTrimString_(PropertiesService.getScriptProperties().getProperty('SHEET_ID'));
+function backendGetSpreadsheet_(scriptProperties) {
+  const spreadsheetId = backendTrimString_(scriptProperties.getProperty('SHEET_ID'));
   if (spreadsheetId) {
     return SpreadsheetApp.openById(spreadsheetId);
   }
 
-  var spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
   if (!spreadsheet) {
-    throw backendCreateError_(
-      'NO_SPREADSHEET',
-      true,
-      'No active spreadsheet is available',
-      {}
-    );
+    throw backendCreateError_('NO_SPREADSHEET', true, 'No active spreadsheet is available', {});
   }
 
   return spreadsheet;
 }
 
 function backendGetOrCreateSheet_(spreadsheet, sheetName) {
-  var sheet = spreadsheet.getSheetByName(sheetName);
+  let sheet = spreadsheet.getSheetByName(sheetName);
   if (!sheet) {
     sheet = spreadsheet.insertSheet(sheetName);
   }
   return sheet;
 }
 
-function backendListVisibleSheetNames_() {
-  var spreadsheet = backendGetSpreadsheet_();
-  var sheets = spreadsheet.getSheets ? spreadsheet.getSheets() : [];
-  var names = [];
-
-  for (var index = 0; index < sheets.length; index += 1) {
-    var sheet = sheets[index];
+function backendListVisibleSheetNames_(spreadsheet) {
+  const names = [];
+  for (const sheet of spreadsheet.getSheets ? spreadsheet.getSheets() : []) {
     if (!sheet) {
       continue;
     }
-
-    if (sheet.isSheetHidden && sheet.isSheetHidden()) {
+    if (sheet.isSheetHidden?.()) {
       continue;
     }
 
-    var name = backendTrimString_(sheet.getName ? sheet.getName() : '');
+    const name = backendTrimString_(sheet.getName?.());
     if (name) {
       names.push(name);
     }
   }
-
   return names;
 }
 
-function backendSheetReadValues_(sheet) {
-  if (!sheet || !sheet.getDataRange || !sheet.getDataRange()) {
+function backendReadFullSheetValues_(sheet) {
+  const lastRow = sheet.getLastRow ? sheet.getLastRow() : 0;
+  const lastColumn = sheet.getLastColumn ? sheet.getLastColumn() : 0;
+  if (lastRow < 1 || lastColumn < 1) {
     return [];
   }
 
-  var values = sheet.getDataRange().getValues ? sheet.getDataRange().getValues() : [];
-  if (!Array.isArray(values)) {
+  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
+  return backendTrimTrailingBlankRows_(values.map((row) => backendTrimTrailingBlankCells_(Array.isArray(row) ? row : [])));
+}
+
+function backendReadHeader_(sheet) {
+  const lastColumn = sheet.getLastColumn ? sheet.getLastColumn() : 0;
+  if (lastColumn < 1) {
     return [];
   }
 
-  return backendTrimTrailingBlankRows_(values.map(function normalizeRow(row) {
-    return Array.isArray(row) ? backendTrimTrailingBlankCells_(row) : [];
-  }));
+  const values = sheet.getRange(1, 1, 1, lastColumn).getValues();
+  return values.length ? backendTrimTrailingBlankCells_(values[0]) : [];
 }
 
 function backendNormalizeTableWidth_(rows) {
-  var width = 0;
-  for (var index = 0; index < rows.length; index += 1) {
-    var row = rows[index];
-    if (Array.isArray(row) && row.length > width) {
-      width = row.length;
-    }
-  }
-
-  return rows.map(function normalizeRow(row) {
-    var source = Array.isArray(row) ? row.slice(0) : [];
+  const width = rows.reduce((maxWidth, row) => Math.max(maxWidth, Array.isArray(row) ? row.length : 0), 0);
+  return rows.map((row) => {
+    const source = Array.isArray(row) ? row.slice(0) : [];
     while (source.length < width) {
       source.push('');
     }
@@ -82,8 +70,8 @@ function backendNormalizeTableWidth_(rows) {
   });
 }
 
-function backendWriteSheetValues_(sheet, rows) {
-  var normalized = backendNormalizeTableWidth_(Array.isArray(rows) ? rows : []);
+function backendRewriteWholeSheet_(sheet, rows) {
+  const normalized = backendNormalizeTableWidth_(rows);
   if (!normalized.length) {
     if (sheet.clearContents) {
       sheet.clearContents();
@@ -94,8 +82,16 @@ function backendWriteSheetValues_(sheet, rows) {
   if (sheet.clearContents) {
     sheet.clearContents();
   }
-
   sheet.getRange(1, 1, normalized.length, normalized[0].length).setValues(normalized);
+}
+
+function backendWriteRowsAt_(sheet, startRow, rows) {
+  if (!rows.length) {
+    return;
+  }
+
+  const normalized = backendNormalizeTableWidth_(rows);
+  sheet.getRange(startRow, 1, normalized.length, normalized[0].length).setValues(normalized);
 }
 
 function backendMainHeader_(columns) {
@@ -119,123 +115,98 @@ function backendIsTechnicalColumn_(value) {
 }
 
 function backendSplitMainHeader_(header) {
-  var userColumns = [];
-  var dateIndex = -1;
-  var sourceIndex = -1;
+  const userColumns = [];
+  let dateIndex = -1;
+  let sourceIndex = -1;
 
-  for (var index = 0; index < header.length; index += 1) {
-    var columnName = backendTrimString_(header[index]);
+  header.forEach((rawColumnName, index) => {
+    const columnName = backendTrimString_(rawColumnName);
     if (!columnName) {
-      continue;
+      return;
     }
 
     if (columnName === BACKEND_V2_CONFIG.technicalDateColumnName) {
       dateIndex = index;
-      continue;
+      return;
     }
 
     if (columnName === BACKEND_V2_CONFIG.technicalSourceColumnName) {
       sourceIndex = index;
-      continue;
+      return;
     }
 
     userColumns.push(columnName);
-  }
+  });
 
-  return {
-    userColumns: userColumns,
-    dateIndex: dateIndex,
-    sourceIndex: sourceIndex,
-  };
+  return { userColumns, dateIndex, sourceIndex };
 }
 
 function backendMergeMainHeader_(currentHeader, requestColumns) {
-  var split = backendSplitMainHeader_(currentHeader);
-  var mergedUserColumns = backendCloneArray_(split.userColumns);
-  var seen = Object.create(null);
+  const { userColumns } = backendSplitMainHeader_(currentHeader);
+  const mergedUserColumns = backendCloneArray_(userColumns);
+  const seen = new Set(mergedUserColumns.map((column) => backendCanonicalColumnName_(column)));
 
-  for (var index = 0; index < mergedUserColumns.length; index += 1) {
-    seen[backendCanonicalColumnName_(mergedUserColumns[index])] = true;
-  }
-
-  for (var requestIndex = 0; requestIndex < requestColumns.length; requestIndex += 1) {
-    var requestColumn = backendTrimString_(requestColumns[requestIndex]);
-    var key = backendCanonicalColumnName_(requestColumn);
-    if (!requestColumn || backendIsTechnicalColumn_(requestColumn) || seen[key]) {
+  for (const rawColumn of requestColumns) {
+    const columnName = backendTrimString_(rawColumn);
+    const key = backendCanonicalColumnName_(columnName);
+    if (!columnName || backendIsTechnicalColumn_(columnName) || seen.has(key)) {
       continue;
     }
-    seen[key] = true;
-    mergedUserColumns.push(requestColumn);
+    seen.add(key);
+    mergedUserColumns.push(columnName);
   }
 
-  if (!mergedUserColumns.length) {
-    mergedUserColumns = backendCloneArray_(requestColumns);
-  }
-
-  return backendMainHeader_(mergedUserColumns);
+  return backendMainHeader_(mergedUserColumns.length ? mergedUserColumns : backendCloneArray_(requestColumns));
 }
 
 function backendBuildHeaderIndexMap_(header) {
-  var map = Object.create(null);
-  for (var index = 0; index < header.length; index += 1) {
-    var key = backendCanonicalColumnName_(header[index]);
+  return header.reduce((map, rawColumnName, index) => {
+    const key = backendCanonicalColumnName_(rawColumnName);
     if (key && map[key] === undefined) {
       map[key] = index;
     }
-  }
-  return map;
+    return map;
+  }, {});
 }
 
 function backendProjectRowToHeader_(sourceHeader, row, targetHeader) {
-  var sourceMap = backendBuildHeaderIndexMap_(sourceHeader);
-  var projected = [];
-
-  for (var index = 0; index < targetHeader.length; index += 1) {
-    var key = backendCanonicalColumnName_(targetHeader[index]);
-    var sourceIndex = sourceMap[key];
-    projected.push(sourceIndex === undefined ? '' : backendCoerceCellValue_(row[sourceIndex]));
-  }
-
-  return projected;
+  const sourceMap = backendBuildHeaderIndexMap_(sourceHeader);
+  return targetHeader.map((targetColumn) => {
+    const sourceIndex = sourceMap[backendCanonicalColumnName_(targetColumn)];
+    return sourceIndex === undefined ? '' : backendCoerceCellValue_(row[sourceIndex]);
+  });
 }
 
 function backendProjectRowsToHeader_(sourceHeader, rows, targetHeader) {
-  var projectedRows = [];
-  for (var index = 0; index < rows.length; index += 1) {
-    projectedRows.push(backendProjectRowToHeader_(sourceHeader, rows[index], targetHeader));
-  }
-  return projectedRows;
+  return rows.map((row) => backendProjectRowToHeader_(sourceHeader, row, targetHeader));
 }
 
 function backendApplyLegacyMarkerMigration_(rows, header, request, currentSplit) {
-  var split = backendSplitMainHeader_(header);
-  if (split.dateIndex < 0 || split.sourceIndex < 0) {
+  const { dateIndex, sourceIndex } = backendSplitMainHeader_(header);
+  if (dateIndex < 0 || sourceIndex < 0) {
     return false;
   }
 
-  var sourceWasMissing = Boolean(currentSplit) && currentSplit.sourceIndex < 0;
-  var changed = false;
-  for (var index = 0; index < rows.length; index += 1) {
-    var row = rows[index];
-    var dateValue = backendTrimString_(row[split.dateIndex]);
+  const sourceWasMissing = Boolean(currentSplit) && currentSplit.sourceIndex < 0;
+  let changed = false;
+  for (const row of rows) {
+    const dateValue = backendTrimString_(row[dateIndex]);
     if (!dateValue) {
       continue;
     }
 
-    var sourceValue = backendTrimString_(row[split.sourceIndex]);
+    const sourceValue = backendTrimString_(row[sourceIndex]);
     if (sourceWasMissing && !sourceValue) {
-      row[split.sourceIndex] = request.sourceId;
+      row[sourceIndex] = request.sourceId;
       changed = true;
       continue;
     }
 
     if (sourceValue === BACKEND_V2_CONFIG.legacySourceMarker) {
-      row[split.sourceIndex] = request.sourceId;
+      row[sourceIndex] = request.sourceId;
       changed = true;
-      continue;
     }
   }
-
   return changed;
 }
 
@@ -248,235 +219,208 @@ function backendHideTechnicalColumns_(sheet, header) {
 }
 
 function backendEnsureMainSheet_(spreadsheet, request) {
-  var sheet = backendGetOrCreateSheet_(spreadsheet, request.sheetName);
-  if (sheet.getFrozenRows && sheet.getFrozenRows() !== 1) {
+  const sheet = backendGetOrCreateSheet_(spreadsheet, request.sheetName);
+  if (sheet.getFrozenRows?.() !== 1) {
     sheet.setFrozenRows(1);
   }
 
-  var currentRows = backendSheetReadValues_(sheet);
-  var currentHeader = currentRows.length ? backendTrimTrailingBlankCells_(currentRows[0]) : [];
-  var currentSplit = backendSplitMainHeader_(currentHeader);
-  var mergedHeader = backendMergeMainHeader_(currentHeader, request.columns);
-  var existingDataRows = currentRows.length > 1 ? currentRows.slice(1) : [];
-  var projectedRows = currentHeader.length
-    ? backendProjectRowsToHeader_(currentHeader, existingDataRows, mergedHeader)
-    : existingDataRows;
-  var migrated = currentHeader.length
-    ? backendApplyLegacyMarkerMigration_(projectedRows, mergedHeader, request, currentSplit)
-    : false;
+  const currentHeader = backendReadHeader_(sheet);
+  const currentSplit = backendSplitMainHeader_(currentHeader);
+  const mergedHeader = backendMergeMainHeader_(currentHeader, request.columns);
 
-  if (!currentRows.length) {
-    backendWriteSheetValues_(sheet, [mergedHeader]);
-  } else if (!backendSequenceEquals_(currentHeader, mergedHeader) || migrated) {
-    backendWriteSheetValues_(sheet, [mergedHeader].concat(projectedRows));
+  if (!currentHeader.length) {
+    backendRewriteWholeSheet_(sheet, [mergedHeader]);
+    backendHideTechnicalColumns_(sheet, mergedHeader);
+    return { sheet, sheetId: sheet.getSheetId(), header: mergedHeader };
+  }
+
+  const headerChanged = !backendSequenceEquals_(currentHeader, mergedHeader);
+  const needsMigration = currentSplit.dateIndex >= 0
+    && (currentSplit.sourceIndex < 0 || currentHeader.includes(BACKEND_V2_CONFIG.legacySourceMarker));
+
+  if (headerChanged || needsMigration) {
+    const existingRows = backendReadFullSheetValues_(sheet);
+    const dataRows = existingRows.length > 1 ? existingRows.slice(1) : [];
+    const projectedRows = backendProjectRowsToHeader_(currentHeader, dataRows, mergedHeader);
+    const migrated = backendApplyLegacyMarkerMigration_(projectedRows, mergedHeader, request, currentSplit);
+
+    if (headerChanged || migrated) {
+      backendRewriteWholeSheet_(sheet, [mergedHeader].concat(projectedRows));
+    }
   }
 
   backendHideTechnicalColumns_(sheet, mergedHeader);
-  return sheet;
+  return { sheet, sheetId: sheet.getSheetId(), header: mergedHeader };
 }
 
 function backendEnsureStagingSheet_(spreadsheet, request, stagingSheetName) {
-  var sheet = backendGetOrCreateSheet_(spreadsheet, stagingSheetName);
+  const sheet = backendGetOrCreateSheet_(spreadsheet, stagingSheetName);
   if (sheet.hideSheet) {
     sheet.hideSheet();
   }
-  if (sheet.getFrozenRows && sheet.getFrozenRows() !== 1) {
+  if (sheet.getFrozenRows?.() !== 1) {
     sheet.setFrozenRows(1);
   }
 
-  var header = backendStagingHeader_(request.columns);
-  var currentRows = backendSheetReadValues_(sheet);
-  var currentHeader = currentRows.length ? backendTrimTrailingBlankCells_(currentRows[0]) : [];
-
+  const header = backendStagingHeader_(request.columns);
+  const currentHeader = backendReadHeader_(sheet);
   if (!backendSequenceEquals_(currentHeader, header)) {
-    backendWriteSheetValues_(sheet, [header]);
+    backendRewriteWholeSheet_(sheet, [header]);
   }
 
   return sheet;
 }
 
 function backendBuildMainRows_(request) {
-  var rows = [];
-
-  for (var rowIndex = 0; rowIndex < request.records.length; rowIndex += 1) {
-    var record = request.records[rowIndex];
-    var row = [];
-
-    for (var columnIndex = 0; columnIndex < request.columns.length; columnIndex += 1) {
-      var columnName = request.columns[columnIndex];
-      row.push(backendCoerceCellValue_(record[columnName]));
-    }
-
+  return request.records.map((record) => {
+    const row = request.columns.map((columnName) => backendCoerceCellValue_(record[columnName]));
     row.push(backendCoerceCellValue_(request.exportDate));
     row.push(backendCoerceCellValue_(request.sourceId));
-    rows.push(row);
-  }
-
-  return rows;
+    return row;
+  });
 }
 
 function backendBuildStagingRows_(request) {
-  var directRows = backendBuildMainRows_(request);
-  return directRows.map(function mapDirectRow(row, index) {
-    return [request.chunkIndex, index + 1].concat(row);
-  });
+  return backendBuildMainRows_(request).map((row, index) => [request.chunkIndex, index + 1].concat(row));
 }
 
-function backendReadStagedChunkRows_(sheet) {
-  var rows = backendSheetReadValues_(sheet);
-  return rows.length > 1 ? rows.slice(1) : [];
-}
-
-function backendReplaceStagingChunkRows_(sheet, request) {
-  var header = backendStagingHeader_(request.columns);
-  var existingRows = backendReadStagedChunkRows_(sheet);
-  var retainedRows = [];
-  var duplicate = false;
-
-  for (var index = 0; index < existingRows.length; index += 1) {
-    var row = existingRows[index];
-    if (backendToInteger_(row[0]) === request.chunkIndex) {
-      duplicate = true;
-      continue;
-    }
-    retainedRows.push(row);
+function backendAppendStagingChunkRows_(sheet, request) {
+  const rows = backendBuildStagingRows_(request);
+  if (!rows.length) {
+    return;
   }
 
-  backendWriteSheetValues_(sheet, [header].concat(retainedRows).concat(backendBuildStagingRows_(request)));
-  return {
-    duplicate: duplicate,
-  };
+  const startRow = Math.max(sheet.getLastRow ? sheet.getLastRow() : 0, 1) + 1;
+  backendWriteRowsAt_(sheet, startRow, rows);
 }
 
-function backendReadStageChunkIndexSet_(sheet) {
-  var rows = backendReadStagedChunkRows_(sheet);
-  var set = Object.create(null);
+function backendReadPromotedRows_(sheet) {
+  const rows = backendReadFullSheetValues_(sheet);
+  const stagedRows = rows.length > 1 ? rows.slice(1) : [];
 
-  for (var index = 0; index < rows.length; index += 1) {
-    var chunkIndex = backendToInteger_(rows[index][0]);
-    if (chunkIndex !== null) {
-      set[chunkIndex] = true;
-    }
-  }
-
-  return set;
-}
-
-function backendHasAllChunks_(sheet, totalChunks) {
-  var chunkSet = backendReadStageChunkIndexSet_(sheet);
-  return Object.keys(chunkSet).length === totalChunks;
-}
-
-function backendBuildPromotedRows_(sheet) {
-  var rows = backendReadStagedChunkRows_(sheet);
-  var promotedRows = [];
-
-  for (var index = 0; index < rows.length; index += 1) {
-    var row = rows[index];
-    promotedRows.push({
+  return stagedRows
+    .map((row) => ({
       chunkIndex: backendToInteger_(row[0]) || 0,
       rowIndex: backendToInteger_(row[1]) || 0,
       values: row.slice(2),
-    });
-  }
-
-  promotedRows.sort(function sortPromotedRows(left, right) {
-    if (left.chunkIndex !== right.chunkIndex) {
-      return left.chunkIndex - right.chunkIndex;
-    }
-    return left.rowIndex - right.rowIndex;
-  });
-
-  return promotedRows.map(function mapPromotedRow(row) {
-    return row.values;
-  });
+    }))
+    .sort((left, right) => {
+      if (left.chunkIndex !== right.chunkIndex) {
+        return left.chunkIndex - right.chunkIndex;
+      }
+      return left.rowIndex - right.rowIndex;
+    })
+    .map((row) => row.values);
 }
 
-function backendNormalizeRowNumbers_(rowNumbers) {
-  var normalized = rowNumbers.slice(0).sort(function sortAscending(left, right) {
-    return left - right;
+function backendColumnNumberToLetters_(columnNumber) {
+  let value = Number(columnNumber);
+  let output = '';
+  while (value > 0) {
+    const offset = (value - 1) % 26;
+    output = String.fromCharCode(65 + offset) + output;
+    value = Math.floor((value - 1) / 26);
+  }
+  return output || 'A';
+}
+
+function backendQuoteSheetNameForA1_(sheetName) {
+  return `'${String(sheetName).replace(/'/g, "''")}'`;
+}
+
+function backendBatchGetValues_(spreadsheetId, ranges) {
+  const response = Sheets.Spreadsheets.Values.batchGet(spreadsheetId, {
+    ranges,
+    majorDimension: 'ROWS',
   });
-  return normalized;
+  return Array.isArray(response?.valueRanges) ? response.valueRanges : [];
+}
+
+function backendBuildDeleteRowsRequest_(sheetId, startRow, count) {
+  return {
+    deleteDimension: {
+      range: {
+        sheetId,
+        dimension: 'ROWS',
+        startIndex: startRow - 1,
+        endIndex: startRow - 1 + count,
+      },
+    },
+  };
+}
+
+function backendBuildInsertRowsRequest_(sheetId, startRow, count) {
+  return {
+    insertDimension: {
+      range: {
+        sheetId,
+        dimension: 'ROWS',
+        startIndex: startRow - 1,
+        endIndex: startRow - 1 + count,
+      },
+      inheritFromBefore: startRow > 1,
+    },
+  };
+}
+
+function backendRunBatchUpdate_(spreadsheet, requests) {
+  if (!requests.length) {
+    return;
+  }
+
+  Sheets.Spreadsheets.batchUpdate({ requests }, spreadsheet.getId());
 }
 
 function backendCompressRowNumbersToRanges_(rowNumbers) {
-  var normalized = backendNormalizeRowNumbers_(rowNumbers);
+  const normalized = rowNumbers.slice(0).sort((left, right) => left - right);
   if (!normalized.length) {
     return [];
   }
 
-  var ranges = [];
-  var start = normalized[0];
-  var end = start;
+  const ranges = [];
+  let start = normalized[0];
+  let end = start;
 
-  for (var index = 1; index < normalized.length; index += 1) {
-    var current = normalized[index];
+  for (let index = 1; index < normalized.length; index += 1) {
+    const current = normalized[index];
     if (current === end + 1) {
       end = current;
       continue;
     }
 
-    ranges.push({
-      start: start,
-      count: end - start + 1,
-    });
+    ranges.push({ start, count: end - start + 1 });
     start = current;
     end = current;
   }
 
-  ranges.push({
-    start: start,
-    count: end - start + 1,
-  });
+  ranges.push({ start, count: end - start + 1 });
   return ranges;
 }
 
-function backendDeleteRowRanges_(sheet, ranges) {
-  for (var index = ranges.length - 1; index >= 0; index -= 1) {
-    var range = ranges[index];
-    if (!range || range.count < 1) {
-      continue;
-    }
-    if (sheet.deleteRows) {
-      sheet.deleteRows(range.start, range.count);
-    }
-  }
-}
-
-function backendWriteRowsAt_(sheet, startRow, rows) {
-  if (!rows.length) {
-    return;
-  }
-
-  var normalized = backendNormalizeTableWidth_(rows);
-  sheet.getRange(startRow, 1, normalized.length, normalized[0].length).setValues(normalized);
-}
-
-function backendClearDataRows_(sheet, header) {
-  var lastRow = sheet.getLastRow ? sheet.getLastRow() : 0;
-  if (lastRow <= 1) {
-    return;
-  }
-
-  if (sheet.deleteRows) {
-    sheet.deleteRows(2, lastRow - 1);
-    return;
-  }
-
-  backendWriteSheetValues_(sheet, [header]);
-}
-
-function backendFindOwnedDateRowNumbers_(dataRows, split, request) {
-  if (split.dateIndex < 0 || split.sourceIndex < 0) {
+function backendReadOwnedRowNumbers_(spreadsheet, mainContext, request) {
+  const { dateIndex, sourceIndex } = backendSplitMainHeader_(mainContext.header);
+  if (dateIndex < 0 || sourceIndex < 0) {
     return [];
   }
 
-  var rowNumbers = [];
-  for (var index = 0; index < dataRows.length; index += 1) {
-    var row = dataRows[index];
-    var sameDate = backendTrimString_(row[split.dateIndex]) === request.exportDate;
-    var sameSource = backendTrimString_(row[split.sourceIndex]) === request.sourceId;
-    if (sameDate && sameSource) {
+  const quotedSheetName = backendQuoteSheetNameForA1_(mainContext.sheet.getName());
+  const dateColumn = backendColumnNumberToLetters_(dateIndex + 1);
+  const sourceColumn = backendColumnNumberToLetters_(sourceIndex + 1);
+  const valueRanges = backendBatchGetValues_(spreadsheet.getId(), [
+    `${quotedSheetName}!${dateColumn}2:${dateColumn}`,
+    `${quotedSheetName}!${sourceColumn}2:${sourceColumn}`,
+  ]);
+
+  const dateValues = valueRanges[0]?.values || [];
+  const sourceValues = valueRanges[1]?.values || [];
+  const rowCount = Math.max(dateValues.length, sourceValues.length);
+  const rowNumbers = [];
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const dateValue = backendTrimString_(dateValues[index]?.[0]);
+    const sourceValue = backendTrimString_(sourceValues[index]?.[0]);
+    const sameSource = sourceValue === request.sourceId || sourceValue === BACKEND_V2_CONFIG.legacySourceMarker;
+    if (dateValue === request.exportDate && sameSource) {
       rowNumbers.push(index + 2);
     }
   }
@@ -484,61 +428,68 @@ function backendFindOwnedDateRowNumbers_(dataRows, split, request) {
   return rowNumbers;
 }
 
-function backendApplyAppendMode_(sheet, promotedRows) {
+function backendApplyAppendMode_(mainContext, promotedRows) {
   if (!promotedRows.length) {
     return;
   }
 
-  var startRow = Math.max(sheet.getLastRow ? sheet.getLastRow() : 0, 1) + 1;
-  backendWriteRowsAt_(sheet, startRow, promotedRows);
+  const startRow = Math.max(mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0, 1) + 1;
+  backendWriteRowsAt_(mainContext.sheet, startRow, promotedRows);
 }
 
-function backendApplyReplaceAllMode_(sheet, header, promotedRows) {
-  backendClearDataRows_(sheet, header);
+function backendApplyReplaceAllMode_(spreadsheet, mainContext, promotedRows) {
+  const lastRow = mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0;
+  if (lastRow > 1) {
+    backendRunBatchUpdate_(spreadsheet, [
+      backendBuildDeleteRowsRequest_(mainContext.sheetId, 2, lastRow - 1),
+    ]);
+  }
+
   if (!promotedRows.length) {
     return;
   }
 
-  backendWriteRowsAt_(sheet, 2, promotedRows);
+  backendWriteRowsAt_(mainContext.sheet, 2, promotedRows);
 }
 
-function backendApplyReplaceByDateSourceMode_(sheet, request, dataRows, split, promotedRows) {
-  var matchedRowNumbers = backendFindOwnedDateRowNumbers_(dataRows, split, request);
-  var ranges = backendCompressRowNumbersToRanges_(matchedRowNumbers);
-  var insertionRow = ranges.length
+function backendApplyReplaceByDateSourceMode_(spreadsheet, mainContext, request, promotedRows) {
+  const matchedRowNumbers = backendReadOwnedRowNumbers_(spreadsheet, mainContext, request);
+  const ranges = backendCompressRowNumbersToRanges_(matchedRowNumbers);
+  const insertionRow = ranges.length
     ? ranges[0].start
-    : Math.max(sheet.getLastRow ? sheet.getLastRow() : 0, 1) + 1;
+    : Math.max(mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0, 1) + 1;
 
-  backendDeleteRowRanges_(sheet, ranges);
+  const requests = ranges
+    .slice(0)
+    .reverse()
+    .map((range) => backendBuildDeleteRowsRequest_(mainContext.sheetId, range.start, range.count));
+
+  if (promotedRows.length && ranges.length) {
+    requests.push(backendBuildInsertRowsRequest_(mainContext.sheetId, insertionRow, promotedRows.length));
+  }
+
+  backendRunBatchUpdate_(spreadsheet, requests);
 
   if (!promotedRows.length) {
     return;
   }
 
-  if (ranges.length && sheet.insertRowsBefore) {
-    sheet.insertRowsBefore(insertionRow, promotedRows.length);
-  }
-
-  backendWriteRowsAt_(sheet, insertionRow, promotedRows);
+  backendWriteRowsAt_(mainContext.sheet, insertionRow, promotedRows);
 }
 
-function backendRewriteMainSheet_(sheet, request, promotedRows) {
-  var currentRows = backendSheetReadValues_(sheet);
-  var currentHeader = currentRows.length ? backendTrimTrailingBlankCells_(currentRows[0]) : [];
-  var header = currentHeader.length ? backendMergeMainHeader_(currentHeader, request.columns) : backendMainHeader_(request.columns);
-  var dataRows = currentRows.length > 1 ? currentRows.slice(1) : [];
-  var split = backendSplitMainHeader_(header);
-  var promoted = backendProjectRowsToHeader_(backendMainHeader_(request.columns), promotedRows, header);
-
-  if (request.writeMode === 'append') {
-    backendApplyAppendMode_(sheet, promoted);
-  } else if (request.writeMode === 'replace_all') {
-    backendApplyReplaceAllMode_(sheet, header, promoted);
-  } else {
-    backendApplyReplaceByDateSourceMode_(sheet, request, dataRows, split, promoted);
+function backendApplyWriteMode_(spreadsheet, mainContext, request, rows) {
+  const promotedRows = backendProjectRowsToHeader_(backendMainHeader_(request.columns), rows, mainContext.header);
+  if (request.writeMode === BACKEND_V2_CONFIG.writeModes.append) {
+    backendApplyAppendMode_(mainContext, promotedRows);
+    return;
   }
 
-  backendHideTechnicalColumns_(sheet, header);
+  if (request.writeMode === BACKEND_V2_CONFIG.writeModes.replaceAll) {
+    backendApplyReplaceAllMode_(spreadsheet, mainContext, promotedRows);
+    return;
+  }
+
+  backendApplyReplaceByDateSourceMode_(spreadsheet, mainContext, request, promotedRows);
 }
 
 function backendDeleteStagingSheet_(spreadsheet, sheet) {
@@ -550,123 +501,4 @@ function backendDeleteStagingSheet_(spreadsheet, sheet) {
   if (sheet.clearContents) {
     sheet.clearContents();
   }
-}
-
-function backendRunStateKey_(runId) {
-  return BACKEND_V2_CONFIG.runStatePrefix + backendTrimString_(runId);
-}
-
-function backendLoadRunState_(runId) {
-  var raw = PropertiesService.getScriptProperties().getProperty(backendRunStateKey_(runId));
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch (_error) {
-    return null;
-  }
-}
-
-function backendSaveRunState_(state) {
-  var runId = backendTrimString_(state && state.run_id);
-  if (!runId) {
-    throw backendCreateError_(
-      'INVALID_RUN_STATE',
-      false,
-      'Run state is missing run_id',
-      {}
-    );
-  }
-
-  PropertiesService.getScriptProperties().setProperty(
-    backendRunStateKey_(runId),
-    JSON.stringify(state)
-  );
-}
-
-function backendParseIsoTimestampMs_(value) {
-  var text = backendTrimString_(value);
-  if (!text) {
-    return null;
-  }
-
-  var parsed = Date.parse(text);
-  if (isNaN(parsed)) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function backendCollectStaleRuns_(spreadsheet) {
-  var properties = PropertiesService.getScriptProperties().getProperties();
-  var keys = Object.keys(properties || {});
-  var now = Date.now();
-
-  for (var index = 0; index < keys.length; index += 1) {
-    var key = keys[index];
-    if (key.indexOf(BACKEND_V2_CONFIG.runStatePrefix) !== 0) {
-      continue;
-    }
-
-    var state;
-    try {
-      state = JSON.parse(properties[key]);
-    } catch (_error) {
-      PropertiesService.getScriptProperties().deleteProperty(key);
-      continue;
-    }
-
-    var updatedAt = backendParseIsoTimestampMs_(state && state.updated_at);
-    if (updatedAt !== null && (now - updatedAt) <= BACKEND_V2_CONFIG.staleRunTtlMs) {
-      continue;
-    }
-
-    var stagingSheetName = backendTrimString_(state && state.staging_sheet_name);
-    if (stagingSheetName) {
-      var stagingSheet = spreadsheet.getSheetByName(stagingSheetName);
-      if (stagingSheet) {
-        backendDeleteStagingSheet_(spreadsheet, stagingSheet);
-      }
-    }
-
-    PropertiesService.getScriptProperties().deleteProperty(key);
-  }
-}
-
-function backendWithScriptLock_(callback) {
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(BACKEND_V2_CONFIG.defaultLockTimeoutMs)) {
-    throw backendCreateError_(
-      'LOCK_UNAVAILABLE',
-      true,
-      'Could not acquire script lock',
-      {}
-    );
-  }
-
-  try {
-    return callback();
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function backendCreateRunState_(request, stagingSheetName) {
-  return {
-    protocol_version: request.protocolVersion,
-    job_name: request.jobName,
-    run_id: request.runId,
-    sheet_name: request.sheetName,
-    export_date: request.exportDate,
-    source_id: request.sourceId,
-    write_mode: request.writeMode,
-    total_chunks: request.totalChunks,
-    total_rows: request.totalRows,
-    staging_sheet_name: stagingSheetName,
-    completed: false,
-    updated_at: backendNowIso_(),
-  };
 }
