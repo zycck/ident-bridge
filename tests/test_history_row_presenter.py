@@ -22,6 +22,7 @@ def test_build_history_row_display_maps_legacy_trigger_and_success_status() -> N
             "trigger": "auto",
             "ok": True,
             "rows": 5,
+            "duration_us": 7_500,
         },
         now=datetime(2026, 4, 16, 15, 30, 0),
     )
@@ -29,7 +30,7 @@ def test_build_history_row_display_maps_legacy_trigger_and_success_status() -> N
     assert display.icon_name == "clock"
     assert display.trigger_label == "Авто"
     assert display.timestamp_text == "Сегодня 12:00:00"
-    assert display.status_text == "✓  5 строк"
+    assert display.status_text == "✓  5 строк · 7.5 мс"
     assert display.status_tooltip == ""
 
 

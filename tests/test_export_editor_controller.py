@@ -72,6 +72,9 @@ class _FakeShell:
         self._schedule_enabled = False
         self._schedule_mode = "daily"
         self._schedule_value = ""
+        self._gas_sheet_name = ""
+        self._gas_header_row = 1
+        self._gas_dedupe_key_columns: list[str] = []
         self._history: list[dict] = []
         self.status_calls: list[tuple[str, str]] = []
         self.refresh_calls = 0
@@ -107,6 +110,26 @@ class _FakeShell:
         self._schedule_enabled = enabled
         self._schedule_mode = mode
         self._schedule_value = value
+
+    def gas_sheet_name(self) -> str:
+        return self._gas_sheet_name
+
+    def gas_header_row(self) -> int:
+        return self._gas_header_row
+
+    def gas_dedupe_key_columns(self) -> list[str]:
+        return list(self._gas_dedupe_key_columns)
+
+    def set_gas_options(
+        self,
+        *,
+        sheet_name: str,
+        header_row: int,
+        dedupe_key_columns: list[str],
+    ) -> None:
+        self._gas_sheet_name = sheet_name
+        self._gas_header_row = header_row
+        self._gas_dedupe_key_columns = list(dedupe_key_columns)
 
     def history(self) -> list[dict]:
         return list(self._history)
@@ -165,6 +188,11 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
         name="Nightly export",
         sql_query="SELECT 1",
         webhook_url="https://example.test/hook",
+        gas_options={
+            "sheet_name": "Exports",
+            "header_row": 2,
+            "dedupe_key_columns": ["id", "updated_at"],
+        },
         schedule_enabled=True,
         schedule_mode="hourly",
         schedule_value="2",
@@ -175,6 +203,7 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
                 "ok": True,
                 "rows": 3,
                 "err": "",
+                "duration_us": 9_000,
             }
         ],
     )
@@ -184,8 +213,11 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
     assert shell.job_name() == "Nightly export"
     assert shell.sql_text() == "SELECT 1"
     assert shell.webhook_url() == "https://example.test/hook"
+    assert shell.gas_sheet_name() == "Exports"
+    assert shell.gas_header_row() == 2
+    assert shell.gas_dedupe_key_columns() == ["id", "updated_at"]
     assert shell.history()[0]["rows"] == 3
-    assert shell.status_calls == [("ok", "✓ 3 строк · 09:10:11")]
+    assert shell.status_calls == [("ok", "✓ 3 строк · 09:10:11 · 9 мс")]
     assert shell.refresh_calls == 0
     assert single_shot_calls == []
     assert scheduler.stop_calls == 1

@@ -10,11 +10,19 @@ def test_export_editor_shell_roundtrips_core_fields(qtbot) -> None:
     shell.set_job_name("Nightly")
     shell.set_sql_text("SELECT 1")
     shell.set_webhook_url("https://example.com")
+    shell.set_gas_options(
+        sheet_name="Exports",
+        header_row=2,
+        dedupe_key_columns=["id", "updated_at"],
+    )
     shell.set_schedule(True, "hourly", "4")
 
     assert shell.job_name() == "Nightly"
     assert shell.sql_text() == "SELECT 1"
     assert shell.webhook_url() == "https://example.com"
+    assert shell.gas_sheet_name() == "Exports"
+    assert shell.gas_header_row() == 2
+    assert shell.gas_dedupe_key_columns() == ["id", "updated_at"]
     assert shell.schedule_enabled() is True
     assert shell.schedule_mode() == "hourly"
     assert shell.schedule_value() == "4"

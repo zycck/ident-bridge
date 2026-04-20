@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import urllib.error
 
 import pytest
 
@@ -149,6 +151,37 @@ def test_build_gas_chunk_payload_shape_is_stable():
         },
         "records": [{"id": 1, "name": "alice"}],
     }
+
+
+def test_build_gas_chunk_payload_includes_target_and_dedupe_blocks_when_configured():
+    chunk = plan_gas_chunks(
+        "Configured",
+        _qr(columns=("id", "updated_at"), rows=((1, "2026-04-18"),)),
+        run_id="run-5b",
+        max_rows_per_chunk=10_000,
+        max_payload_bytes=5 * 1024 * 1024,
+    )[0]
+
+    payload = json.loads(
+        build_gas_chunk_payload(
+            "Configured",
+            chunk,
+            gas_options={
+                "sheet_name": "Exports",
+                "header_row": 2,
+                "dedupe_key_columns": ["id", "updated_at"],
+            },
+        ).decode("utf-8")
+    )
+
+    assert payload["target"] == {
+        "sheet_name": "Exports",
+        "header_row": 2,
+    }
+    assert payload["dedupe"] == {
+        "key_columns": ["id", "updated_at"],
+    }
+    assert "gas_options" not in payload
 
 
 def test_parse_gas_ack_accepts_success_and_ignores_extra_fields():
@@ -391,3 +424,98 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
     assert exc.delivered_rows == 2
     assert exc.run_id
     assert "1/2 чанков" in exc.user_message
+
+
+def test_push_includes_http_status_and_body_preview_on_http_error(monkeypatch):
+    body = b"Internal Server Error: backend exploded"
+
+    def _urlopen(req, **kwargs):
+        raise urllib.error.HTTPError(
+            req.full_url,
+            500,
+            "Internal Server Error",
+            hdrs=None,
+            fp=io.BytesIO(body),
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink("https://script.google.com/macros/s/abc/exec")
+
+    with pytest.raises(GoogleAppsScriptDeliveryError) as exc_info:
+        sink.push("HTTP failure", _qr())
+
+    exc = exc_info.value
+    assert "HTTP 500" in exc.debug_context["error"]
+    assert "Internal Server Error" in exc.debug_context["error"]
+    assert exc.debug_context["http_status"] == 500
+    assert exc.debug_context["http_body_preview"] == "Internal Server Error: backend exploded"
+    assert exc.debug_context["cause_type"] == "HTTPError"
+
+
+def test_push_preserves_retryable_ack_details_in_debug_context(monkeypatch):
+    def _urlopen(req, **kwargs):
+        body = json.loads(req.data.decode("utf-8"))
+        return _FakeResp(
+            {
+                "ok": False,
+                "error_code": "INTERNAL_WRITE_ERROR",
+                "retryable": True,
+                "run_id": body["run_id"],
+                "chunk_index": body["chunk_index"],
+                "message": "Unexpected server error",
+                "details": {
+                    "internal_message": "Sheets is not defined",
+                },
+            }
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink(
+        "https://script.google.com/macros/s/abc/exec",
+        retries=1,
+    )
+
+    with pytest.raises(GoogleAppsScriptDeliveryError) as exc_info:
+        sink.push("Retryable ack", _qr())
+
+    exc = exc_info.value
+    assert exc.debug_context["cause_type"] == "GasAckError"
+    assert exc.debug_context["error"] == "Unexpected server error: Sheets is not defined"
+    assert exc.debug_context["ack_message"] == "Unexpected server error"
+    assert exc.debug_context["error_code"] == "INTERNAL_WRITE_ERROR"
+    assert exc.debug_context["ack_details"] == {
+        "internal_message": "Sheets is not defined",
+    }
+
+
+def test_push_adds_deployment_hint_for_generic_internal_error_without_details(monkeypatch):
+    def _urlopen(req, **kwargs):
+        body = json.loads(req.data.decode("utf-8"))
+        return _FakeResp(
+            {
+                "ok": False,
+                "error_code": "INTERNAL_WRITE_ERROR",
+                "retryable": True,
+                "run_id": body["run_id"],
+                "chunk_index": body["chunk_index"],
+                "message": "Unexpected server error",
+                "details": {},
+            }
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink(
+        "https://script.google.com/macros/s/abc/exec",
+        retries=1,
+    )
+
+    with pytest.raises(GoogleAppsScriptDeliveryError) as exc_info:
+        sink.push("Generic internal", _qr())
+
+    exc = exc_info.value
+    assert exc.debug_context["cause_type"] == "GasAckError"
+    assert exc.debug_context["error"] == "Unexpected server error"
+    assert "publish the latest backend version" in exc.debug_context["hint"]

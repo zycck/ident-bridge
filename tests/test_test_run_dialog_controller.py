@@ -86,17 +86,25 @@ def test_test_run_dialog_controller_handles_result_and_error() -> None:
         owner=owner,
         shell=shell,
         cfg={},
-        emit_test_completed=lambda ok, rows, err: completed.append((ok, rows, err)),
+        emit_test_completed=lambda ok, rows, err, duration_us: completed.append(
+            (ok, rows, err, duration_us)
+        ),
     )
-    result = QueryResult(columns=["id"], rows=[(1,), (2,)], count=2, duration_ms=7)
+    result = QueryResult(
+        columns=["id"],
+        rows=[(1,), (2,)],
+        count=2,
+        duration_ms=7,
+        duration_us=7_500,
+    )
 
     controller.handle_result(result)
     controller.handle_error("boom")
 
     assert shell.results == [result]
     assert shell.run_enabled == [True, True]
-    assert shell.status_updates == [("2 строк · 7 мс", ""), ("boom", "#EF4444")]
-    assert completed == [(True, 2, ""), (False, 0, "boom")]
+    assert shell.status_updates == [("2 строк · 7.5 мс", ""), ("boom", "#EF4444")]
+    assert completed == [(True, 2, "", 7_500), (False, 0, "boom", 0)]
 
 
 def test_test_run_dialog_controller_marks_truncated_results_in_status() -> None:
@@ -107,20 +115,23 @@ def test_test_run_dialog_controller_marks_truncated_results_in_status() -> None:
         owner=owner,
         shell=shell,
         cfg={},
-        emit_test_completed=lambda ok, rows, err: completed.append((ok, rows, err)),
+        emit_test_completed=lambda ok, rows, err, duration_us: completed.append(
+            (ok, rows, err, duration_us)
+        ),
     )
     result = QueryResult(
         columns=["id"],
         rows=[(1,), (2,)],
         count=2,
         duration_ms=7,
+        duration_us=7_500,
         truncated=True,
     )
 
     controller.handle_result(result)
 
-    assert shell.status_updates == [("2 строк · 7 мс · показаны первые строки", "")]
-    assert completed == [(True, 2, "")]
+    assert shell.status_updates == [("2 строк · 7.5 мс · показаны первые строки", "")]
+    assert completed == [(True, 2, "", 7_500)]
 
 
 def test_query_worker_limits_rows_for_dialog(monkeypatch) -> None:

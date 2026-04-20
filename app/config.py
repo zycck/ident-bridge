@@ -1,5 +1,7 @@
 """Central configuration + shared dataclasses + TypedDicts for iDentBridge."""
 
+from __future__ import annotations
+
 import base64
 import json
 import logging
@@ -34,7 +36,13 @@ class QueryResult:
     rows:    list[tuple]
     count:   int
     duration_ms: int
+    duration_us: int = 0
     truncated: bool = False
+
+    def __post_init__(self) -> None:
+        if self.duration_us <= 0:
+            self.duration_us = max(0, int(self.duration_ms)) * 1000
+        self.duration_ms = max(0, int(self.duration_us // 1000))
 
 
 @dataclass(slots=True)
@@ -43,6 +51,18 @@ class SyncResult:
     rows_synced: int
     error:       str | None
     timestamp:   datetime
+    duration_us: int = 0
+    sql_duration_us: int = 0
+
+    def __post_init__(self) -> None:
+        self.duration_us = max(0, int(self.duration_us))
+        self.sql_duration_us = max(0, int(self.sql_duration_us))
+
+
+class GasOptions(TypedDict, total=False):
+    sheet_name: str
+    header_row: int
+    dedupe_key_columns: list[str]
 
 
 # ---------------------------------------------------------------------------
@@ -56,6 +76,8 @@ class ExportHistoryEntry(TypedDict, total=False):
     trigger: str   # "manual" | "scheduled" | "test"
     ok:      bool
     err:     str
+    duration_us: int
+    sql_duration_us: int
 
 
 class TriggerType(str, Enum):
@@ -71,6 +93,7 @@ class ExportJob(TypedDict, total=False):
     name:             str
     sql_query:        str
     webhook_url:      str
+    gas_options:      GasOptions
     schedule_enabled: bool
     schedule_mode:    str   # "daily" | "hourly"
     schedule_value:   str   # "14:30" | "4"
@@ -177,9 +200,32 @@ class ConfigManager:
 
             # Backward-compat migration: trigger "auto" → "scheduled"
             for job in data.get("export_jobs") or []:
+                gas_options = job.get("gas_options")
+                if isinstance(gas_options, dict):
+                    header_row = gas_options.get("header_row", 1)
+                    try:
+                        gas_options["header_row"] = max(1, int(header_row))
+                    except (TypeError, ValueError):
+                        gas_options["header_row"] = 1
+                    dedupe_columns = gas_options.get("dedupe_key_columns") or []
+                    gas_options["dedupe_key_columns"] = [
+                        str(column).strip()
+                        for column in dedupe_columns
+                        if str(column).strip()
+                    ]
                 for entry in job.get("history") or []:
                     if entry.get("trigger") == "auto":
                         entry["trigger"] = "scheduled"
+                    if "duration_us" not in entry and "duration_ms" in entry:
+                        try:
+                            entry["duration_us"] = max(0, int(entry["duration_ms"])) * 1000
+                        except (TypeError, ValueError):
+                            entry["duration_us"] = 0
+                    if "sql_duration_us" not in entry and "sql_duration_ms" in entry:
+                        try:
+                            entry["sql_duration_us"] = max(0, int(entry["sql_duration_ms"])) * 1000
+                        except (TypeError, ValueError):
+                            entry["sql_duration_us"] = 0
 
             self._cfg = AppConfig(
                 **{k: v for k, v in data.items() if k in _APP_CONFIG_KEYS}

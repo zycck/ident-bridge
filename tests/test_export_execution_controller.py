@@ -13,6 +13,8 @@ def _success_result() -> SyncResult:
         rows_synced=9,
         error=None,
         timestamp=datetime(2026, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+        duration_us=15_500,
+        sql_duration_us=9_250,
     )
 
 
@@ -68,6 +70,8 @@ def test_progress_and_success_restore_ui_and_emit_sync() -> None:
     assert ("sync", 9) in events
     history_events = [item for item in events if item[0] == "history"]
     assert history_events[-1][1]["ok"] is True
+    assert history_events[-1][1]["duration_us"] == 15_500
+    assert history_events[-1][1]["sql_duration_us"] == 9_250
 
 
 def test_error_emits_alert_on_threshold() -> None:
@@ -93,3 +97,5 @@ def test_record_test_completed_creates_test_history_entry() -> None:
     history_event = [item for item in events if item[0] == "history"][-1]
     assert history_event[1]["trigger"] == "test"
     assert history_event[1]["rows"] == 4
+    assert history_event[1]["duration_us"] == 0
+    assert history_event[1]["sql_duration_us"] == 0

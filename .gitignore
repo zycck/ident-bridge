@@ -29,3 +29,7 @@ config.json
 
 # Generated Qt resource modules
 app/ui/icons_rc.py
+
+# Google Apps Script clasp metadata
+google script back end/.clasp.json
+google script back end/clasp.json

@@ -59,6 +59,12 @@ class ExportEditorController:
         self._shell.set_job_name(job.get("name", ""))
         self._shell.set_sql_text(job.get("sql_query", ""))
         self._shell.set_webhook_url(job.get("webhook_url", ""))
+        gas_options = job.get("gas_options") or {}
+        self._shell.set_gas_options(
+            sheet_name=str(gas_options.get("sheet_name", "") or ""),
+            header_row=int(gas_options.get("header_row", 1) or 1),
+            dedupe_key_columns=list(gas_options.get("dedupe_key_columns") or []),
+        )
         self._shell.set_schedule(
             bool(job.get("schedule_enabled", False)),
             job.get("schedule_mode", "daily"),
@@ -122,9 +128,20 @@ class ExportEditorController:
         dialog.test_completed.connect(self._on_test_completed)
         dialog.exec()
 
-    @Slot(bool, int, str)
-    def _on_test_completed(self, ok: bool, rows: int, err: str) -> None:
-        self._record_test_completed(ok=ok, rows=rows, err=err)
+    @Slot(bool, int, str, int)
+    def _on_test_completed(
+        self,
+        ok: bool,
+        rows: int,
+        err: str,
+        duration_us: int = 0,
+    ) -> None:
+        self._record_test_completed(
+            ok=ok,
+            rows=rows,
+            err=err,
+            duration_us=duration_us,
+        )
 
     def handle_history_changed(self) -> None:
         self._emit_changed()

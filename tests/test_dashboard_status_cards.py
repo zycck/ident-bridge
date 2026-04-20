@@ -13,6 +13,8 @@ def _sync_result(rows: int = 42) -> SyncResult:
         rows_synced=rows,
         error=None,
         timestamp=datetime(2026, 4, 16, 9, 30, 45),
+        duration_us=12_345,
+        sql_duration_us=11_000,
     )
 
 
@@ -47,4 +49,4 @@ def test_status_cards_update_last_sync_formats_timestamp_and_rows(qtbot) -> None
 
     cards.update_last_sync(_sync_result(17))
 
-    assert cards.last_sync_text() == "09:30:45  16.04  ·  17 стр."
+    assert cards.last_sync_text() == "09:30:45  16.04  ·  17 стр.  ·  12.3 мс"

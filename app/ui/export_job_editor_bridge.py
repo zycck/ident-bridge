@@ -1,11 +1,13 @@
 """Bridge/services layer for ExportJobEditor."""
 
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.config import ExportHistoryEntry, ExportJob
-from app.ui.test_run_dialog import TestRunDialog
 from app.ui.threading import run_worker
+
+if TYPE_CHECKING:
+    from app.ui.test_run_dialog import TestRunDialog
 
 
 class ExportJobEditorBridge:
@@ -18,7 +20,7 @@ class ExportJobEditorBridge:
         shell,
         job_id: str,
         run_worker_fn: Callable[..., object] = run_worker,
-        test_dialog_factory: type[TestRunDialog] = TestRunDialog,
+        test_dialog_factory: type["TestRunDialog"] | None = None,
     ) -> None:
         self._owner = owner
         self._shell = shell
@@ -35,6 +37,11 @@ class ExportJobEditorBridge:
             name=self._shell.job_name(),
             sql_query=self._shell.sql_text(),
             webhook_url=self._shell.webhook_url(),
+            gas_options={
+                "sheet_name": self._shell.gas_sheet_name(),
+                "header_row": self._shell.gas_header_row(),
+                "dedupe_key_columns": self._shell.gas_dedupe_key_columns(),
+            },
             schedule_enabled=self._shell.schedule_enabled(),
             schedule_mode=self._shell.schedule_mode(),
             schedule_value=self._shell.schedule_value(),
@@ -60,8 +67,13 @@ class ExportJobEditorBridge:
     def add_history_entry(self, entry: ExportHistoryEntry) -> None:
         self._shell.prepend_history_entry(entry)
 
-    def create_test_dialog(self, cfg: dict[str, Any], sql: str) -> TestRunDialog:
-        return self._test_dialog_factory(
+    def create_test_dialog(self, cfg: dict[str, Any], sql: str) -> "TestRunDialog":
+        dialog_factory = self._test_dialog_factory
+        if dialog_factory is None:
+            from app.ui.test_run_dialog import TestRunDialog
+
+            dialog_factory = TestRunDialog
+        return dialog_factory(
             cfg,
             initial_sql=sql,
             auto_run=bool(sql),

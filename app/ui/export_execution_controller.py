@@ -2,6 +2,7 @@
 
 from collections.abc import Callable
 from datetime import datetime
+import time
 from typing import Any
 
 from app.config import ExportHistoryEntry, SyncResult
@@ -42,6 +43,7 @@ class ExportExecutionController:
         self._now = now_func
         self._failure_alert_threshold = failure_alert_threshold
         self._running = False
+        self._run_started_ns = 0
 
     @property
     def running(self) -> bool:
@@ -63,6 +65,7 @@ class ExportExecutionController:
         if self._running:
             return False
         self._running = True
+        self._run_started_ns = time.perf_counter_ns()
         status_kind, status_text = self._runtime.begin_run()
         self._set_run_enabled(False)
         self._set_progress_text("Запуск…")
@@ -78,6 +81,7 @@ class ExportExecutionController:
 
     def on_finished(self, result: SyncResult) -> None:
         self._running = False
+        self._run_started_ns = 0
         self._set_run_enabled(True)
         self._set_progress_text("")
         if not result.success:
@@ -91,10 +95,15 @@ class ExportExecutionController:
         self._running = False
         self._set_run_enabled(True)
         self._set_progress_text("")
+        duration_us = 0
+        if self._run_started_ns:
+            duration_us = max(0, (time.perf_counter_ns() - self._run_started_ns) // 1_000)
+            self._run_started_ns = 0
         update = self._runtime.on_error(
             msg,
             now=self._now(),
             alert_threshold=self._failure_alert_threshold,
+            duration_us=duration_us,
         )
         self._set_status(update.status_kind, update.status_text)
         self._add_history_entry(update.entry)
@@ -102,11 +111,19 @@ class ExportExecutionController:
             name = self._build_job().get("name") or "Без названия"
             self._emit_failure_alert(name, update.alert_count)
 
-    def record_test_completed(self, *, ok: bool, rows: int, err: str) -> None:
+    def record_test_completed(
+        self,
+        *,
+        ok: bool,
+        rows: int,
+        err: str,
+        duration_us: int = 0,
+    ) -> None:
         entry = self._runtime.build_test_entry(
             ok=ok,
             rows=rows,
             err=err,
             now=self._now(),
+            duration_us=duration_us,
         )
         self._add_history_entry(entry)

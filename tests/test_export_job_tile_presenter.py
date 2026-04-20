@@ -22,14 +22,19 @@ def test_export_job_tile_presenter_formats_success_status_and_daily_schedule() -
             "schedule_mode": "daily",
             "schedule_value": "03:00",
             "history": [
-                {"ts": "2026-04-16 12:00:00", "ok": True, "rows": 12},
+                {
+                    "ts": "2026-04-16 12:00:00",
+                    "ok": True,
+                    "rows": 12,
+                    "duration_us": 7_500,
+                },
             ],
         },
         now=datetime(2026, 4, 16, 15, 30, 0),
     )
 
     assert display.name == "Nightly"
-    assert display.status_text == "✓ 12 строк · сегодня 12:00:00"
+    assert display.status_text == "✓ 12 строк · сегодня 12:00:00 · 7.5 мс"
     assert display.schedule_text == "Ежедневно в 03:00"
 
 

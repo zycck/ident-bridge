@@ -100,6 +100,7 @@ def test_pipeline_runs_connect_query_push():
     assert isinstance(result, SyncResult)
     assert result.success is True
     assert result.rows_synced == 2
+    assert result.duration_us >= result.sql_duration_us >= 0
     assert db.queries == ["SELECT 1"]
     assert len(sink.pushes) == 1
     assert sink.pushes[0][0] == "Test Job"
@@ -226,3 +227,21 @@ def test_factory_uses_provided_sql_client_class():
     assert len(seen) == 1
     assert seen[0] is cfg
     assert isinstance(p.db, _Spy)
+
+
+def test_factory_passes_gas_options_to_google_apps_script_sink():
+    job = _job(webhook="https://script.google.com/macros/s/abc/exec")
+    job["gas_options"] = {
+        "sheet_name": "Exports",
+        "header_row": 2,
+        "dedupe_key_columns": ["id", "updated_at"],
+    }
+
+    pipeline = build_pipeline_for_job(AppConfig(), job, sql_client_cls=lambda cfg: object())
+
+    assert isinstance(pipeline.sink, GoogleAppsScriptSink)
+    assert pipeline.sink._gas_options == {  # type: ignore[attr-defined]
+        "sheet_name": "Exports",
+        "header_row": 2,
+        "dedupe_key_columns": ["id", "updated_at"],
+    }

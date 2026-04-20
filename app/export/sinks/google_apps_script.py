@@ -15,7 +15,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 
-from app.config import QueryResult
+from app.config import GasOptions, QueryResult
 from app.core.constants import (
     GOOGLE_SCRIPT_HOSTS,
     GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
@@ -84,6 +84,27 @@ class _RetryableAckError(RuntimeError):
     pass
 
 
+class _ChunkDeliveryError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        cause_type: str,
+        http_status: int | None = None,
+        http_body_preview: str = "",
+        ack_message: str = "",
+        error_code: str = "",
+        ack_details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.cause_type = cause_type
+        self.http_status = http_status
+        self.http_body_preview = http_body_preview
+        self.ack_message = ack_message
+        self.error_code = error_code
+        self.ack_details = ack_details or {}
+
+
 def canonicalize_column_name(name: str) -> str:
     return _WHITESPACE_RE.sub(" ", str(name).strip()).casefold()
 
@@ -118,8 +139,33 @@ def _compute_checksum(columns: list[str], records: list[dict[str, Any]]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _payload_object(job_name: str, chunk: GasChunkPlan, *, chunk_bytes: int | None = None) -> dict[str, Any]:
+def _normalize_gas_options(gas_options: GasOptions | None) -> GasOptions:
+    raw = gas_options or {}
+    header_row = raw.get("header_row", 1)
+    try:
+        normalized_header_row = max(1, int(header_row))
+    except (TypeError, ValueError):
+        normalized_header_row = 1
+    dedupe_columns = raw.get("dedupe_key_columns") or []
     return {
+        "sheet_name": str(raw.get("sheet_name", "") or "").strip(),
+        "header_row": normalized_header_row,
+        "dedupe_key_columns": [
+            str(column).strip()
+            for column in dedupe_columns
+            if str(column).strip()
+        ],
+    }
+
+
+def _payload_object(
+    job_name: str,
+    chunk: GasChunkPlan,
+    *,
+    chunk_bytes: int | None = None,
+    gas_options: GasOptions | None = None,
+) -> dict[str, Any]:
+    payload = {
         "protocol_version": "gas-sheet.v1",
         "job_name": job_name,
         "run_id": chunk.run_id,
@@ -135,10 +181,52 @@ def _payload_object(job_name: str, chunk: GasChunkPlan, *, chunk_bytes: int | No
         },
         "records": chunk.records,
     }
+    normalized_gas_options = _normalize_gas_options(gas_options)
+    target = _payload_target_block(normalized_gas_options)
+    if target is not None:
+        payload["target"] = target
+    dedupe = _payload_dedupe_block(normalized_gas_options)
+    if dedupe is not None:
+        payload["dedupe"] = dedupe
+    return payload
 
 
-def _measure_chunk_bytes(job_name: str, chunk: GasChunkPlan) -> int:
-    candidate = _payload_object(job_name, chunk, chunk_bytes=0)
+def _payload_target_block(gas_options: GasOptions) -> dict[str, Any] | None:
+    sheet_name = str(gas_options.get("sheet_name", "") or "").strip()
+    header_row = int(gas_options.get("header_row", 1) or 1)
+    if not sheet_name and header_row == 1:
+        return None
+    return {
+        "sheet_name": sheet_name,
+        "header_row": header_row,
+    }
+
+
+def _payload_dedupe_block(gas_options: GasOptions) -> dict[str, Any] | None:
+    key_columns = [
+        str(column).strip()
+        for column in (gas_options.get("dedupe_key_columns") or [])
+        if str(column).strip()
+    ]
+    if not key_columns:
+        return None
+    return {
+        "key_columns": key_columns,
+    }
+
+
+def _measure_chunk_bytes(
+    job_name: str,
+    chunk: GasChunkPlan,
+    *,
+    gas_options: GasOptions | None = None,
+) -> int:
+    candidate = _payload_object(
+        job_name,
+        chunk,
+        chunk_bytes=0,
+        gas_options=gas_options,
+    )
     previous = -1
     current = len(json.dumps(candidate, ensure_ascii=False, cls=_SqlJSONEncoder).encode("utf-8"))
     while current != previous:
@@ -183,11 +271,20 @@ def _estimate_payload_size(
     total_rows: int,
     chunk_rows: int,
     records_bytes: int,
+    gas_options: GasOptions | None = None,
 ) -> int:
     job_name_json = json.dumps(job_name, ensure_ascii=False, cls=_SqlJSONEncoder)
     run_id_json = json.dumps(run_id, ensure_ascii=False, cls=_SqlJSONEncoder)
     columns_json = json.dumps(columns, ensure_ascii=False, cls=_SqlJSONEncoder)
     checksum_json = json.dumps("0" * 64, ensure_ascii=False)
+    normalized_gas_options = _normalize_gas_options(gas_options)
+    optional_suffix = ""
+    target = _payload_target_block(normalized_gas_options)
+    dedupe = _payload_dedupe_block(normalized_gas_options)
+    if target is not None:
+        optional_suffix += ',"target":' + json.dumps(target, ensure_ascii=False, cls=_SqlJSONEncoder)
+    if dedupe is not None:
+        optional_suffix += ',"dedupe":' + json.dumps(dedupe, ensure_ascii=False, cls=_SqlJSONEncoder)
 
     previous = -1
     current = 0
@@ -214,7 +311,7 @@ def _estimate_payload_size(
             + checksum_json
             + '},"records":'
         )
-        current = len(prefix.encode("utf-8")) + records_bytes + 1
+        current = len(prefix.encode("utf-8")) + records_bytes + len(optional_suffix.encode("utf-8")) + 1
     return current
 
 
@@ -226,6 +323,7 @@ def _split_chunks(
     max_rows_per_chunk: int,
     max_payload_bytes: int,
     total_chunks_hint: int,
+    gas_options: GasOptions | None = None,
 ) -> list[GasChunkPlan]:
     columns = list(result.columns)
     total_rows = result.count
@@ -266,6 +364,7 @@ def _split_chunks(
             total_rows=total_rows,
             chunk_rows=candidate_count,
             records_bytes=candidate_records_bytes,
+            gas_options=gas_options,
         )
         if candidate_count <= max_rows_per_chunk and candidate_bytes <= max_payload_bytes:
             current.append(record)
@@ -285,6 +384,7 @@ def _split_chunks(
             total_rows=total_rows,
             chunk_rows=1,
             records_bytes=2 + row_size,
+            gas_options=gas_options,
         )
         if single_record_bytes > max_payload_bytes:
             raise ValueError("Одна строка превышает допустимый размер чанка")
@@ -314,6 +414,7 @@ def plan_gas_chunks(
     run_id: str,
     max_rows_per_chunk: int = GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
     max_payload_bytes: int = GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
+    gas_options: GasOptions | None = None,
 ) -> list[GasChunkPlan]:
     _validate_columns(list(result.columns))
 
@@ -326,6 +427,7 @@ def plan_gas_chunks(
             max_rows_per_chunk=max_rows_per_chunk,
             max_payload_bytes=max_payload_bytes,
             total_chunks_hint=hint,
+            gas_options=gas_options,
         )
         final_total = len(chunks)
         if hint == final_total and all(chunk.chunk_bytes <= max_payload_bytes for chunk in chunks):
@@ -333,9 +435,19 @@ def plan_gas_chunks(
         hint = final_total
 
 
-def build_gas_chunk_payload(job_name: str, chunk: GasChunkPlan) -> bytes:
+def build_gas_chunk_payload(
+    job_name: str,
+    chunk: GasChunkPlan,
+    *,
+    gas_options: GasOptions | None = None,
+) -> bytes:
+    chunk.chunk_bytes = _measure_chunk_bytes(
+        job_name,
+        chunk,
+        gas_options=gas_options,
+    )
     return json.dumps(
-        _payload_object(job_name, chunk),
+        _payload_object(job_name, chunk, gas_options=gas_options),
         ensure_ascii=False,
         cls=_SqlJSONEncoder,
     ).encode("utf-8")
@@ -383,6 +495,36 @@ def build_user_delivery_error(*, delivered_chunks: int, total_chunks: int) -> st
     return f"Не удалось доставить данные: {delivered_chunks}/{total_chunks} чанков"
 
 
+def _preview_response_body(raw_body: bytes | None) -> str:
+    if not raw_body:
+        return ""
+
+    preview = raw_body.decode("utf-8", errors="replace").strip()
+    if not preview:
+        return ""
+
+    preview = _WHITESPACE_RE.sub(" ", preview)
+    return preview[:240]
+
+
+def _build_http_failure_message(http_status: int | None, body_preview: str) -> str:
+    if http_status is None:
+        return body_preview or "HTTP error"
+    if body_preview:
+        return f"HTTP {http_status}: {body_preview}"
+    return f"HTTP {http_status}"
+
+
+def _build_ack_failure_message(ack: GasAck) -> str:
+    details = ack.details or {}
+    internal_message = str(details.get("internal_message", "") or "").strip()
+    base_message = str(ack.message or ack.error_code or "Ack failure").strip()
+
+    if internal_message and internal_message not in base_message:
+        return f"{base_message}: {internal_message}"
+    return base_message
+
+
 class GoogleAppsScriptSink:
     name = "google_apps_script"
 
@@ -390,6 +532,7 @@ class GoogleAppsScriptSink:
         self,
         url: str,
         *,
+        gas_options: GasOptions | None = None,
         max_rows_per_chunk: int = GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
         max_payload_bytes: int = GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
         retries: int = GOOGLE_SCRIPT_RETRIES,
@@ -398,6 +541,7 @@ class GoogleAppsScriptSink:
         ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         self._url = url
+        self._gas_options = _normalize_gas_options(gas_options)
         self._max_rows_per_chunk = max_rows_per_chunk
         self._max_payload_bytes = max_payload_bytes
         self._retries = max(1, retries)
@@ -422,6 +566,7 @@ class GoogleAppsScriptSink:
                 run_id=run_id,
                 max_rows_per_chunk=self._max_rows_per_chunk,
                 max_payload_bytes=self._max_payload_bytes,
+                gas_options=self._gas_options,
             )
         except ValueError as exc:
             raise GoogleAppsScriptDeliveryError(
@@ -436,7 +581,11 @@ class GoogleAppsScriptSink:
         delivered_chunks = 0
         delivered_rows = 0
         for chunk in chunks:
-            payload = build_gas_chunk_payload(job_name, chunk)
+            payload = build_gas_chunk_payload(
+                job_name,
+                chunk,
+                gas_options=self._gas_options,
+            )
             try:
                 ack = self._post_chunk(payload, chunk)
             except Exception as exc:  # noqa: BLE001
@@ -483,20 +632,36 @@ class GoogleAppsScriptSink:
                     expected_chunk_index=chunk.chunk_index,
                 )
             except urllib.error.HTTPError as exc:
+                http_status = getattr(exc, "code", None)
+                raw_body = exc.read()
+                body_preview = _preview_response_body(raw_body)
                 try:
                     ack = parse_gas_ack(
-                        exc.read(),
+                        raw_body,
                         expected_run_id=chunk.run_id,
                         expected_chunk_index=chunk.chunk_index,
                     )
                 except Exception as parse_exc:  # noqa: BLE001
-                    last_exc = _RetryableAckError(str(parse_exc))
+                    last_exc = _ChunkDeliveryError(
+                        _build_http_failure_message(http_status, body_preview),
+                        cause_type=type(exc).__name__,
+                        http_status=http_status,
+                        http_body_preview=body_preview,
+                    )
                     ack = None  # type: ignore[assignment]
                 else:
                     if ack.ok or ack.retryable:
                         pass
                     else:
-                        raise RuntimeError(ack.message)
+                        raise _ChunkDeliveryError(
+                            _build_http_failure_message(http_status, ack.message or body_preview),
+                            cause_type=type(exc).__name__,
+                            http_status=http_status,
+                            http_body_preview=body_preview,
+                            ack_message=ack.message,
+                            error_code=ack.error_code,
+                            ack_details=ack.details,
+                        )
             except ValueError as exc:
                 last_exc = _RetryableAckError(str(exc))
                 ack = None  # type: ignore[assignment]
@@ -508,8 +673,20 @@ class GoogleAppsScriptSink:
                 if ack.ok:
                     return ack
                 if not ack.retryable:
-                    raise RuntimeError(ack.message)
-                last_exc = _RetryableAckError(ack.message or ack.error_code or "Retryable ack failure")
+                    raise _ChunkDeliveryError(
+                        _build_ack_failure_message(ack),
+                        cause_type="GasAckError",
+                        ack_message=ack.message,
+                        error_code=ack.error_code,
+                        ack_details=ack.details,
+                    )
+                last_exc = _ChunkDeliveryError(
+                    _build_ack_failure_message(ack),
+                    cause_type="GasAckError",
+                    ack_message=ack.message,
+                    error_code=ack.error_code,
+                    ack_details=ack.details,
+                )
 
             if attempt < self._retries:
                 time.sleep(self._base_delay * (2 ** (attempt - 1)))
@@ -544,8 +721,26 @@ class GoogleAppsScriptSink:
             "chunk_rows": failed_chunk.chunk_rows,
             "chunk_bytes": failed_chunk.chunk_bytes,
             "error": str(cause),
-            "cause_type": type(cause).__name__,
+            "cause_type": getattr(cause, "cause_type", type(cause).__name__),
         }
+        if isinstance(cause, _ChunkDeliveryError):
+            debug_context["http_status"] = cause.http_status
+            debug_context["http_body_preview"] = cause.http_body_preview
+            if cause.ack_message:
+                debug_context["ack_message"] = cause.ack_message
+            if cause.error_code:
+                debug_context["error_code"] = cause.error_code
+            if cause.ack_details:
+                debug_context["ack_details"] = cause.ack_details
+            if (
+                cause.error_code == "INTERNAL_WRITE_ERROR"
+                and cause.ack_message == "Unexpected server error"
+                and not cause.ack_details
+            ):
+                debug_context["hint"] = (
+                    "Backend returned a generic internal error without details. "
+                    "If you are using an Apps Script /exec deployment, publish the latest backend version."
+                )
         return GoogleAppsScriptDeliveryError(
             user_message,
             run_id=run_id,

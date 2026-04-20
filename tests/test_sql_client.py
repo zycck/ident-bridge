@@ -136,6 +136,7 @@ def test_query_materializes_rows_once(monkeypatch) -> None:
     assert result.count == 2
     assert result.truncated is False
     assert result.duration_ms >= 0
+    assert result.duration_us >= 0
 
 
 def test_query_respects_max_rows_and_marks_truncated(monkeypatch) -> None:
@@ -168,3 +169,31 @@ def test_test_connection_returns_clear_failure_when_driver_detection_breaks(monk
 
     assert ok is False
     assert "no ODBC drivers" in msg
+
+
+def test_test_connection_formats_duration_compact(monkeypatch) -> None:
+    class _FakeClient(SqlClient):
+        def connect(self) -> None:
+            return None
+
+        def is_alive(self) -> bool:
+            return True
+
+        def query(self, sql: str, params: tuple = (), *, max_rows: int | None = None):
+            return sql_client.QueryResult(
+                columns=["count"],
+                rows=[(17,)],
+                count=1,
+                duration_ms=12,
+                duration_us=12_345,
+            )
+
+        def disconnect(self) -> None:
+            return None
+
+    client = _FakeClient(_cfg())
+
+    ok, msg = client.test_connection()
+
+    assert ok is True
+    assert msg == "Подключено · 17 таблиц · 12.3 мс"

@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app.config import ExportJob
 from app.ui.export_editor_runtime import format_short_user_error
-from app.ui.formatters import format_relative_timestamp
+from app.ui.formatters import format_duration_compact, format_relative_timestamp
 from app.ui.theme import Theme
 
 
@@ -40,7 +40,13 @@ def _build_status_text(job: ExportJob, now: datetime) -> str:
     latest = history[0]
     if latest.get("ok"):
         ts_short = _format_short_ts(latest.get("ts", ""), now=now)
-        return f"✓ {latest.get('rows', 0)} строк · {ts_short}"
+        duration_us = int(latest.get("duration_us") or 0)
+        duration_suffix = (
+            f" · {format_duration_compact(duration_us)}"
+            if duration_us > 0
+            else ""
+        )
+        return f"✓ {latest.get('rows', 0)} строк · {ts_short}{duration_suffix}"
 
     err = latest.get("err", "Ошибка")
     return f"✗ {format_short_user_error(err, max_length=40)}"

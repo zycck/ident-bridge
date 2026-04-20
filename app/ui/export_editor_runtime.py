@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.config import ExportHistoryEntry, SyncResult, TriggerType
+from app.ui.formatters import format_duration_compact
 
 _SHORT_ERROR_STATUS_LIMIT = 70
 
@@ -44,8 +45,15 @@ class ExportEditorRuntimeState:
             ok=True,
             ts=result.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
             rows=result.rows_synced,
+            duration_us=result.duration_us,
+            sql_duration_us=result.sql_duration_us,
         )
-        return "ok", f"✓ {result.rows_synced} строк · {clock}", entry
+        return (
+            "ok",
+            f"✓ {result.rows_synced} строк · {clock} · "
+            f"{format_duration_compact(result.duration_us)}",
+            entry,
+        )
 
     def on_error(
         self,
@@ -53,6 +61,8 @@ class ExportEditorRuntimeState:
         *,
         now: datetime,
         alert_threshold: int,
+        duration_us: int = 0,
+        sql_duration_us: int = 0,
     ) -> ExportEditorRuntimeUpdate:
         self.consecutive_failures += 1
         alert_count = None
@@ -68,6 +78,8 @@ class ExportEditorRuntimeState:
                 ok=False,
                 ts=now.strftime("%Y-%m-%d %H:%M:%S"),
                 err=normalize_short_user_error(msg),
+                duration_us=duration_us,
+                sql_duration_us=sql_duration_us,
             ),
             alert_count=alert_count,
         )
@@ -79,6 +91,7 @@ class ExportEditorRuntimeState:
         rows: int,
         err: str,
         now: datetime,
+        duration_us: int = 0,
     ) -> ExportHistoryEntry:
         return self._history_entry(
             trigger=TriggerType.TEST,
@@ -86,6 +99,8 @@ class ExportEditorRuntimeState:
             ts=now.strftime("%Y-%m-%d %H:%M"),
             rows=rows,
             err=normalize_short_user_error(err, default="") if err else "",
+            duration_us=duration_us,
+            sql_duration_us=duration_us,
         )
 
     @staticmethod
@@ -100,7 +115,13 @@ class ExportEditorRuntimeState:
                 ts_short = ts_text[11:16]
             else:
                 ts_short = ts_text
-            return "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}"
+            duration_us = int(latest.get("duration_us") or 0)
+            suffix = (
+                f" · {format_duration_compact(duration_us)}"
+                if duration_us > 0
+                else ""
+            )
+            return "ok", f"✓ {latest.get('rows', 0)} строк · {ts_short}{suffix}"
         return "error", (
             f"✗ {format_short_user_error(latest.get('err', ''), max_length=_SHORT_ERROR_STATUS_LIMIT)}"
         )
@@ -113,6 +134,8 @@ class ExportEditorRuntimeState:
         ts: str,
         rows: int = 0,
         err: str = "",
+        duration_us: int = 0,
+        sql_duration_us: int = 0,
     ) -> ExportHistoryEntry:
         return {
             "ts": ts,
@@ -120,6 +143,8 @@ class ExportEditorRuntimeState:
             "ok": ok,
             "rows": rows,
             "err": err,
+            "duration_us": max(0, int(duration_us)),
+            "sql_duration_us": max(0, int(sql_duration_us)),
         }
 
 

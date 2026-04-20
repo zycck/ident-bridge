@@ -4,6 +4,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
 from app.config import ExportHistoryEntry
+from app.ui.export_google_sheets_panel import ExportGoogleSheetsPanel
 from app.ui.export_editor_header import ExportEditorHeader
 from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_schedule_panel import ExportSchedulePanel
@@ -53,6 +54,9 @@ class ExportEditorShell(QWidget):
         self._webhook_edit.setPlaceholderText("https://… (необязательно)")
         root.addWidget(self._webhook_edit)
 
+        self._google_sheets_panel = ExportGoogleSheetsPanel(self)
+        root.addWidget(self._google_sheets_panel)
+
         self._section_break(root)
 
         self._schedule_panel = ExportSchedulePanel(self)
@@ -66,7 +70,8 @@ class ExportEditorShell(QWidget):
         self._header.test_requested.connect(self.test_requested)
         self._header.run_requested.connect(self.run_requested)
         self._sql_panel.changed.connect(self.query_changed)
-        self._webhook_edit.editingFinished.connect(self.changed)
+        self._webhook_edit.editingFinished.connect(self._on_webhook_changed)
+        self._google_sheets_panel.changed.connect(self.changed)
         self._schedule_panel.changed.connect(self.schedule_changed)
         self._history_panel.changed.connect(self.history_changed)
 
@@ -94,6 +99,29 @@ class ExportEditorShell(QWidget):
             self._webhook_edit.setText(url)
         finally:
             self._webhook_edit.blockSignals(False)
+        self._google_sheets_panel.set_target_url(url)
+
+    def gas_sheet_name(self) -> str:
+        return self._google_sheets_panel.sheet_name()
+
+    def gas_header_row(self) -> int:
+        return self._google_sheets_panel.header_row()
+
+    def gas_dedupe_key_columns(self) -> list[str]:
+        return self._google_sheets_panel.dedupe_key_columns()
+
+    def set_gas_options(
+        self,
+        *,
+        sheet_name: str,
+        header_row: int,
+        dedupe_key_columns: list[str],
+    ) -> None:
+        self._google_sheets_panel.set_gas_options(
+            sheet_name=sheet_name,
+            header_row=header_row,
+            dedupe_key_columns=dedupe_key_columns,
+        )
 
     def schedule_enabled(self) -> bool:
         return self._schedule_panel.schedule_enabled()
@@ -127,3 +155,7 @@ class ExportEditorShell(QWidget):
 
     def prepend_history_entry(self, entry: ExportHistoryEntry) -> None:
         self._history_panel.prepend_entry(entry)
+
+    def _on_webhook_changed(self) -> None:
+        self._google_sheets_panel.set_target_url(self.webhook_url())
+        self.changed.emit()

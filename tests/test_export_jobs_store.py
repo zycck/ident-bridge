@@ -16,6 +16,11 @@ class _DummyConfig:
                     "name": "Nightly",
                     "sql_query": "SELECT 1",
                     "webhook_url": "",
+                    "gas_options": {
+                        "sheet_name": "Exports",
+                        "header_row": "2",
+                        "dedupe_key_columns": ["id", "updated_at", ""],
+                    },
                     "history": [{"ts": "2026-01-01 00:00:00"}],
                 }
             ],
@@ -38,6 +43,11 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
             "name": "Nightly",
             "sql_query": "SELECT 1",
             "webhook_url": "",
+            "gas_options": {
+                "sheet_name": "Exports",
+                "header_row": 2,
+                "dedupe_key_columns": ["id", "updated_at"],
+            },
             "schedule_enabled": False,
             "schedule_mode": "daily",
             "schedule_value": "",
@@ -57,6 +67,11 @@ def test_persist_export_jobs_preserves_other_config_fields() -> None:
                 "name": "Manual",
                 "sql_query": "SELECT 2",
                 "webhook_url": "https://example.test",
+                "gas_options": {
+                    "sheet_name": "Archive",
+                    "header_row": 3,
+                    "dedupe_key_columns": ["id"],
+                },
                 "schedule_enabled": True,
                 "schedule_mode": "hourly",
                 "schedule_value": "2",
@@ -77,4 +92,9 @@ def test_new_export_job_starts_blank_with_generated_id() -> None:
     assert job["sql_query"] == ""
     assert job["schedule_enabled"] is False
     assert job["schedule_mode"] == "daily"
+    assert job["gas_options"] == {
+        "sheet_name": "",
+        "header_row": 1,
+        "dedupe_key_columns": [],
+    }
     assert job["history"] == []
