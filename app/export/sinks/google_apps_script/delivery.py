@@ -77,6 +77,32 @@ def build_user_delivery_error(*, delivered_chunks: int, total_chunks: int) -> st
     return f"Не удалось доставить данные: {delivered_chunks}/{total_chunks} чанков"
 
 
+def _build_actionable_ack_message(cause: "_ChunkDeliveryError") -> str:
+    field_name = str((cause.ack_details or {}).get("field", "") or "").strip()
+
+    if cause.error_code == "UNAUTHORIZED":
+        if field_name in {"auth_token", "token"}:
+            return (
+                "Ключ доступа не подошёл. Проверьте, что в приложении и "
+                "в свойствах проекта Apps Script указано одно и то же значение AUTH_TOKEN."
+            )
+        return "Доступ к обработчику запрещён. Проверьте ключ доступа и настройки проекта Apps Script."
+
+    if cause.error_code == "INVALID_REQUEST_METHOD":
+        return "Адрес обработки настроен неверно. Проверьте, что указан адрес веб-приложения Apps Script."
+
+    if cause.error_code == "MALFORMED_JSON":
+        return (
+            "Адрес обработки ответил некорректно. Проверьте, что используется "
+            "опубликованный адрес проекта Apps Script таблицы."
+        )
+
+    if cause.ack_message:
+        return cause.ack_message
+
+    return ""
+
+
 def _preview_response_body(raw_body: bytes | None) -> str:
     if not raw_body:
         return ""
@@ -334,10 +360,11 @@ class GoogleAppsScriptSink:
         failed_chunk: GasChunkPlan,
         cause: Exception,
     ) -> GoogleAppsScriptDeliveryError:
-        user_message = build_user_delivery_error(
+        base_user_message = build_user_delivery_error(
             delivered_chunks=delivered_chunks,
             total_chunks=total_chunks,
         )
+        user_message = base_user_message
         debug_context = {
             "url": self._url,
             "run_id": run_id,
@@ -351,6 +378,12 @@ class GoogleAppsScriptSink:
             "cause_type": getattr(cause, "cause_type", type(cause).__name__),
         }
         if isinstance(cause, _ChunkDeliveryError):
+            actionable_message = _build_actionable_ack_message(cause)
+            if actionable_message:
+                if delivered_chunks == 0:
+                    user_message = actionable_message
+                else:
+                    user_message = f"{base_user_message}: {actionable_message}"
             debug_context["http_status"] = cause.http_status
             debug_context["http_body_preview"] = cause.http_body_preview
             if cause.ack_message:

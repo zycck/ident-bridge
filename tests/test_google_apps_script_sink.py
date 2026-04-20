@@ -368,6 +368,29 @@ def test_parse_gas_ack_rejects_wrong_run_or_chunk():
         )
 
 
+def test_parse_gas_ack_accepts_failure_ack_without_matching_run_id():
+    ack = parse_gas_ack(
+        json.dumps(
+            {
+                "ok": False,
+                "error_code": "UNAUTHORIZED",
+                "retryable": False,
+                "run_id": "",
+                "chunk_index": "",
+                "message": "Invalid auth token",
+                "details": {"field": "auth_token"},
+            }
+        ).encode("utf-8"),
+        expected_run_id="run-auth-fail",
+        expected_chunk_index=1,
+    )
+
+    assert ack.ok is False
+    assert ack.error_code == "UNAUTHORIZED"
+    assert ack.message == "Invalid auth token"
+    assert ack.details == {"field": "auth_token"}
+
+
 def test_parse_gas_ack_rejects_incompatible_api_version_major():
     with pytest.raises(ValueError, match="api_version"):
         parse_gas_ack(
@@ -610,6 +633,38 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
     assert exc.delivered_rows == 2
     assert exc.run_id
     assert "1/2 чанков" in exc.user_message
+
+
+def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
+    def _urlopen(req, **kwargs):
+        return _FakeResp(
+            {
+                "ok": False,
+                "error_code": "UNAUTHORIZED",
+                "retryable": False,
+                "run_id": "",
+                "chunk_index": "",
+                "message": "Invalid auth token",
+                "details": {"field": "auth_token"},
+            }
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink(
+        "https://script.google.com/macros/s/abc/exec",
+        retries=1,
+        gas_options={"auth_token": "secret-token"},
+    )
+
+    with pytest.raises(GoogleAppsScriptDeliveryError) as exc_info:
+        sink.push("Auth failure", _qr())
+
+    exc = exc_info.value
+    assert "Ключ доступа" in exc.user_message
+    assert exc.debug_context["cause_type"] == "GasAckError"
+    assert exc.debug_context["ack_message"] == "Invalid auth token"
+    assert exc.debug_context["error_code"] == "UNAUTHORIZED"
 
 
 def test_push_includes_http_status_and_body_preview_on_http_error(monkeypatch):

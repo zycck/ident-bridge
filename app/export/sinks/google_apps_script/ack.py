@@ -47,12 +47,6 @@ def parse_gas_ack(raw_body: bytes, *, expected_run_id: str, expected_chunk_index
 
     if not isinstance(payload, dict):
         raise ValueError("Некорректный формат ack")
-    if payload.get("run_id") != expected_run_id:
-        raise ValueError("Ack содержит другой run_id")
-    if payload.get("chunk_index") != expected_chunk_index:
-        raise ValueError("Ack содержит другой chunk_index")
-    api_version = _validate_api_version(payload)
-
     ok = bool(payload.get("ok"))
     if ok:
         required = (
@@ -69,12 +63,31 @@ def parse_gas_ack(raw_body: bytes, *, expected_run_id: str, expected_chunk_index
     missing = [field for field in required if field not in payload]
     if missing:
         raise ValueError(f"Ack не содержит обязательные поля: {', '.join(missing)}")
+    api_version = _validate_api_version(payload)
+
+    raw_run_id = payload.get("run_id")
+    raw_chunk_index = payload.get("chunk_index")
+
+    if ok:
+        if raw_run_id != expected_run_id:
+            raise ValueError("Ack содержит другой run_id")
+        if raw_chunk_index != expected_chunk_index:
+            raise ValueError("Ack содержит другой chunk_index")
+        run_id = str(raw_run_id)
+        chunk_index = int(raw_chunk_index)
+    else:
+        if raw_run_id not in {"", None, expected_run_id}:
+            raise ValueError("Ack содержит другой run_id")
+        if raw_chunk_index not in {"", None, expected_chunk_index}:
+            raise ValueError("Ack содержит другой chunk_index")
+        run_id = str(raw_run_id or expected_run_id)
+        chunk_index = int(raw_chunk_index or expected_chunk_index)
 
     return GasAck(
         ok=ok,
         status=str(payload.get("status", "")),
-        run_id=str(payload["run_id"]),
-        chunk_index=int(payload["chunk_index"]),
+        run_id=run_id,
+        chunk_index=chunk_index,
         rows_received=int(payload.get("rows_received", 0)),
         rows_written=int(payload.get("rows_written", 0)),
         retryable=bool(payload.get("retryable", False)),
