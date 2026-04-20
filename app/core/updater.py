@@ -1,3 +1,4 @@
+import hashlib
 import json
 import ssl
 import shutil
@@ -8,7 +9,9 @@ import time
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from string import hexdigits
 
+from app.core.app_logger import get_logger
 from app.core.constants import (
     EXE_NAME,
     GITHUB_API_URL,
@@ -21,9 +24,25 @@ _DETACHED_FLAGS = (
     getattr(subprocess, "DETACHED_PROCESS", 0)
     | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 )
+_log = get_logger(__name__)
 
 
-def _pick_download_url(release_data: dict) -> str | None:
+def _normalize_digest(digest: object) -> str | None:
+    if not isinstance(digest, str):
+        return None
+
+    digest = digest.strip()
+    if not digest.startswith("sha256:"):
+        return None
+
+    value = digest.split(":", 1)[1].strip()
+    if len(value) != 64 or any(char not in hexdigits for char in value):
+        return None
+
+    return f"sha256:{value.lower()}"
+
+
+def _pick_download_asset(release_data: dict) -> tuple[str, str | None] | None:
     """Choose the most appropriate packaged update asset from a release."""
     assets = release_data.get("assets", [])
     if not assets:
@@ -34,15 +53,22 @@ def _pick_download_url(release_data: dict) -> str | None:
         name = str(asset.get("name") or "").lower()
         url = asset.get("browser_download_url")
         if name == expected_name and url:
-            return url
+            return (url, _normalize_digest(asset.get("digest")))
 
     for asset in assets:
         name = str(asset.get("name") or "").lower()
         url = asset.get("browser_download_url")
         if name.endswith(".exe") and url:
-            return url
+            return (url, _normalize_digest(asset.get("digest")))
 
     return None
+
+
+def _pick_download_url(release_data: dict) -> str | None:
+    asset = _pick_download_asset(release_data)
+    if asset is None:
+        return None
+    return asset[0]
 
 
 def _parse_version(version: str) -> tuple[int, ...]:
@@ -77,7 +103,7 @@ def cleanup_old_exe() -> None:
                 time.sleep(0.5)
 
 
-def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
+def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str, str | None] | None:
     url = GITHUB_API_URL.format(repo=repo)
     headers = {"User-Agent": USER_AGENT}
     request = urllib.request.Request(url, headers=headers)
@@ -85,15 +111,16 @@ def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
     try:
         with urllib.request.urlopen(request, context=ssl_ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-        download_url = _pick_download_url(data)
-        if not download_url:
+        asset = _pick_download_asset(data)
+        if not asset:
             return None
-        return (data["tag_name"], download_url)
+        download_url, digest = asset
+        return (data["tag_name"], download_url, digest)
     except Exception:
         return None
 
 
-def download_update(download_url: str) -> str:
+def download_update(download_url: str, expected_digest: str | None = None) -> str:
     """Download the update payload to a temporary file and return its path."""
     new_exe = Path(tempfile.gettempdir()) / f"{EXE_NAME}_new.exe"
 
@@ -102,8 +129,14 @@ def download_update(download_url: str) -> str:
         urllib.request.HTTPSHandler(context=ssl_ctx)
     )
     request = urllib.request.Request(download_url, headers={"User-Agent": USER_AGENT})
+    hasher = hashlib.sha256()
     with opener.open(request, timeout=120) as resp, new_exe.open("wb") as fh:
-        shutil.copyfileobj(resp, fh)
+        while True:
+            chunk = resp.read(64 * 1024)
+            if not chunk:
+                break
+            fh.write(chunk)
+            hasher.update(chunk)
 
     size = new_exe.stat().st_size
     if size <= MIN_DOWNLOAD_BYTES:
@@ -111,6 +144,22 @@ def download_update(download_url: str) -> str:
             f"Downloaded file is too small ({size} bytes); "
             "aborting update to avoid replacing the app with a corrupt file."
         )
+
+    actual_digest = f"sha256:{hasher.hexdigest()}"
+    if expected_digest is None:
+        _log.warning(
+            "Release asset digest is missing for %s; skipping verification.",
+            download_url,
+        )
+    else:
+        normalized_expected = _normalize_digest(expected_digest)
+        if normalized_expected is None:
+            raise ValueError("expected_digest must be a sha256:<hex> value")
+        if actual_digest != normalized_expected:
+            raise ValueError(
+                "Downloaded file digest mismatch: "
+                f"expected {normalized_expected}, got {actual_digest}"
+            )
     return str(new_exe)
 
 
@@ -188,6 +237,6 @@ def apply_downloaded_update(
     exit_hook()
 
 
-def download_and_apply(download_url: str) -> None:
-    downloaded_path = download_update(download_url)
+def download_and_apply(download_url: str, expected_digest: str | None = None) -> None:
+    downloaded_path = download_update(download_url, expected_digest=expected_digest)
     apply_downloaded_update(downloaded_path)

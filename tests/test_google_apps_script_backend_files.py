@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from pathlib import Path
@@ -8,6 +9,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = ROOT / "google script back end"
 SRC_DIR = BACKEND_DIR / "src"
+
+
+def _schema_checksum(columns: list[object], records: list[object]) -> str:
+    payload = json.dumps(
+        {"columns": columns, "records": records},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def test_google_apps_script_backend_is_consolidated_into_one_js_module() -> None:
@@ -61,7 +72,7 @@ def test_backend_rejects_non_empty_chunk_when_total_rows_is_zero() -> None:
             schema: {
               mode: 'append_only_v1',
               columns: ['id'],
-              checksum: 'abc'
+              checksum: __schemaChecksum__(['id'], [{ id: 1 }])
             },
             records: [{ id: 1 }]
           });
@@ -200,7 +211,7 @@ def test_do_post_accepts_matching_auth_token_in_json_body() -> None:
               schema: {
                 mode: 'append_only_v1',
                 columns: ['id'],
-                checksum: 'abc'
+                checksum: __schemaChecksum__(['id'], [{ id: 1 }])
               },
               records: [{ id: 1 }]
             })
@@ -235,7 +246,7 @@ def test_do_post_rejects_mismatched_auth_token() -> None:
               schema: {
                 mode: 'append_only_v1',
                 columns: ['id'],
-                checksum: 'abc'
+                checksum: __schemaChecksum__(['id'], [{ id: 1 }])
               },
               records: [{ id: 1 }]
             })
@@ -268,7 +279,7 @@ def test_do_post_rejects_missing_auth_token() -> None:
               schema: {
                 mode: 'append_only_v1',
                 columns: ['id'],
-                checksum: 'abc'
+                checksum: __schemaChecksum__(['id'], [{ id: 1 }])
               },
               records: [{ id: 1 }]
             })
@@ -298,7 +309,7 @@ def test_backend_normalizes_target_and_dedupe_blocks() -> None:
           schema: {
             mode: 'append_only_v1',
             columns: ['id', 'updated_at'],
-            checksum: 'abc'
+            checksum: __schemaChecksum__(['id', 'updated_at'], [{ id: 1, updated_at: '2026-04-18' }])
           },
           target: {
             sheet_name: ' Exports ',
@@ -333,7 +344,7 @@ def test_backend_rejects_dedupe_columns_outside_schema() -> None:
             schema: {
               mode: 'append_only_v1',
               columns: ['id'],
-              checksum: 'abc'
+              checksum: __schemaChecksum__(['id'], [{ id: 1 }])
             },
             dedupe: {
               key_columns: ['missing']
@@ -353,6 +364,72 @@ def test_backend_rejects_dedupe_columns_outside_schema() -> None:
 
     assert result["ok"] is False
     assert result["errorCode"] == "INVALID_RECORDS_SHAPE"
+
+
+def test_backend_accepts_matching_checksum_during_normalization() -> None:
+    result = _run_backend_probe(
+        """
+        const normalized = normalizeWebhookRequest_({
+          protocol_version: 'gas-sheet.v1',
+          job_name: 'job',
+          run_id: 'run-checksum-ok',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          chunk_bytes: 128,
+          schema: {
+            mode: 'append_only_v1',
+            columns: ['id', 'email'],
+            checksum: __schemaChecksum__(['id', 'email'], [{ id: 1, email: 'a@example.com' }])
+          },
+          records: [{ id: 1, email: 'a@example.com' }]
+        });
+        console.log(JSON.stringify(normalized));
+        """
+    )
+
+    assert result["schema"] == {
+        "mode": "append_only_v1",
+        "columns": ["id", "email"],
+        "checksum": _schema_checksum(["id", "email"], [{"id": 1, "email": "a@example.com"}]),
+    }
+    assert result["records"] == [{"id": 1, "email": "a@example.com"}]
+
+
+def test_do_post_rejects_checksum_mismatch_after_auth_validation() -> None:
+    result = _run_backend_probe(
+        """
+        __propertyStore.set('AUTH_TOKEN', 'secret-token');
+        const response = JSON.parse(doPost({
+          postData: {
+            contents: JSON.stringify({
+              protocol_version: 'gas-sheet.v1',
+              job_name: 'job',
+              run_id: 'run-checksum-mismatch',
+              chunk_index: 1,
+              total_chunks: 1,
+              total_rows: 1,
+              chunk_rows: 1,
+              chunk_bytes: 128,
+              auth_token: 'secret-token',
+              schema: {
+                mode: 'append_only_v1',
+                columns: ['id'],
+                checksum: __schemaChecksum__(['id'], [{ id: 2 }])
+              },
+              records: [{ id: 1 }]
+            })
+          }
+        }));
+
+        console.log(JSON.stringify(response));
+        """
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "CHECKSUM_MISMATCH"
+    assert result["retryable"] is False
 
 
 def test_load_request_context_uses_same_target_key_as_index_rows() -> None:
@@ -880,6 +957,12 @@ global.Utilities = {{
     getBytes: () => Buffer.from(String(value), 'utf8')
   }})
 }};
+function __schemaChecksum__(columns, records) {{
+  return sha256Hex_(stableStringify_({{
+    columns: Array.isArray(columns) ? columns.slice() : [],
+    records: Array.isArray(records) ? records.slice() : []
+  }}));
+}}
 global.ContentService = {{
   MimeType: {{ JSON: 'application/json' }},
   createTextOutput: (text) => ({{ setMimeType: () => text }}),

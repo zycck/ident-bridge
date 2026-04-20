@@ -107,6 +107,7 @@ class _SheetNameField(QWidget):
         super().__init__(parent)
         self._all_options: list[str] = []
         self._show_all_matches = True
+        self._shutdown = False
         self._model = QStringListModel(self)
         self._filter_model = QSortFilterProxyModel(self)
         self._filter_model.setSourceModel(self._model)
@@ -219,6 +220,8 @@ class _SheetNameField(QWidget):
         self._apply_filter("")
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if self._shutdown:
+            return super().eventFilter(watched, event)
         if watched is self._edit:
             if event.type() in (QEvent.Type.FocusIn, QEvent.Type.MouseButtonPress):
                 self._show_all_matches = True
@@ -264,8 +267,10 @@ class _SheetNameField(QWidget):
             if event.type() in (QEvent.Type.Resize, QEvent.Type.Move):
                 if self._suggestions_frame.isVisible():
                     self._position_suggestions()
-            elif event.type() in (QEvent.Type.Hide, QEvent.Type.Close, QEvent.Type.WindowDeactivate):
+            elif event.type() in (QEvent.Type.Hide, QEvent.Type.WindowDeactivate):
                 self._suggestions_frame.hide()
+            elif event.type() == QEvent.Type.Close:
+                self.shutdown()
         return super().eventFilter(watched, event)
 
     def _on_text_changed(self, text: str) -> None:
@@ -306,12 +311,16 @@ class _SheetNameField(QWidget):
         self._list_view.scrollTo(first_index, QAbstractItemView.ScrollHint.PositionAtTop)
 
     def _refresh_suggestions_state(self) -> None:
+        if self._shutdown:
+            return
         has_matches = self._filter_model.rowCount() > 0
         self._empty_label.setVisible(not has_matches)
         self._list_view.setVisible(has_matches)
         self._update_list_height()
 
     def _update_list_height(self) -> None:
+        if self._shutdown:
+            return
         visible_rows = min(max(self._filter_model.rowCount(), 1), 6)
         row_height = self._list_view.sizeHintForRow(0)
         if row_height <= 0:
@@ -355,13 +364,19 @@ class _SheetNameField(QWidget):
         self._show_suggestions()
 
     def _show_suggestions(self) -> None:
+        if self._shutdown:
+            return
         self._ensure_overlay_parent()
+        if self._shutdown:
+            return
         self._refresh_suggestions_state()
         self._position_suggestions()
         self._suggestions_frame.show()
         self._suggestions_frame.raise_()
 
     def _sync_suggestions_visibility(self) -> None:
+        if self._shutdown or self._overlay_parent is None:
+            return
         focus_widget = QApplication.focusWidget()
         keep_visible = focus_widget is self._edit
         if not keep_visible and focus_widget is not None:
@@ -382,6 +397,8 @@ class _SheetNameField(QWidget):
         self._edit.setTextMargins(0, 0, badge_width + 18, 0)
 
     def _ensure_overlay_parent(self) -> None:
+        if self._shutdown:
+            return
         top_level = self.window()
         if top_level is None:
             return
@@ -397,12 +414,35 @@ class _SheetNameField(QWidget):
         self._overlay_parent.installEventFilter(self)
 
     def _position_suggestions(self) -> None:
+        if self._shutdown:
+            return
         overlay_parent = self._overlay_parent or self.window()
         if overlay_parent is None:
             return
 
         pos = self._edit.mapTo(overlay_parent, self._edit.rect().bottomLeft())
         self._suggestions_frame.move(pos)
+
+    def has_overlay_parent(self) -> bool:
+        return self._overlay_parent is not None
+
+    def shutdown(self) -> None:
+        if self._overlay_parent is None:
+            self._shutdown = True
+            return
+
+        self._shutdown = True
+        self._suggestions_frame.hide()
+        try:
+            self._overlay_parent.removeEventFilter(self)
+        except (TypeError, RuntimeError):
+            pass
+        self._suggestions_frame.setParent(None)
+        self._overlay_parent = None
+        try:
+            self._suggestions_frame.deleteLater()
+        except RuntimeError:
+            pass
 
 
 class ExportGoogleSheetsPanel(QWidget):
@@ -420,6 +460,17 @@ class ExportGoogleSheetsPanel(QWidget):
         self._refresh_timer.timeout.connect(self._advance_loading_animation)
         self._build_ui()
         self.setVisible(False)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        self._sheet_name_field.shutdown()
+        super().closeEvent(event)
+
+    def hideEvent(self, event) -> None:  # type: ignore[override]
+        if self._sheet_name_field.has_overlay_parent():
+            window = self.window()
+            if window is None or not window.isVisible():
+                self._sheet_name_field.shutdown()
+        super().hideEvent(event)
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)

@@ -719,6 +719,19 @@ function protocolNormalizeRequest_(payload) {
 
   const schema = protocolNormalizeSchema_(payload.schema);
   const records = protocolNormalizeRecordList_(payload.records);
+  const expectedChecksum = protocolBuildSchemaChecksum_(schema.columns, records);
+  if (schema.checksum !== expectedChecksum) {
+    throw createWebhookError_(
+      'CHECKSUM_MISMATCH',
+      false,
+      'schema.checksum does not match the canonical payload checksum',
+      {
+        field: 'schema.checksum',
+        expected_checksum: expectedChecksum,
+        provided_checksum: schema.checksum,
+      }
+    );
+  }
   const target = protocolNormalizeTarget_(payload.target);
   const dedupe = protocolNormalizeDedupe_(payload.dedupe, schema.columns);
 
@@ -890,6 +903,13 @@ function protocolNormalizeRecordList_(records) {
 
     return cloneObject_(record);
   });
+}
+
+function protocolBuildSchemaChecksum_(columns, records) {
+  return sha256Hex_(stableStringify_({
+    columns: Array.isArray(columns) ? columns.slice() : [],
+    records: Array.isArray(records) ? records.slice() : [],
+  }));
 }
 
 function protocolNormalizeRequiredString_(value, fieldName) {

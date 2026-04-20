@@ -18,6 +18,8 @@ class UpdateWorker(QObject):
 
     # Emitted when a newer release exists: (tag, download_url)
     update_available: Signal = Signal(str, str)
+    # Emitted when a newer release exists, including the asset digest.
+    update_available_with_digest: Signal = Signal(str, str, object)
     # Emitted when the current version is already up-to-date
     no_update: Signal = Signal()
     # Emitted on network / parse errors
@@ -29,18 +31,26 @@ class UpdateWorker(QObject):
         super().__init__()
         self._current_version = current_version
         self._repo = repo
+        self._latest_digest: str | None = None
+
+    @property
+    def latest_digest(self) -> str | None:
+        return self._latest_digest
 
     @Slot()
     def check(self) -> None:
         """Fetch the latest GitHub release and emit the appropriate signal."""
+        self._latest_digest = None
         try:
             try:
                 release = check_latest(self._repo)
                 if release is None:
                     self.error.emit("Не удалось получить информацию о релизе")
                     return
-                tag, download_url = release
+                tag, download_url, digest = release
+                self._latest_digest = digest
                 if is_newer(tag, self._current_version):
+                    self.update_available_with_digest.emit(tag, download_url, digest)
                     self.update_available.emit(tag, download_url)
                 else:
                     self.no_update.emit()
@@ -57,14 +67,18 @@ class UpdateDownloadWorker(QObject):
     error: Signal = Signal(str)
     finished: Signal = Signal()
 
-    def __init__(self, download_url: str) -> None:
+    def __init__(self, download_url: str, expected_digest: str | None = None) -> None:
         super().__init__()
         self._download_url = download_url
+        self._expected_digest = expected_digest
 
     @Slot()
     def run(self) -> None:
         try:
-            path = download_update(self._download_url)
+            path = download_update(
+                self._download_url,
+                expected_digest=self._expected_digest,
+            )
             self.downloaded.emit(path)
         except Exception as exc:  # noqa: BLE001
             self.error.emit(str(exc))
