@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, QSignalBlocker, Slot
 from PySide6.QtWidgets import QCheckBox, QMessageBox
 
 from app.ui.settings_actions import SettingsUpdateCoordinator, StartupToggleResult, apply_startup_toggle
@@ -29,9 +29,8 @@ class SettingsAppController(QObject):
     def handle_startup_toggled(self, checked: bool) -> StartupToggleResult:
         result = self._apply_startup_toggle(checked)
         if not result.ok:
-            self._startup_check.blockSignals(True)
-            self._startup_check.setChecked(not checked)
-            self._startup_check.blockSignals(False)
+            with QSignalBlocker(self._startup_check):
+                self._startup_check.setChecked(not checked)
             self._warn(
                 self.parent(),
                 "Автозапуск",

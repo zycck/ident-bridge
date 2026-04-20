@@ -1,6 +1,8 @@
 """Page widgets used by ExportJobsWidget."""
 
-from PySide6.QtCore import Qt, Signal
+from typing import override
+
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -90,8 +92,9 @@ class ExportJobsTilesPage(QWidget):
         )
         self._grid_layout.addWidget(self._empty_lbl, 0, 0)
 
-    def eventFilter(self, obj, event):  # noqa: N802
-        if obj is self._grid_scroll.viewport() and event.type() == event.Type.Resize:
+    @override
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if obj is self._grid_scroll.viewport() and event.type() == QEvent.Type.Resize:
             self.reflow_tiles()
         return super().eventFilter(obj, event)
 

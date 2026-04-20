@@ -1,6 +1,6 @@
 """Schedule controls for ExportJobEditor."""
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSignalBlocker, Qt, Signal
 from PySide6.QtWidgets import QCheckBox, QComboBox, QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidget
 
 from app.core.scheduler import SUPPORTED_SCHEDULE_MODES
@@ -79,10 +79,11 @@ class ExportSchedulePanel(QWidget):
         return self._value_edit.text().strip()
 
     def set_schedule(self, enabled: bool, mode: str, value: str) -> None:
-        widgets = (self._sched_check, self._mode_combo, self._value_edit)
-        for widget in widgets:
-            widget.blockSignals(True)
-        try:
+        with (
+            QSignalBlocker(self._sched_check),
+            QSignalBlocker(self._mode_combo),
+            QSignalBlocker(self._value_edit),
+        ):
             self._sched_check.setChecked(enabled)
             try:
                 index = SCHEDULE_MODE_BY_INDEX.index(mode)
@@ -90,9 +91,6 @@ class ExportSchedulePanel(QWidget):
                 index = 0
             self._mode_combo.setCurrentIndex(index)
             self._value_edit.setText(value)
-        finally:
-            for widget in widgets:
-                widget.blockSignals(False)
         self._update_placeholder()
 
     def set_progress_text(self, text: str) -> None:

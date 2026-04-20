@@ -22,8 +22,8 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -103,7 +103,7 @@ class ExportPipeline:
                 success=True,
                 rows_synced=result.count,
                 error=None,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 duration_us=total_duration_us,
                 sql_duration_us=result.duration_us,
             )

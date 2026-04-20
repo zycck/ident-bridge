@@ -1,6 +1,6 @@
 """Composite view shell for ExportJobEditor."""
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
 
 from app.config import ExportHistoryEntry
@@ -94,11 +94,8 @@ class ExportEditorShell(QWidget):
         return self._webhook_edit.text().strip()
 
     def set_webhook_url(self, url: str) -> None:
-        self._webhook_edit.blockSignals(True)
-        try:
+        with QSignalBlocker(self._webhook_edit):
             self._webhook_edit.setText(url)
-        finally:
-            self._webhook_edit.blockSignals(False)
         self._google_sheets_panel.set_target_url(url)
 
     def gas_sheet_name(self) -> str:

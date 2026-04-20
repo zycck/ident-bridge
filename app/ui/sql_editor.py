@@ -4,10 +4,13 @@ tab-to-spaces, and explicit Cascadia Code font. Used by ExportJobEditor
 to give users a real SQL editing experience instead of a plain text
 input.
 """
+from typing import override
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import (
     QFont,
     QKeyEvent,
+    QResizeEvent,
 )
 from PySide6.QtWidgets import (
     QDialog,
@@ -72,10 +75,12 @@ class SqlEditor(QPlainTextEdit):
             margin=self.EXPAND_BTN_MARGIN,
         )
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    @override
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._controller.reposition_expand_button()
 
+    @override
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if self._controller.handle_key_press(event):
             return

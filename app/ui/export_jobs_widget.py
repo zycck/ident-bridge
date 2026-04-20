@@ -1,6 +1,9 @@
 """ExportJobsWidget — list-detail export job manager (tiles + editor pages)."""
 
+from typing import override
+
 from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QMessageBox,
     QStackedWidget,
@@ -135,7 +138,8 @@ class ExportJobsWidget(QWidget):
         for editor in self._editors.values():
             editor.stop_scheduler()
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
         """Safety net: stop schedulers + timers if the widget is closed
         independently of the app's normal aboutToQuit cleanup hook."""
         self._navigation.stop_all_editors()

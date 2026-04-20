@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, QSignalBlocker, Slot
 from PySide6.QtWidgets import QComboBox, QLabel, QLineEdit
 
 from app.config import AppConfig, SqlInstance
@@ -176,9 +176,8 @@ class SettingsSqlController(QObject):
         if next_inst is None:
             return
         _log.debug("Auto-advancing to next instance: %s", next_inst.display)
-        self._instance_combo.blockSignals(True)
-        self._instance_combo.setCurrentIndex(nxt)
-        self._instance_combo.blockSignals(False)
+        with QSignalBlocker(self._instance_combo):
+            self._instance_combo.setCurrentIndex(nxt)
         self._fetch_databases(next_inst)
 
     def test_connection(self, _checked: bool = False) -> bool:

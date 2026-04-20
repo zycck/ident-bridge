@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject
+from PySide6.QtCore import QObject, QSignalBlocker
 from PySide6.QtWidgets import QCheckBox, QComboBox, QLineEdit
 
 from app.config import ConfigManager
@@ -67,8 +67,7 @@ class SettingsFormController(QObject):
         saved_instance = cfg.get("sql_instance", "")
         if saved_instance:
             target_idx = 0
-            try:
-                self._instance_combo.blockSignals(True)
+            with QSignalBlocker(self._instance_combo):
                 idx = self._instance_combo.findText(saved_instance)
                 if idx < 0:
                     inst = instance_from_text(saved_instance)
@@ -78,14 +77,11 @@ class SettingsFormController(QObject):
                         self._instance_combo.addItem(saved_instance)
                     idx = self._instance_combo.count() - 1
                 target_idx = max(idx, 0)
-            finally:
-                self._instance_combo.blockSignals(False)
             self._instance_combo.setCurrentIndex(target_idx)
             self._on_instance_selected(target_idx)
 
-        self._startup_check.blockSignals(True)
-        self._startup_check.setChecked(self._is_startup_enabled())
-        self._startup_check.blockSignals(False)
+        with QSignalBlocker(self._startup_check):
+            self._startup_check.setChecked(self._is_startup_enabled())
         self._auto_update_check.setChecked(bool(cfg.get("auto_update_check", True)))
 
     def save(self) -> None:

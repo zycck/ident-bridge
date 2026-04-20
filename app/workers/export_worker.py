@@ -20,7 +20,7 @@ import json
 import logging
 import time
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -92,7 +92,7 @@ class ExportWorker(QObject):
                     success=False,
                     rows_synced=0,
                     error=exc.user_message,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                     duration_us=max(0, (time.perf_counter_ns() - started_ns) // 1_000),
                     sql_duration_us=0,
                 )
@@ -106,7 +106,7 @@ class ExportWorker(QObject):
                     success=False,
                     rows_synced=0,
                     error=msg,
-                    timestamp=datetime.now(timezone.utc),
+                    timestamp=datetime.now(UTC),
                     duration_us=max(0, (time.perf_counter_ns() - started_ns) // 1_000),
                     sql_duration_us=0,
                 )

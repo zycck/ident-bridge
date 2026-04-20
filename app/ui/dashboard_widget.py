@@ -1,4 +1,7 @@
+from typing import override
+
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QWidget
 
 from app.config import ConfigManager, SyncResult
@@ -54,7 +57,8 @@ class DashboardWidget(QWidget):
         self._ping_timer.stop()
         self._ping.stop()
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
         self.stop()
         super().closeEvent(event)
 

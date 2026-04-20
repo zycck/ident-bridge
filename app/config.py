@@ -12,8 +12,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Iterator, TypedDict
+from typing import TypedDict
 
 from app.core import dpapi
 from app.core.constants import CONFIG_DIR_NAME

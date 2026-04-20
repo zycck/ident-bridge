@@ -14,7 +14,7 @@ CPU/RAM are trending up without installing matplotlib.
 from __future__ import annotations
 
 from collections import deque
-from typing import Iterable
+from collections.abc import Iterable
 
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QWidget

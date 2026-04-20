@@ -4,7 +4,9 @@ minimal/maximize/close buttons. Used by MainWindow when the native
 Windows title bar is suppressed via FramelessWindowHint.
 """
 
-from PySide6.QtCore import QEvent, QPoint, Qt, Signal
+from typing import override
+
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, Signal
 from PySide6.QtGui import QIcon, QMouseEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -107,7 +109,8 @@ class CustomTitleBar(QFrame):
             layout.addWidget(b)
 
     # ------------------------------------------------------------------
-    def eventFilter(self, obj, event):  # noqa: N802
+    @override
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
         """Swap close button icon to white on hover (bg turns red)."""
         self._controller.handle_event_filter(obj, event)
         return super().eventFilter(obj, event)
@@ -115,18 +118,22 @@ class CustomTitleBar(QFrame):
     # ------------------------------------------------------------------
     # Drag-to-move
     # ------------------------------------------------------------------
+    @override
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if not self._controller.handle_mouse_press(event):
             super().mousePressEvent(event)
 
+    @override
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if not self._controller.handle_mouse_move(event):
             super().mouseMoveEvent(event)
 
+    @override
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         self._controller.handle_mouse_release(event)
         super().mouseReleaseEvent(event)
 
+    @override
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if not self._controller.handle_mouse_double_click(event):
             super().mouseDoubleClickEvent(event)

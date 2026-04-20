@@ -1,8 +1,9 @@
 """DebugWindow — floating log panel for development."""
 
-from PySide6.QtCore import Qt, Slot
+from typing import override
 
-from PySide6.QtGui import QFont
+from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QCloseEvent, QFont, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -117,12 +118,14 @@ class DebugWindow(QDialog):
         root.addWidget(self._resource_bar)
 
     # ------------------------------------------------------------------
-    def showEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def showEvent(self, event: QShowEvent) -> None:
         super().showEvent(event)
         self._log_controller.connect()
         self._resource_monitor.start()
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
         self._log_controller.disconnect()
         self._resource_monitor.stop()
         event.accept()

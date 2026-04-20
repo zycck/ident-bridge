@@ -1,6 +1,6 @@
 """Header widget for ExportJobEditor."""
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import QSignalBlocker, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -111,11 +111,8 @@ class ExportEditorHeader(QWidget):
         return self._name_edit.text().strip()
 
     def set_job_name(self, name: str) -> None:
-        self._name_edit.blockSignals(True)
-        try:
+        with QSignalBlocker(self._name_edit):
             self._name_edit.setText(name)
-        finally:
-            self._name_edit.blockSignals(False)
 
     def set_run_enabled(self, enabled: bool) -> None:
         self._run_btn.setEnabled(enabled)

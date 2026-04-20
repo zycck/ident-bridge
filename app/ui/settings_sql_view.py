@@ -1,5 +1,6 @@
 """View adapter for Settings SQL discovery widgets."""
 
+from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import QComboBox, QLabel
 
 from app.config import SqlInstance
@@ -32,8 +33,7 @@ class SettingsSqlView:
         *,
         saved_instance: str,
     ) -> int | None:
-        try:
-            self._instance_combo.blockSignals(True)
+        with QSignalBlocker(self._instance_combo):
             self._instance_combo.setEnabled(True)
             self._instance_combo.clear()
 
@@ -49,8 +49,6 @@ class SettingsSqlView:
                 self._instance_combo.addItem(label, userData=inst)
             self._instance_combo.setCurrentIndex(target_idx)
             return target_idx
-        finally:
-            self._instance_combo.blockSignals(False)
 
     def show_scan_error(self, message: str) -> None:
         self._instance_combo.setEnabled(True)
@@ -65,20 +63,16 @@ class SettingsSqlView:
 
     def populate_databases(self, databases: list[str], *, restore: str) -> int:
         items, final_idx = build_database_items(databases, restore=restore)
-        self._db_combo.blockSignals(True)
-        try:
+        with QSignalBlocker(self._db_combo):
             self._db_combo.clear()
             self._db_combo.setEnabled(True)
             for db in items:
                 self._db_combo.addItem(db)
             if self._db_combo.count() > 0:
                 self._db_combo.setCurrentIndex(final_idx)
-        finally:
-            self._db_combo.blockSignals(False)
         return final_idx
 
     def show_database_error(self, message: str) -> None:
         self._db_combo.clear()
         self._db_combo.setEnabled(True)
         set_status(self._conn_status, "error", f"Список БД: {message}")
-

@@ -6,7 +6,10 @@ import json
 import urllib.parse
 import urllib.request
 
-from PySide6.QtCore import QEvent, QObject, QRegularExpression, QSortFilterProxyModel, QStringListModel, QTimer, Qt, Signal, Slot
+from typing import override
+
+from PySide6.QtCore import QEvent, QObject, QRegularExpression, QSignalBlocker, QSortFilterProxyModel, QStringListModel, QTimer, Qt, Signal, Slot
+from PySide6.QtGui import QCloseEvent, QHideEvent
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -219,6 +222,7 @@ class _SheetNameField(QWidget):
         self._edit.clear()
         self._apply_filter("")
 
+    @override
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         if self._shutdown:
             return super().eventFilter(watched, event)
@@ -351,11 +355,8 @@ class _SheetNameField(QWidget):
         if not value:
             return
 
-        self._edit.blockSignals(True)
-        try:
+        with QSignalBlocker(self._edit):
             self._edit.setText(value)
-        finally:
-            self._edit.blockSignals(False)
         self._show_all_matches = True
         self._apply_filter(value)
         self.textChanged.emit(value)
@@ -461,11 +462,13 @@ class ExportGoogleSheetsPanel(QWidget):
         self._build_ui()
         self.setVisible(False)
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
         self._sheet_name_field.shutdown()
         super().closeEvent(event)
 
-    def hideEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def hideEvent(self, event: QHideEvent) -> None:
         if self._sheet_name_field.has_overlay_parent():
             window = self.window()
             if window is None or not window.isVisible():
@@ -554,20 +557,16 @@ class ExportGoogleSheetsPanel(QWidget):
         dedupe_key_columns: list[str],
         auth_token: str,
     ) -> None:
-        self._sheet_name_field.blockSignals(True)
-        self._header_row_spin.blockSignals(True)
-        self._dedupe_edit.blockSignals(True)
-        self._auth_token_edit.blockSignals(True)
-        try:
+        with (
+            QSignalBlocker(self._sheet_name_field),
+            QSignalBlocker(self._header_row_spin),
+            QSignalBlocker(self._dedupe_edit),
+            QSignalBlocker(self._auth_token_edit),
+        ):
             self._sheet_name_field.setText(sheet_name)
             self._header_row_spin.setValue(max(1, int(header_row or 1)))
             self._dedupe_edit.setText(", ".join(dedupe_key_columns))
             self._auth_token_edit.setText(auth_token)
-        finally:
-            self._sheet_name_field.blockSignals(False)
-            self._header_row_spin.blockSignals(False)
-            self._dedupe_edit.blockSignals(False)
-            self._auth_token_edit.blockSignals(False)
 
     def set_sheet_options(self, options: list[str]) -> None:
         current = self.sheet_name()
