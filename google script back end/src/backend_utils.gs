@@ -201,6 +201,8 @@ function backendComputeRequestChecksum_(request) {
     chunk_rows: request.chunkRows,
     sheet_name: request.sheetName,
     export_date: request.exportDate,
+    source_id: request.sourceId,
+    write_mode: request.writeMode,
     columns: request.columns,
     records: request.records,
   }));

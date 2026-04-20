@@ -25,6 +25,9 @@ class _FakeShell(QObject):
     def gas_sheet_name(self) -> str:
         return "Exports"
 
+    def gas_write_mode(self) -> str:
+        return "replace_all"
+
     def schedule_enabled(self) -> bool:
         return True
 
@@ -79,7 +82,7 @@ def test_export_job_editor_bridge_builds_job_payload_and_prepends_history() -> N
     assert job["name"] == "Nightly"
     assert job["sql_query"] == "SELECT 1"
     assert job["webhook_url"] == "https://example.test/hook"
-    assert job["gas_options"] == {"sheet_name": "Exports"}
+    assert job["gas_options"] == {"sheet_name": "Exports", "write_mode": "replace_all"}
     assert job["schedule_enabled"] is True
     assert job["schedule_mode"] == "hourly"
     assert job["schedule_value"] == "4"

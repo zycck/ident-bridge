@@ -13,7 +13,7 @@ import urllib.request
 import uuid
 from typing import Any, final
 
-from app.config import GasOptions, QueryResult
+from app.config import GasOptions, QueryResult, gas_write_mode_from_raw
 from app.core.constants import (
     GOOGLE_SCRIPT_HOSTS,
     GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
@@ -146,6 +146,7 @@ class GoogleAppsScriptSink:
         url: str,
         *,
         gas_options: GasOptions | None = None,
+        source_id: str | None = None,
         max_rows_per_chunk: int = GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
         max_payload_bytes: int = GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
         retries: int = GOOGLE_SCRIPT_RETRIES,
@@ -155,6 +156,7 @@ class GoogleAppsScriptSink:
     ) -> None:
         self._url = str(os.environ.get("IDENTBRIDGE_GAS_DEV_URL", "") or "").strip() or url
         self._gas_options = gas_options
+        self._source_id = str(source_id or "").strip() or None
         self._max_rows_per_chunk = max_rows_per_chunk
         self._max_payload_bytes = max_payload_bytes
         self._retries = max(1, retries)
@@ -162,6 +164,9 @@ class GoogleAppsScriptSink:
         self._timeout = timeout
         self._ssl = ssl_context or _SSL_CONTEXT
         self._validate_target_url()
+
+    def _write_mode(self) -> str:
+        return gas_write_mode_from_raw((self._gas_options or {}).get("write_mode")).value
 
     def _validate_target_url(self) -> None:
         parsed = urllib.parse.urlsplit(self._url)
@@ -180,6 +185,8 @@ class GoogleAppsScriptSink:
                 job_name,
                 result,
                 run_id=run_id,
+                source_id=self._source_id,
+                write_mode=self._write_mode(),
                 max_rows_per_chunk=self._max_rows_per_chunk,
                 max_payload_bytes=self._max_payload_bytes,
                 gas_options=self._gas_options,
@@ -202,6 +209,8 @@ class GoogleAppsScriptSink:
                 job_name,
                 chunk,
                 gas_options=self._gas_options,
+                source_id=self._source_id,
+                write_mode=self._write_mode(),
                 export_date=export_date,
             )
             try:

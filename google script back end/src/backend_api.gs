@@ -4,7 +4,7 @@ var BACKEND_V2_CONFIG = Object.freeze({
   runStatePrefix: 'gasv2:run:',
   technicalDateColumnName: '__\u0414\u0430\u0442\u0430\u0412\u044b\u0433\u0440\u0443\u0437\u043a\u0438',
   technicalSourceColumnName: '__idb_source',
-  technicalSourceValue: 'iDentBridge:gas-sheet:v2',
+  legacySourceMarker: 'iDentBridge:gas-sheet:v2',
   stagingSheetPrefix: '__stage__',
   pingMessage: 'pong',
   defaultLockTimeoutMs: 2000,
@@ -263,6 +263,24 @@ function backendNormalizeRecords_(value) {
   return records;
 }
 
+function backendNormalizeWriteMode_(value) {
+  var normalized = backendTrimString_(value);
+  if (
+    normalized === 'append' ||
+    normalized === 'replace_all' ||
+    normalized === 'replace_by_date_source'
+  ) {
+    return normalized;
+  }
+
+  throw backendCreateError_(
+    'INVALID_PAYLOAD',
+    false,
+    'Unsupported write_mode',
+    { field: 'write_mode' }
+  );
+}
+
 function backendNormalizeV2Payload_(payload) {
   if (!backendIsPlainObject_(payload)) {
     throw backendCreateError_(
@@ -291,6 +309,8 @@ function backendNormalizeV2Payload_(payload) {
   var chunkRows = backendNormalizeRequiredInteger_(payload.chunk_rows, 'chunk_rows');
   var sheetName = backendNormalizeRequiredString_(payload.sheet_name, 'sheet_name');
   var exportDate = backendNormalizeRequiredString_(payload.export_date, 'export_date');
+  var sourceId = backendNormalizeRequiredString_(payload.source_id, 'source_id');
+  var writeMode = backendNormalizeWriteMode_(payload.write_mode);
   var checksum = backendNormalizeRequiredString_(payload.checksum, 'checksum');
   var columns = backendNormalizeColumns_(payload.columns);
   var records = backendNormalizeRecords_(payload.records);
@@ -339,6 +359,8 @@ function backendNormalizeV2Payload_(payload) {
     chunkRows: chunkRows,
     sheetName: sheetName,
     exportDate: exportDate,
+    sourceId: sourceId,
+    writeMode: writeMode,
     columns: columns,
     records: records,
     checksum: checksum,
@@ -375,6 +397,8 @@ function backendValidateExistingRunState_(state, request) {
     backendTrimString_(state.run_id) !== request.runId ||
     backendTrimString_(state.sheet_name) !== request.sheetName ||
     backendTrimString_(state.export_date) !== request.exportDate ||
+    backendTrimString_(state.source_id) !== request.sourceId ||
+    backendTrimString_(state.write_mode) !== request.writeMode ||
     state.total_chunks !== request.totalChunks ||
     state.total_rows !== request.totalRows
   ) {

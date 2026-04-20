@@ -20,6 +20,7 @@ class _DummyConfig:
                     "webhook_url": "",
                     "gas_options": {
                         "sheet_name": "Exports",
+                        "write_mode": "append",
                         "header_row": "2",
                         "dedupe_key_columns": ["id", "updated_at", ""],
                         "scheme_id": "  library_v1  ",
@@ -46,7 +47,7 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
             "name": "Nightly",
             "sql_query": "SELECT 1",
             "webhook_url": "",
-            "gas_options": {"sheet_name": "Exports"},
+            "gas_options": {"sheet_name": "Exports", "write_mode": "append"},
             "schedule_enabled": False,
             "schedule_mode": "daily",
             "schedule_value": "",
@@ -102,6 +103,7 @@ def test_load_export_jobs_drops_legacy_gas_fields_through_config_manager(tmp_con
 
     assert jobs[0]["gas_options"] == {
         "sheet_name": "Exports",
+        "write_mode": "replace_by_date_source",
     }
 
 
@@ -154,9 +156,7 @@ def test_persist_export_jobs_preserves_other_config_fields() -> None:
                 "webhook_url": "https://example.test",
                 "gas_options": {
                     "sheet_name": "Archive",
-                    "header_row": 3,
-                    "dedupe_key_columns": ["id"],
-                    "scheme_id": "library_v1",
+                    "write_mode": "replace_all",
                 },
                 "schedule_enabled": True,
                 "schedule_mode": "hourly",
@@ -180,5 +180,6 @@ def test_new_export_job_starts_blank_with_generated_id() -> None:
     assert job["schedule_mode"] == "daily"
     assert job["gas_options"] == {
         "sheet_name": "",
+        "write_mode": "replace_by_date_source",
     }
     assert job["history"] == []

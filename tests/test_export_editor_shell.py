@@ -36,13 +36,14 @@ def test_export_editor_shell_roundtrips_core_fields(qtbot) -> None:
     shell.set_job_name("Nightly")
     shell.set_sql_text("SELECT 1")
     shell.set_webhook_url("https://example.com")
-    shell.set_gas_options(sheet_name="Exports")
+    shell.set_gas_options(sheet_name="Exports", write_mode="replace_all")
     shell.set_schedule(True, ScheduleMode.HOURLY, "4")
 
     assert shell.job_name() == "Nightly"
     assert shell.sql_text() == "SELECT 1"
     assert shell.webhook_url() == "https://example.com"
     assert shell.gas_sheet_name() == "Exports"
+    assert shell.gas_write_mode() == "replace_all"
     assert shell.schedule_enabled() is True
     assert shell.schedule_mode() is ScheduleMode.HOURLY
     assert shell.schedule_value() == "4"
@@ -100,7 +101,7 @@ def test_export_editor_shell_applies_gas_setup_wizard_result(qtbot) -> None:
     shell = ExportEditorShell(gas_setup_wizard_factory=_FakeAcceptedWizard)
     qtbot.addWidget(shell)
     shell.set_webhook_url("https://script.google.com/macros/s/old/exec")
-    shell.set_gas_options(sheet_name="Exports")
+    shell.set_gas_options(sheet_name="Exports", write_mode="append")
 
     changed = []
     shell.changed.connect(lambda: changed.append(True))
@@ -110,6 +111,7 @@ def test_export_editor_shell_applies_gas_setup_wizard_result(qtbot) -> None:
 
     assert shell.webhook_url() == "https://script.google.com/macros/s/library/exec"
     assert shell.gas_sheet_name() == "Exports"
+    assert shell.gas_write_mode() == "append"
     assert changed == [True]
 
 
@@ -117,7 +119,7 @@ def test_export_editor_shell_ignores_rejected_gas_setup_wizard(qtbot) -> None:
     shell = ExportEditorShell(gas_setup_wizard_factory=_FakeRejectedWizard)
     qtbot.addWidget(shell)
     shell.set_webhook_url("https://script.google.com/macros/s/original/exec")
-    shell.set_gas_options(sheet_name="Exports")
+    shell.set_gas_options(sheet_name="Exports", write_mode="replace_by_date_source")
 
     qtbot.mouseClick(shell._gas_setup_wizard_btn, Qt.MouseButton.LeftButton)
 

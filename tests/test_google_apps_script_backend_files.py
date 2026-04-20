@@ -14,7 +14,8 @@ LIBRARY_SYMBOL = "iDBBackend"
 TECH_COLUMN = "__\u0414\u0430\u0442\u0430\u0412\u044b\u0433\u0440\u0443\u0437\u043a\u0438"
 TECH_COLUMN_JS = "__\\u0414\\u0430\\u0442\\u0430\\u0412\\u044b\\u0433\\u0440\\u0443\\u0437\\u043a\\u0438"
 SOURCE_COLUMN = "__idb_source"
-SOURCE_MARKER = "iDentBridge:gas-sheet:v2"
+SOURCE_ID = "job-1"
+LEGACY_SOURCE_MARKER = "iDentBridge:gas-sheet:v2"
 
 
 def _v2_checksum(
@@ -27,6 +28,8 @@ def _v2_checksum(
     chunk_rows: int,
     sheet_name: str,
     export_date: str,
+    source_id: str,
+    write_mode: str,
     columns: list[object],
     records: list[object],
 ) -> str:
@@ -41,6 +44,8 @@ def _v2_checksum(
             "chunk_rows": chunk_rows,
             "sheet_name": sheet_name,
             "export_date": export_date,
+            "source_id": source_id,
+            "write_mode": write_mode,
             "columns": columns,
             "records": records,
         },
@@ -147,6 +152,8 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
           chunk_rows: 2,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name']
         };
 
@@ -195,10 +202,10 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
     assert result["second"]["rows_written"] == 1
     assert result["mainValues"] == [
         ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
-        [50, "Keep", "2026-04-19", SOURCE_MARKER],
-        [1, "Ana", "2026-04-20", SOURCE_MARKER],
-        [2, "Boris", "2026-04-20", SOURCE_MARKER],
-        [3, "Vera", "2026-04-20", SOURCE_MARKER],
+        [1, "Ana", "2026-04-20", SOURCE_ID],
+        [2, "Boris", "2026-04-20", SOURCE_ID],
+        [3, "Vera", "2026-04-20", SOURCE_ID],
+        [50, "Keep", "2026-04-19", SOURCE_ID],
     ]
     assert result["hiddenColumns"] == [3, 4]
     assert result["stageExists"] is False
@@ -224,6 +231,8 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
           chunk_rows: 2,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name'],
           records: [
             { id: 1, name: 'Ana' },
@@ -249,8 +258,8 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
     assert result["second"]["rows_written"] == 0
     assert result["stagingValues"] == [
         ['__chunk_index', '__row_index', 'id', 'name', TECH_COLUMN, SOURCE_COLUMN],
-        [1, 1, 1, 'Ana', '2026-04-20', SOURCE_MARKER],
-        [1, 2, 2, 'Boris', '2026-04-20', SOURCE_MARKER],
+        [1, 1, 1, 'Ana', '2026-04-20', SOURCE_ID],
+        [1, 2, 2, 'Boris', '2026-04-20', SOURCE_ID],
     ]
 
 
@@ -272,6 +281,8 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
           chunk_rows: 2,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name'],
           records: [
             { id: 1, name: 'Ana' },
@@ -289,6 +300,8 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
           chunk_rows: 1,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name'],
           records: [
             { id: 3, name: 'Vera' }
@@ -315,9 +328,9 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
     assert result["repeat"]["rows_written"] == 0
     assert result["mainValues"] == [
         ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
-        [1, "Ana", "2026-04-20", SOURCE_MARKER],
-        [2, "Boris", "2026-04-20", SOURCE_MARKER],
-        [3, "Vera", "2026-04-20", SOURCE_MARKER],
+        [1, "Ana", "2026-04-20", SOURCE_ID],
+        [2, "Boris", "2026-04-20", SOURCE_ID],
+        [3, "Vera", "2026-04-20", SOURCE_ID],
     ]
 
 
@@ -328,7 +341,7 @@ def test_do_post_single_chunk_writes_directly_without_staging_or_run_state() -> 
           sheetId: 10,
           values: [
             ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
-            [91, 'Old app row', '2026-04-20', '__SOURCE_MARKER__'],
+            [91, 'Old app row', '2026-04-20', '__SOURCE_ID__'],
             [77, 'Manual row', '2026-04-20', '']
           ]
         });
@@ -343,6 +356,8 @@ def test_do_post_single_chunk_writes_directly_without_staging_or_run_state() -> 
           chunk_rows: 2,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name'],
           records: [
             { id: 1, name: 'Ana' },
@@ -369,9 +384,9 @@ def test_do_post_single_chunk_writes_directly_without_staging_or_run_state() -> 
     assert result["ack"]["rows_written"] == 2
     assert result["mainValues"] == [
         ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "Ana", "2026-04-20", SOURCE_ID],
+        [2, "Boris", "2026-04-20", SOURCE_ID],
         [77, "Manual row", "2026-04-20", ""],
-        [1, "Ana", "2026-04-20", SOURCE_MARKER],
-        [2, "Boris", "2026-04-20", SOURCE_MARKER],
     ]
     assert result["hiddenColumns"] == [3, 4]
     assert result["stageCount"] == 0
@@ -395,6 +410,8 @@ def test_do_post_rejects_bad_checksum() -> None:
           chunk_rows: 1,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name'],
           records: [{ id: 1, name: 'Ana' }]
         };
@@ -433,6 +450,8 @@ def test_do_post_maps_new_rows_by_column_name_and_keeps_existing_header_order() 
           chunk_rows: 1,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name'],
           records: [{ id: 1, name: 'Ana' }]
         };
@@ -453,8 +472,8 @@ def test_do_post_maps_new_rows_by_column_name_and_keeps_existing_header_order() 
     assert result["ack"]["status"] == "promoted"
     assert result["mainValues"] == [
         ["name", "id", TECH_COLUMN, SOURCE_COLUMN],
-        ["Keep", "", "2026-04-19", SOURCE_MARKER],
-        ["Ana", 1, "2026-04-20", SOURCE_MARKER],
+        ["Keep", "", "2026-04-19", SOURCE_ID],
+        ["Ana", 1, "2026-04-20", SOURCE_ID],
     ]
     assert result["hiddenColumns"] == [3, 4]
 
@@ -466,10 +485,10 @@ def test_do_post_removes_only_rows_owned_by_identbridge_for_the_same_day() -> No
           sheetId: 10,
           values: [
             ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
-            [10, 'Old app row', '2026-04-20', '__SOURCE_MARKER__'],
+            [10, 'Old app row', '2026-04-20', '__SOURCE_ID__'],
             [11, 'Manual same day', '2026-04-20', 'manual-import'],
             [12, 'Manual blank marker', '2026-04-20', ''],
-            [13, 'Old app other day', '2026-04-19', '__SOURCE_MARKER__']
+            [13, 'Old app other day', '2026-04-19', '__SOURCE_ID__']
           ]
         });
 
@@ -483,6 +502,8 @@ def test_do_post_removes_only_rows_owned_by_identbridge_for_the_same_day() -> No
           chunk_rows: 1,
           sheet_name: 'Reports',
           export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
           columns: ['id', 'name'],
           records: [{ id: 1, name: 'Ana' }]
         };
@@ -501,10 +522,197 @@ def test_do_post_removes_only_rows_owned_by_identbridge_for_the_same_day() -> No
     assert result["ack"]["ok"] is True
     assert result["mainValues"] == [
         ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "Ana", "2026-04-20", SOURCE_ID],
         [11, "Manual same day", "2026-04-20", "manual-import"],
         [12, "Manual blank marker", "2026-04-20", ""],
-        [13, "Old app other day", "2026-04-19", SOURCE_MARKER],
-        [1, "Ana", "2026-04-20", SOURCE_MARKER],
+        [13, "Old app other day", "2026-04-19", SOURCE_ID],
+    ]
+
+
+def test_do_post_append_mode_always_writes_to_end() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [10, 'Old app row', '2026-04-20', '__SOURCE_ID__'],
+            [11, 'Manual row', '2026-04-20', 'manual-import']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'nightly_export',
+          run_id: 'run-append',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'append',
+          columns: ['id', 'name'],
+          records: [{ id: 99, name: 'New row' }]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({ ack, mainValues: mainSheet.getDataRange().getValues() }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [10, "Old app row", "2026-04-20", SOURCE_ID],
+        [11, "Manual row", "2026-04-20", "manual-import"],
+        [99, "New row", "2026-04-20", SOURCE_ID],
+    ]
+
+
+def test_do_post_replace_all_mode_rewrites_all_rows_below_header() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [10, 'Old app row', '2026-04-20', '__SOURCE_ID__'],
+            [11, 'Manual row', '2026-04-20', 'manual-import']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'directory_export',
+          run_id: 'run-replace-all',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 2,
+          chunk_rows: 2,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_all',
+          columns: ['id', 'name'],
+          records: [
+            { id: 1, name: 'Ana' },
+            { id: 2, name: 'Boris' }
+          ]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({ ack, mainValues: mainSheet.getDataRange().getValues() }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "Ana", "2026-04-20", SOURCE_ID],
+        [2, "Boris", "2026-04-20", SOURCE_ID],
+    ]
+
+
+def test_do_post_replace_by_date_source_deletes_disjoint_ranges_bottom_up() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [10, 'Old app first', '2026-04-20', '__SOURCE_ID__'],
+            [11, 'Manual keep 1', '2026-04-20', 'manual-import'],
+            [12, 'Old app second', '2026-04-20', '__SOURCE_ID__'],
+            [13, 'Manual keep 2', '2026-04-19', 'manual-import']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'nightly_export',
+          run_id: 'run-disjoint',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 2,
+          chunk_rows: 2,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
+          columns: ['id', 'name'],
+          records: [
+            { id: 1, name: 'Ana' },
+            { id: 2, name: 'Boris' }
+          ]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({ ack, mainValues: mainSheet.getDataRange().getValues() }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "Ana", "2026-04-20", SOURCE_ID],
+        [2, "Boris", "2026-04-20", SOURCE_ID],
+        [11, "Manual keep 1", "2026-04-20", "manual-import"],
+        [13, "Manual keep 2", "2026-04-19", "manual-import"],
+    ]
+
+
+def test_do_post_migrates_legacy_source_marker_to_current_job_id() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [10, 'Legacy app row', '2026-04-20', '__LEGACY_SOURCE_MARKER__'],
+            [11, 'Manual keep', '2026-04-20', 'manual-import']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'nightly_export',
+          run_id: 'run-legacy-source',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_date_source',
+          columns: ['id', 'name'],
+          records: [{ id: 1, name: 'Ana' }]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({ ack, mainValues: mainSheet.getDataRange().getValues() }));
+        """
+    )
+
+    assert result["ack"]["ok"] is True
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "Ana", "2026-04-20", SOURCE_ID],
+        [11, "Manual keep", "2026-04-20", "manual-import"],
     ]
 
 
@@ -540,7 +748,8 @@ def test_ping_cleans_stale_stage_sheet_and_run_state() -> None:
 def _run_backend_probe(probe: str) -> dict[str, object]:
     probe = probe.replace("__TECH_COLUMN__", TECH_COLUMN_JS)
     probe = probe.replace("__SOURCE_COLUMN__", SOURCE_COLUMN)
-    probe = probe.replace("__SOURCE_MARKER__", SOURCE_MARKER)
+    probe = probe.replace("__SOURCE_ID__", SOURCE_ID)
+    probe = probe.replace("__LEGACY_SOURCE_MARKER__", LEGACY_SOURCE_MARKER)
     source_files = sorted(
         path
         for path in SRC_DIR.iterdir()
@@ -631,6 +840,23 @@ function __makeSheet__(name, options = {{}}) {{
     getRange: (row, column, numRows = 1, numColumns = 1) => __makeRange__(sheet, row, column, numRows, numColumns),
     clearContents: () => {{
       sheet.__values = [];
+      return sheet;
+    }},
+    deleteRows: (startRow, howMany) => {{
+      if (howMany <= 0) {{
+        return sheet;
+      }}
+      sheet.__values.splice(Math.max(startRow - 1, 0), howMany);
+      return sheet;
+    }},
+    insertRowsBefore: (beforeRow, howMany) => {{
+      if (howMany <= 0) {{
+        return sheet;
+      }}
+      const insertAt = Math.max(beforeRow - 1, 0);
+      for (let index = 0; index < howMany; index += 1) {{
+        sheet.__values.splice(insertAt, 0, []);
+      }}
       return sheet;
     }},
     hideColumns: (column, count) => {{
@@ -757,6 +983,8 @@ global.__checksum__ = (payload) => {{
     chunk_rows: payload.chunk_rows,
     sheet_name: payload.sheet_name,
     export_date: payload.export_date,
+    source_id: payload.source_id,
+    write_mode: payload.write_mode,
     columns: payload.columns,
     records: payload.records
   }}));

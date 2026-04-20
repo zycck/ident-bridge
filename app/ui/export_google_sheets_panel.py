@@ -12,6 +12,7 @@ from PySide6.QtGui import QCloseEvent, QHideEvent
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
+    QComboBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
@@ -23,13 +24,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.config import GasWriteMode, gas_write_mode_from_raw
 from app.core.app_logger import get_logger
 from app.core.constants import GOOGLE_SCRIPT_HOSTS, USER_AGENT
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
-from app.ui.widgets import HeaderLabel
+from app.ui.widgets import HeaderLabel, style_combo_popup
 
 _log = get_logger(__name__)
+
+WRITE_MODE_ITEMS: tuple[tuple[str, str], ...] = (
+    ("Добавлять в конец", GasWriteMode.APPEND.value),
+    ("Полностью заменять лист", GasWriteMode.REPLACE_ALL.value),
+    ("Обновлять по дате и источнику", GasWriteMode.REPLACE_BY_DATE_SOURCE.value),
+)
 
 
 class _SheetOptionsFetchError(RuntimeError):
@@ -615,6 +623,15 @@ class ExportGoogleSheetsPanel(QWidget):
         sheet_row.addWidget(self._refresh_btn)
         form.addRow("Лист", sheet_row)
 
+        self._write_mode_combo = QComboBox(self)
+        style_combo_popup(self._write_mode_combo)
+        for label, value in WRITE_MODE_ITEMS:
+            self._write_mode_combo.addItem(label, value)
+        default_index = self._write_mode_combo.findData(GasWriteMode.REPLACE_BY_DATE_SOURCE.value)
+        self._write_mode_combo.setCurrentIndex(default_index if default_index >= 0 else 0)
+        self._write_mode_combo.currentIndexChanged.connect(self.changed)
+        form.addRow("Режим записи", self._write_mode_combo)
+
         self._alias_hint_label = QLabel(
             "В SQL задавайте алиасы столбцов, чтобы имена в листе были понятнее.",
             self,
@@ -642,13 +659,20 @@ class ExportGoogleSheetsPanel(QWidget):
     def sheet_name(self) -> str:
         return self._sheet_name_field.text()
 
+    def write_mode(self) -> str:
+        return gas_write_mode_from_raw(self._write_mode_combo.currentData()).value
+
     def set_gas_options(
         self,
         *,
         sheet_name: str,
+        write_mode: str,
     ) -> None:
-        with QSignalBlocker(self._sheet_name_field):
+        with QSignalBlocker(self._sheet_name_field), QSignalBlocker(self._write_mode_combo):
             self._sheet_name_field.setText(sheet_name)
+            normalized_mode = gas_write_mode_from_raw(write_mode).value
+            index = self._write_mode_combo.findData(normalized_mode)
+            self._write_mode_combo.setCurrentIndex(index if index >= 0 else 0)
 
     def set_sheet_options(self, options: list[str]) -> None:
         current = self.sheet_name()

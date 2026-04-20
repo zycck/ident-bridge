@@ -128,12 +128,18 @@ def build_pipeline_for_job(
     sink = resolve_export_sink(
         job.get("webhook_url") or "",
         gas_options=job.get("gas_options"),
+        source_id=str(job.get("id") or "").strip() or None,
     )
 
     return ExportPipeline(db=db, sink=sink)
 
 
-def resolve_export_sink(webhook_url: str, *, gas_options: dict[str, Any] | None = None) -> ExportSink | None:
+def resolve_export_sink(
+    webhook_url: str,
+    *,
+    gas_options: dict[str, Any] | None = None,
+    source_id: str | None = None,
+) -> ExportSink | None:
     """Return the appropriate sink for a configured export URL."""
     url = webhook_url.strip()
     if not url:
@@ -142,7 +148,7 @@ def resolve_export_sink(webhook_url: str, *, gas_options: dict[str, Any] | None 
     parsed = urlsplit(url)
     host = (parsed.hostname or "").lower()
     if host in GOOGLE_SCRIPT_HOSTS:
-        return GoogleAppsScriptSink(url, gas_options=gas_options)
+        return GoogleAppsScriptSink(url, gas_options=gas_options, source_id=source_id)
     return WebhookSink(url, max_rows=MAX_WEBHOOK_ROWS)
 
 

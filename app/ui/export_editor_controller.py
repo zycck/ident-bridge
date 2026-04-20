@@ -67,6 +67,7 @@ class ExportEditorController:
         gas_options = job.get("gas_options") or {}
         self._shell.set_gas_options(
             sheet_name=str(gas_options.get("sheet_name", "") or ""),
+            write_mode=str(gas_options.get("write_mode", "replace_by_date_source") or "replace_by_date_source"),
         )
         self._shell.set_schedule(
             bool(job.get("schedule_enabled", False)),

@@ -207,23 +207,33 @@ function backendProjectRowsToHeader_(sourceHeader, rows, targetHeader) {
   return projectedRows;
 }
 
-function backendApplyLegacyMarkerMigration_(rows, header) {
+function backendApplyLegacyMarkerMigration_(rows, header, request, currentSplit) {
   var split = backendSplitMainHeader_(header);
   if (split.dateIndex < 0 || split.sourceIndex < 0) {
     return false;
   }
 
+  var sourceWasMissing = Boolean(currentSplit) && currentSplit.sourceIndex < 0;
   var changed = false;
   for (var index = 0; index < rows.length; index += 1) {
     var row = rows[index];
-    if (!backendTrimString_(row[split.dateIndex])) {
+    var dateValue = backendTrimString_(row[split.dateIndex]);
+    if (!dateValue) {
       continue;
     }
-    if (backendTrimString_(row[split.sourceIndex])) {
+
+    var sourceValue = backendTrimString_(row[split.sourceIndex]);
+    if (sourceWasMissing && !sourceValue) {
+      row[split.sourceIndex] = request.sourceId;
+      changed = true;
       continue;
     }
-    row[split.sourceIndex] = BACKEND_V2_CONFIG.technicalSourceValue;
-    changed = true;
+
+    if (sourceValue === BACKEND_V2_CONFIG.legacySourceMarker) {
+      row[split.sourceIndex] = request.sourceId;
+      changed = true;
+      continue;
+    }
   }
 
   return changed;
@@ -252,9 +262,7 @@ function backendEnsureMainSheet_(spreadsheet, request) {
     ? backendProjectRowsToHeader_(currentHeader, existingDataRows, mergedHeader)
     : existingDataRows;
   var migrated = currentHeader.length
-    && currentSplit.dateIndex >= 0
-    && currentSplit.sourceIndex < 0
-    ? backendApplyLegacyMarkerMigration_(projectedRows, mergedHeader)
+    ? backendApplyLegacyMarkerMigration_(projectedRows, mergedHeader, request, currentSplit)
     : false;
 
   if (!currentRows.length) {
@@ -300,7 +308,7 @@ function backendBuildMainRows_(request) {
     }
 
     row.push(backendCoerceCellValue_(request.exportDate));
-    row.push(BACKEND_V2_CONFIG.technicalSourceValue);
+    row.push(backendCoerceCellValue_(request.sourceId));
     rows.push(row);
   }
 
@@ -384,26 +392,152 @@ function backendBuildPromotedRows_(sheet) {
   });
 }
 
+function backendNormalizeRowNumbers_(rowNumbers) {
+  var normalized = rowNumbers.slice(0).sort(function sortAscending(left, right) {
+    return left - right;
+  });
+  return normalized;
+}
+
+function backendCompressRowNumbersToRanges_(rowNumbers) {
+  var normalized = backendNormalizeRowNumbers_(rowNumbers);
+  if (!normalized.length) {
+    return [];
+  }
+
+  var ranges = [];
+  var start = normalized[0];
+  var end = start;
+
+  for (var index = 1; index < normalized.length; index += 1) {
+    var current = normalized[index];
+    if (current === end + 1) {
+      end = current;
+      continue;
+    }
+
+    ranges.push({
+      start: start,
+      count: end - start + 1,
+    });
+    start = current;
+    end = current;
+  }
+
+  ranges.push({
+    start: start,
+    count: end - start + 1,
+  });
+  return ranges;
+}
+
+function backendDeleteRowRanges_(sheet, ranges) {
+  for (var index = ranges.length - 1; index >= 0; index -= 1) {
+    var range = ranges[index];
+    if (!range || range.count < 1) {
+      continue;
+    }
+    if (sheet.deleteRows) {
+      sheet.deleteRows(range.start, range.count);
+    }
+  }
+}
+
+function backendWriteRowsAt_(sheet, startRow, rows) {
+  if (!rows.length) {
+    return;
+  }
+
+  var normalized = backendNormalizeTableWidth_(rows);
+  sheet.getRange(startRow, 1, normalized.length, normalized[0].length).setValues(normalized);
+}
+
+function backendClearDataRows_(sheet, header) {
+  var lastRow = sheet.getLastRow ? sheet.getLastRow() : 0;
+  if (lastRow <= 1) {
+    return;
+  }
+
+  if (sheet.deleteRows) {
+    sheet.deleteRows(2, lastRow - 1);
+    return;
+  }
+
+  backendWriteSheetValues_(sheet, [header]);
+}
+
+function backendFindOwnedDateRowNumbers_(dataRows, split, request) {
+  if (split.dateIndex < 0 || split.sourceIndex < 0) {
+    return [];
+  }
+
+  var rowNumbers = [];
+  for (var index = 0; index < dataRows.length; index += 1) {
+    var row = dataRows[index];
+    var sameDate = backendTrimString_(row[split.dateIndex]) === request.exportDate;
+    var sameSource = backendTrimString_(row[split.sourceIndex]) === request.sourceId;
+    if (sameDate && sameSource) {
+      rowNumbers.push(index + 2);
+    }
+  }
+
+  return rowNumbers;
+}
+
+function backendApplyAppendMode_(sheet, promotedRows) {
+  if (!promotedRows.length) {
+    return;
+  }
+
+  var startRow = Math.max(sheet.getLastRow ? sheet.getLastRow() : 0, 1) + 1;
+  backendWriteRowsAt_(sheet, startRow, promotedRows);
+}
+
+function backendApplyReplaceAllMode_(sheet, header, promotedRows) {
+  backendClearDataRows_(sheet, header);
+  if (!promotedRows.length) {
+    return;
+  }
+
+  backendWriteRowsAt_(sheet, 2, promotedRows);
+}
+
+function backendApplyReplaceByDateSourceMode_(sheet, request, dataRows, split, promotedRows) {
+  var matchedRowNumbers = backendFindOwnedDateRowNumbers_(dataRows, split, request);
+  var ranges = backendCompressRowNumbersToRanges_(matchedRowNumbers);
+  var insertionRow = ranges.length
+    ? ranges[0].start
+    : Math.max(sheet.getLastRow ? sheet.getLastRow() : 0, 1) + 1;
+
+  backendDeleteRowRanges_(sheet, ranges);
+
+  if (!promotedRows.length) {
+    return;
+  }
+
+  if (ranges.length && sheet.insertRowsBefore) {
+    sheet.insertRowsBefore(insertionRow, promotedRows.length);
+  }
+
+  backendWriteRowsAt_(sheet, insertionRow, promotedRows);
+}
+
 function backendRewriteMainSheet_(sheet, request, promotedRows) {
   var currentRows = backendSheetReadValues_(sheet);
   var currentHeader = currentRows.length ? backendTrimTrailingBlankCells_(currentRows[0]) : [];
   var header = currentHeader.length ? backendMergeMainHeader_(currentHeader, request.columns) : backendMainHeader_(request.columns);
   var dataRows = currentRows.length > 1 ? currentRows.slice(1) : [];
   var split = backendSplitMainHeader_(header);
-  var retainedRows = [];
+  var promoted = backendProjectRowsToHeader_(backendMainHeader_(request.columns), promotedRows, header);
 
-  for (var index = 0; index < dataRows.length; index += 1) {
-    var row = dataRows[index];
-    var sameDate = backendTrimString_(row[split.dateIndex]) === request.exportDate;
-    var sameSource = backendTrimString_(row[split.sourceIndex]) === BACKEND_V2_CONFIG.technicalSourceValue;
-    if (sameDate && sameSource) {
-      continue;
-    }
-    retainedRows.push(row);
+  if (request.writeMode === 'append') {
+    backendApplyAppendMode_(sheet, promoted);
+  } else if (request.writeMode === 'replace_all') {
+    backendApplyReplaceAllMode_(sheet, header, promoted);
+  } else {
+    backendApplyReplaceByDateSourceMode_(sheet, request, dataRows, split, promoted);
   }
 
-  var promoted = backendProjectRowsToHeader_(backendMainHeader_(request.columns), promotedRows, header);
-  backendWriteSheetValues_(sheet, [header].concat(retainedRows).concat(promoted));
   backendHideTechnicalColumns_(sheet, header);
 }
 
@@ -527,6 +661,8 @@ function backendCreateRunState_(request, stagingSheetName) {
     run_id: request.runId,
     sheet_name: request.sheetName,
     export_date: request.exportDate,
+    source_id: request.sourceId,
+    write_mode: request.writeMode,
     total_chunks: request.totalChunks,
     total_rows: request.totalRows,
     staging_sheet_name: stagingSheetName,

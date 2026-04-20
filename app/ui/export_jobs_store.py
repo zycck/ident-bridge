@@ -3,7 +3,7 @@
 import uuid
 from collections.abc import Iterable, Mapping
 
-from app.config import ConfigManager, ExportJob
+from app.config import ConfigManager, ExportJob, gas_write_mode_from_raw
 from app.core.scheduler import ScheduleMode, schedule_mode_from_raw
 
 
@@ -11,6 +11,7 @@ def _normalize_gas_options(raw: object) -> dict[str, object]:
     source = raw if isinstance(raw, Mapping) else {}
     return {
         "sheet_name": str(source.get("sheet_name", "") or "").strip(),
+        "write_mode": gas_write_mode_from_raw(source.get("write_mode")).value,
     }
 
 
@@ -78,6 +79,7 @@ def new_export_job() -> ExportJob:
         webhook_url="",
         gas_options={
             "sheet_name": "",
+            "write_mode": gas_write_mode_from_raw(None).value,
         },
         schedule_enabled=False,
         schedule_mode=ScheduleMode.DAILY.value,

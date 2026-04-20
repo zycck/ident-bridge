@@ -120,13 +120,18 @@ class ExportEditorShell(QWidget):
     def gas_sheet_name(self) -> str:
         return self._google_sheets_panel.sheet_name()
 
+    def gas_write_mode(self) -> str:
+        return self._google_sheets_panel.write_mode()
+
     def set_gas_options(
         self,
         *,
         sheet_name: str,
+        write_mode: str,
     ) -> None:
         self._google_sheets_panel.set_gas_options(
             sheet_name=sheet_name,
+            write_mode=write_mode,
         )
 
     def schedule_enabled(self) -> bool:
@@ -184,5 +189,6 @@ class ExportEditorShell(QWidget):
         self.set_webhook_url(str(selected.get("webhook_url", "") or "").strip())
         self.set_gas_options(
             sheet_name=self.gas_sheet_name(),
+            write_mode=self.gas_write_mode(),
         )
         self.changed.emit()

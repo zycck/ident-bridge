@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from app.config import GasOptions, QueryResult
+from app.config import GasOptions, GasWriteMode, QueryResult, gas_write_mode_from_raw
 from app.core.constants import (
     GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
     GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
@@ -67,7 +67,7 @@ def _resolve_export_date(export_date: str | None = None) -> str:
     return value or datetime.now().date().isoformat()
 
 
-def _normalize_v2_options(
+def _normalize_sheet_name(
     job_name: str,
     gas_options: GasOptions | None,
 ) -> str:
@@ -76,10 +76,21 @@ def _normalize_v2_options(
     return sheet_name
 
 
+def _normalize_write_mode(gas_options: GasOptions | None) -> str:
+    raw = gas_options or {}
+    return gas_write_mode_from_raw(raw.get("write_mode")).value
+
+
+def _normalize_source_id(source_id: str | None, job_name: str) -> str:
+    return str(source_id or "").strip() or str(job_name or "").strip() or "job"
+
+
 def _payload_without_checksum(
     job_name: str,
     sheet_name: str,
     export_date: str,
+    source_id: str,
+    write_mode: str,
     chunk: GasChunkPlan,
 ) -> dict[str, Any]:
     return {
@@ -92,6 +103,8 @@ def _payload_without_checksum(
         "chunk_rows": chunk.chunk_rows,
         "sheet_name": sheet_name,
         "export_date": export_date,
+        "source_id": source_id,
+        "write_mode": write_mode,
         "columns": chunk.columns,
         "records": chunk.records,
     }
@@ -101,10 +114,12 @@ def _compute_checksum(
     job_name: str,
     sheet_name: str,
     export_date: str,
+    source_id: str,
+    write_mode: str,
     chunk: GasChunkPlan,
 ) -> str:
     payload = json.dumps(
-        _payload_without_checksum(job_name, sheet_name, export_date, chunk),
+        _payload_without_checksum(job_name, sheet_name, export_date, source_id, write_mode, chunk),
         ensure_ascii=False,
         separators=(",", ":"),
         sort_keys=True,
@@ -117,9 +132,11 @@ def _payload_object(
     job_name: str,
     sheet_name: str,
     export_date: str,
+    source_id: str,
+    write_mode: str,
     chunk: GasChunkPlan,
 ) -> dict[str, Any]:
-    payload = _payload_without_checksum(job_name, sheet_name, export_date, chunk)
+    payload = _payload_without_checksum(job_name, sheet_name, export_date, source_id, write_mode, chunk)
     payload["checksum"] = chunk.checksum
     return payload
 
@@ -128,11 +145,13 @@ def _measure_chunk_bytes(
     job_name: str,
     sheet_name: str,
     export_date: str,
+    source_id: str,
+    write_mode: str,
     chunk: GasChunkPlan,
 ) -> int:
     return len(
         json.dumps(
-            _payload_object(job_name, sheet_name, export_date, chunk),
+            _payload_object(job_name, sheet_name, export_date, source_id, write_mode, chunk),
             ensure_ascii=False,
             cls=_SqlJSONEncoder,
         ).encode("utf-8")
@@ -144,10 +163,12 @@ def _finalize_chunk(
     job_name: str,
     sheet_name: str,
     export_date: str,
+    source_id: str,
+    write_mode: str,
     chunk: GasChunkPlan,
 ) -> GasChunkPlan:
-    chunk.checksum = _compute_checksum(job_name, sheet_name, export_date, chunk)
-    chunk.chunk_bytes = _measure_chunk_bytes(job_name, sheet_name, export_date, chunk)
+    chunk.checksum = _compute_checksum(job_name, sheet_name, export_date, source_id, write_mode, chunk)
+    chunk.chunk_bytes = _measure_chunk_bytes(job_name, sheet_name, export_date, source_id, write_mode, chunk)
     return chunk
 
 
@@ -178,13 +199,16 @@ def _split_chunks(
     job_name: str,
     result: QueryResult,
     run_id: str,
+    source_id: str | None,
     max_rows_per_chunk: int,
     max_payload_bytes: int,
     total_chunks_hint: int,
     gas_options: GasOptions | None = None,
     export_date: str | None = None,
 ) -> list[GasChunkPlan]:
-    sheet_name = _normalize_v2_options(job_name, gas_options)
+    sheet_name = _normalize_sheet_name(job_name, gas_options)
+    source_id_value = _normalize_source_id(source_id, job_name)
+    write_mode = _normalize_write_mode(gas_options)
     export_date_value = _resolve_export_date(export_date)
     columns = list(result.columns)
     total_rows = result.count
@@ -204,6 +228,8 @@ def _split_chunks(
                 job_name=job_name,
                 sheet_name=sheet_name,
                 export_date=export_date_value,
+                source_id=source_id_value,
+                write_mode=write_mode,
                 chunk=chunk,
             )
         ]
@@ -225,6 +251,8 @@ def _split_chunks(
             job_name=job_name,
             sheet_name=sheet_name,
             export_date=export_date_value,
+            source_id=source_id_value,
+            write_mode=write_mode,
             chunk=candidate,
         )
 
@@ -249,6 +277,8 @@ def _split_chunks(
             job_name=job_name,
             sheet_name=sheet_name,
             export_date=export_date_value,
+            source_id=source_id_value,
+            write_mode=write_mode,
             chunk=single,
         )
         if len(current) > max_rows_per_chunk or single.chunk_bytes > max_payload_bytes:
@@ -273,6 +303,8 @@ def _split_chunks(
                 job_name=job_name,
                 sheet_name=sheet_name,
                 export_date=export_date_value,
+                source_id=source_id_value,
+                write_mode=write_mode,
                 chunk=chunk,
             )
         )
@@ -284,12 +316,17 @@ def plan_gas_chunks(
     result: QueryResult,
     *,
     run_id: str,
+    source_id: str | None = None,
+    write_mode: str | None = None,
     max_rows_per_chunk: int = GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
     max_payload_bytes: int = GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
     gas_options: GasOptions | None = None,
     export_date: str | None = None,
 ) -> list[GasChunkPlan]:
     _validate_columns(list(result.columns))
+    normalized_gas_options = dict(gas_options or {})
+    if write_mode is not None:
+        normalized_gas_options["write_mode"] = gas_write_mode_from_raw(write_mode).value
 
     hint = 1
     while True:
@@ -297,10 +334,11 @@ def plan_gas_chunks(
             job_name=job_name,
             result=result,
             run_id=run_id,
+            source_id=source_id,
             max_rows_per_chunk=max_rows_per_chunk,
             max_payload_bytes=max_payload_bytes,
             total_chunks_hint=hint,
-            gas_options=gas_options,
+            gas_options=normalized_gas_options,
             export_date=export_date,
         )
         final_total = len(chunks)
@@ -314,18 +352,27 @@ def build_gas_chunk_payload(
     chunk: GasChunkPlan,
     *,
     gas_options: GasOptions | None = None,
+    source_id: str | None = None,
+    write_mode: str | None = None,
     export_date: str | None = None,
 ) -> bytes:
-    sheet_name = _normalize_v2_options(job_name, gas_options)
+    normalized_gas_options = dict(gas_options or {})
+    if write_mode is not None:
+        normalized_gas_options["write_mode"] = gas_write_mode_from_raw(write_mode).value
+    sheet_name = _normalize_sheet_name(job_name, normalized_gas_options)
+    source_id_value = _normalize_source_id(source_id, job_name)
+    write_mode_value = _normalize_write_mode(normalized_gas_options)
     export_date_value = _resolve_export_date(export_date)
     _finalize_chunk(
         job_name=job_name,
         sheet_name=sheet_name,
         export_date=export_date_value,
+        source_id=source_id_value,
+        write_mode=write_mode_value,
         chunk=chunk,
     )
     return json.dumps(
-        _payload_object(job_name, sheet_name, export_date_value, chunk),
+        _payload_object(job_name, sheet_name, export_date_value, source_id_value, write_mode_value, chunk),
         ensure_ascii=False,
         cls=_SqlJSONEncoder,
     ).encode("utf-8")

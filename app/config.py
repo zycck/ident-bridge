@@ -67,6 +67,7 @@ class GasOptions(TypedDict, total=False):
     """Per-job delivery settings for the Google Apps Script sink."""
 
     sheet_name: str
+    write_mode: str
 
 
 # ---------------------------------------------------------------------------
@@ -90,6 +91,24 @@ class TriggerType(StrEnum):
     MANUAL    = "manual"
     SCHEDULED = "scheduled"   # was "auto" in older configs — migrated on read
     TEST      = "test"        # dry-run via TestRunDialog
+
+
+@verify(UNIQUE)
+class GasWriteMode(StrEnum):
+    """How the Google Sheets sink should apply rows to the target sheet."""
+
+    APPEND = "append"
+    REPLACE_ALL = "replace_all"
+    REPLACE_BY_DATE_SOURCE = "replace_by_date_source"
+
+
+def gas_write_mode_from_raw(value: object) -> GasWriteMode:
+    """Normalize persisted GAS write mode values with a safe default."""
+
+    try:
+        return GasWriteMode(str(value or "").strip())
+    except ValueError:
+        return GasWriteMode.REPLACE_BY_DATE_SOURCE
 
 
 class ExportJob(TypedDict):
@@ -163,8 +182,9 @@ def _normalize_export_jobs(raw_jobs: object) -> list[dict]:
         if isinstance(gas_options, Mapping):
             normalized_gas_options = {
                 "sheet_name": str(gas_options.get("sheet_name", "") or "").strip(),
+                "write_mode": gas_write_mode_from_raw(gas_options.get("write_mode")).value,
             }
-            if any(normalized_gas_options.values()):
+            if normalized_gas_options["sheet_name"]:
                 job["gas_options"] = normalized_gas_options
             else:
                 job.pop("gas_options", None)

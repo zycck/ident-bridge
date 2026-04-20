@@ -40,6 +40,7 @@ class ExportJobEditorBridge:
             webhook_url=self._shell.webhook_url(),
             gas_options={
                 "sheet_name": self._shell.gas_sheet_name(),
+                "write_mode": self._shell.gas_write_mode(),
             },
             schedule_enabled=self._shell.schedule_enabled(),
             schedule_mode=schedule_mode_to_raw(self._shell.schedule_mode()),

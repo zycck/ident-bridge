@@ -114,6 +114,8 @@ def test_plan_gas_chunks_uses_backend_checksum_canonical_json():
         _qr(columns=("Имя", "Значение"), rows=(("Алиса", "1"),)),
         gas_options={"sheet_name": "Лист1"},
         run_id="run-checksum",
+        source_id="job-1",
+        write_mode="replace_by_date_source",
         export_date=FIXED_EXPORT_DATE,
     )
 
@@ -128,6 +130,8 @@ def test_plan_gas_chunks_uses_backend_checksum_canonical_json():
             "chunk_rows": 1,
             "sheet_name": "Лист1",
             "export_date": FIXED_EXPORT_DATE,
+            "source_id": "job-1",
+            "write_mode": "replace_by_date_source",
             "columns": ["Имя", "Значение"],
             "records": [{"Имя": "Алиса", "Значение": "1"}],
         },
@@ -156,7 +160,7 @@ def test_plan_gas_chunks_splits_by_row_limit():
 
 
 def test_plan_gas_chunks_splits_by_payload_bytes():
-    rows = [("ж" * 400,), ("ж" * 400,), ("ж" * 400,)]
+    rows = [("ж" * 300,), ("ж" * 300,), ("ж" * 300,)]
     chunks = plan_gas_chunks(
         "Bytes",
         _qr(columns=("payload",), rows=rows),
@@ -191,6 +195,8 @@ def test_build_gas_chunk_payload_shape_is_stable():
         "Stable",
         _qr(columns=("id", "name"), rows=((1, "alice"),)),
         run_id="run-5",
+        source_id="job-1",
+        write_mode="replace_by_date_source",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
         export_date=FIXED_EXPORT_DATE,
@@ -201,6 +207,8 @@ def test_build_gas_chunk_payload_shape_is_stable():
             "Stable",
             chunk,
             gas_options={"sheet_name": "Exports"},
+            source_id="job-1",
+            write_mode="replace_by_date_source",
             export_date=FIXED_EXPORT_DATE,
         ).decode("utf-8")
     )
@@ -210,6 +218,8 @@ def test_build_gas_chunk_payload_shape_is_stable():
         "job_name": "Stable",
         "sheet_name": "Exports",
         "export_date": FIXED_EXPORT_DATE,
+        "source_id": "job-1",
+        "write_mode": "replace_by_date_source",
         "run_id": "run-5",
         "chunk_index": 1,
         "total_chunks": 1,
@@ -226,6 +236,8 @@ def test_build_gas_chunk_payload_uses_job_name_as_sheet_name_when_not_configured
         "Fallback sheet",
         _qr(rows=((1,),)),
         run_id="run-5b",
+        source_id="job-1",
+        write_mode="append",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
         export_date=FIXED_EXPORT_DATE,
@@ -235,11 +247,15 @@ def test_build_gas_chunk_payload_uses_job_name_as_sheet_name_when_not_configured
         build_gas_chunk_payload(
             "Fallback sheet",
             chunk,
+            source_id="job-1",
+            write_mode="append",
             export_date=FIXED_EXPORT_DATE,
         ).decode("utf-8")
     )
 
     assert payload["sheet_name"] == "Fallback sheet"
+    assert payload["source_id"] == "job-1"
+    assert payload["write_mode"] == "append"
 
 
 @pytest.mark.parametrize("row_count", [9, 10, 99, 100])

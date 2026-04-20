@@ -233,15 +233,14 @@ def test_factory_passes_gas_options_to_google_apps_script_sink():
     job = _job(webhook="https://script.google.com/macros/s/abc/exec")
     job["gas_options"] = {
         "sheet_name": "Exports",
-        "header_row": 2,
-        "dedupe_key_columns": ["id", "updated_at"],
+        "write_mode": "replace_all",
     }
 
     pipeline = build_pipeline_for_job(AppConfig(), job, sql_client_cls=lambda cfg: object())
 
     assert isinstance(pipeline.sink, GoogleAppsScriptSink)
+    assert pipeline.sink._source_id == job["id"]  # type: ignore[attr-defined]
     assert pipeline.sink._gas_options == {  # type: ignore[attr-defined]
         "sheet_name": "Exports",
-        "header_row": 2,
-        "dedupe_key_columns": ["id", "updated_at"],
+        "write_mode": "replace_all",
     }
