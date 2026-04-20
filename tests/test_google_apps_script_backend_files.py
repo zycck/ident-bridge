@@ -114,32 +114,9 @@ def test_do_get_supports_only_ping_and_sheets() -> None:
     assert result["invalid"]["error_code"] == "INVALID_ACTION"
 
 
-def test_do_get_rejects_missing_or_wrong_token_when_auth_is_configured() -> None:
-    result = _run_backend_probe(
-        """
-        __propertyStore.set('AUTH_TOKEN', 'secret-token');
-
-        const missing = JSON.parse(__callGet({ action: 'ping' }));
-        const wrong = JSON.parse(__callGet({ action: 'ping', token: 'wrong-token' }));
-        const ok = JSON.parse(__callGet({ action: 'ping', token: 'secret-token' }));
-
-        console.log(JSON.stringify({ missing, wrong, ok }));
-        """
-    )
-
-    assert result["missing"]["ok"] is False
-    assert result["missing"]["error_code"] == "UNAUTHORIZED"
-    assert result["missing"]["details"]["field"] == "token"
-    assert result["wrong"]["ok"] is False
-    assert result["wrong"]["error_code"] == "UNAUTHORIZED"
-    assert result["ok"]["ok"] is True
-    assert result["ok"]["status"] == "ready"
-
-
 def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
     result = _run_backend_probe(
         """
-        __propertyStore.set('AUTH_TOKEN', 'secret-token');
         __registerSheet('Reports', {
           sheetId: 10,
           values: [
@@ -157,7 +134,6 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
           total_rows: 3,
           chunk_rows: 2,
           sheet_name: 'Reports',
-          auth_token: 'secret-token',
           export_date: '2026-04-20',
           columns: ['id', 'name']
         };
@@ -175,7 +151,7 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
           chunk_index: 1,
           records: chunk1Records,
           checksum: __checksum__({ ...basePayload, chunk_index: 1, records: chunk1Records })
-        }, { expectedToken: 'secret-token' }));
+        }));
 
         const second = JSON.parse(__callPost({
           ...basePayload,
@@ -184,7 +160,7 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
           total_rows: 3,
           records: chunk2Records,
           checksum: __checksum__({ ...basePayload, chunk_index: 2, chunk_rows: 1, total_rows: 3, records: chunk2Records })
-        }, { expectedToken: 'secret-token' }));
+        }));
 
         const mainSheet = __spreadsheet.getSheetByName('Reports');
         const stagingSheet = __spreadsheet.getSheetByName('__stage__Reports__run-2026-04-20-001');
@@ -222,7 +198,6 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
 def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
     result = _run_backend_probe(
         """
-        __propertyStore.set('AUTH_TOKEN', 'secret-token');
         __registerSheet('Reports', {
           sheetId: 10,
           values: [['id', 'name', '__TECH_COLUMN__']]
@@ -237,7 +212,6 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
           total_rows: 2,
           chunk_rows: 2,
           sheet_name: 'Reports',
-          auth_token: 'secret-token',
           export_date: '2026-04-20',
           columns: ['id', 'name'],
           records: [
@@ -246,8 +220,8 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
           ]
         };
         payload.checksum = __checksum__(payload);
-        const first = JSON.parse(__callPost(payload, { expectedToken: 'secret-token' }));
-        const second = JSON.parse(__callPost(payload, { expectedToken: 'secret-token' }));
+        const first = JSON.parse(__callPost(payload));
+        const second = JSON.parse(__callPost(payload));
         const stagingSheet = __spreadsheet.getSheetByName('__stage__Reports__run-duplicate');
 
         console.log(JSON.stringify({
@@ -271,7 +245,6 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
 def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
     result = _run_backend_probe(
         """
-        __propertyStore.set('AUTH_TOKEN', 'secret-token');
         __registerSheet('Reports', {
           sheetId: 10,
           values: [['id', 'name', '__TECH_COLUMN__']]
@@ -286,7 +259,6 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
           total_rows: 3,
           chunk_rows: 2,
           sheet_name: 'Reports',
-          auth_token: 'secret-token',
           export_date: '2026-04-20',
           columns: ['id', 'name'],
           records: [
@@ -304,7 +276,6 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
           total_rows: 3,
           chunk_rows: 1,
           sheet_name: 'Reports',
-          auth_token: 'secret-token',
           export_date: '2026-04-20',
           columns: ['id', 'name'],
           records: [
@@ -313,9 +284,9 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
         };
         chunk2.checksum = __checksum__(chunk2);
 
-        const first = JSON.parse(__callPost(chunk1, { expectedToken: 'secret-token' }));
-        const second = JSON.parse(__callPost(chunk2, { expectedToken: 'secret-token' }));
-        const repeat = JSON.parse(__callPost(chunk2, { expectedToken: 'secret-token' }));
+        const first = JSON.parse(__callPost(chunk1));
+        const second = JSON.parse(__callPost(chunk2));
+        const repeat = JSON.parse(__callPost(chunk2));
         const mainSheet = __spreadsheet.getSheetByName('Reports');
 
         console.log(JSON.stringify({
@@ -338,10 +309,9 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
     ]
 
 
-def test_do_post_rejects_bad_token_and_bad_checksum() -> None:
+def test_do_post_rejects_bad_checksum() -> None:
     result = _run_backend_probe(
         """
-        __propertyStore.set('AUTH_TOKEN', 'secret-token');
         __registerSheet('Reports', {
           sheetId: 10,
           values: [['id', 'name', '__TECH_COLUMN__']]
@@ -360,24 +330,15 @@ def test_do_post_rejects_bad_token_and_bad_checksum() -> None:
           records: [{ id: 1, name: 'Ana' }]
         };
 
-        const badToken = JSON.parse(__callPost({
-          ...base,
-          auth_token: 'wrong-token',
-          checksum: __checksum__({ ...base, auth_token: 'wrong-token' })
-        }, { expectedToken: 'secret-token' }));
-        __propertyStore.set('AUTH_TOKEN', 'secret-token');
         const badChecksum = JSON.parse(__callPost({
           ...base,
-          auth_token: 'secret-token',
           checksum: 'not-a-real-checksum'
-        }, { expectedToken: 'secret-token' }));
+        }));
 
-        console.log(JSON.stringify({ badToken, badChecksum }));
+        console.log(JSON.stringify({ badChecksum }));
         """
     )
 
-    assert result["badToken"]["ok"] is False
-    assert result["badToken"]["error_code"] == "UNAUTHORIZED"
     assert result["badChecksum"]["ok"] is False
     assert result["badChecksum"]["error_code"] == "CHECKSUM_MISMATCH"
 
@@ -385,7 +346,6 @@ def test_do_post_rejects_bad_token_and_bad_checksum() -> None:
 def test_do_post_maps_new_rows_by_column_name_and_keeps_existing_header_order() -> None:
     result = _run_backend_probe(
         """
-        __propertyStore.set('AUTH_TOKEN', 'secret-token');
         __registerSheet('Reports', {
           sheetId: 10,
           values: [
@@ -403,14 +363,13 @@ def test_do_post_maps_new_rows_by_column_name_and_keeps_existing_header_order() 
           total_rows: 1,
           chunk_rows: 1,
           sheet_name: 'Reports',
-          auth_token: 'secret-token',
           export_date: '2026-04-20',
           columns: ['id', 'name'],
           records: [{ id: 1, name: 'Ana' }]
         };
         payload.checksum = __checksum__(payload);
 
-        const ack = JSON.parse(__callPost(payload, { expectedToken: 'secret-token' }));
+        const ack = JSON.parse(__callPost(payload));
         const mainSheet = __spreadsheet.getSheetByName('Reports');
 
         console.log(JSON.stringify({

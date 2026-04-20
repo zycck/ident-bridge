@@ -67,7 +67,6 @@ class ExportEditorController:
         gas_options = job.get("gas_options") or {}
         self._shell.set_gas_options(
             sheet_name=str(gas_options.get("sheet_name", "") or ""),
-            auth_token=str(gas_options.get("auth_token", "") or ""),
         )
         self._shell.set_schedule(
             bool(job.get("schedule_enabled", False)),

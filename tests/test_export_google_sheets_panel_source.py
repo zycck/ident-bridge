@@ -21,8 +21,8 @@ def test_google_sheets_panel_keeps_sheet_picker_as_overlay_popup() -> None:
     assert 'root.addWidget(self._suggestions_frame)' not in source
     assert "self.window()" in source
     assert "self._sheet_name_field.setText(normalized[0])" not in source
-    assert 'self._count_badge.setText(f"{len(self._all_options)} листов")' in source
-    assert "алиасы столбцов" in source
+    assert 'self._count_badge.setText(f"{len(self._all_options)}' in source
+    assert "_alias_hint_label = QLabel(" in source
     assert "def shutdown(self) -> None:" in source
     assert "self._suggestions_frame.hide()" in source
     assert "self._overlay_parent.removeEventFilter(self)" in source
@@ -31,4 +31,4 @@ def test_google_sheets_panel_keeps_sheet_picker_as_overlay_popup() -> None:
     assert "def closeEvent(self, event: QCloseEvent) -> None" in source
     assert "def hideEvent(self, event: QHideEvent) -> None" in source
     assert "QEvent.Type.Close" in source
-    assert "auth_token" in source
+    assert "auth_token" not in source

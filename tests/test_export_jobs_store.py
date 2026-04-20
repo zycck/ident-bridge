@@ -22,7 +22,6 @@ class _DummyConfig:
                         "sheet_name": "Exports",
                         "header_row": "2",
                         "dedupe_key_columns": ["id", "updated_at", ""],
-                        "auth_token": "  secret-token  ",
                         "scheme_id": "  library_v1  ",
                     },
                     "history": [{"ts": "2026-01-01 00:00:00"}],
@@ -47,7 +46,7 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
             "name": "Nightly",
             "sql_query": "SELECT 1",
             "webhook_url": "",
-            "gas_options": {"sheet_name": "Exports", "auth_token": "secret-token"},
+            "gas_options": {"sheet_name": "Exports"},
             "schedule_enabled": False,
             "schedule_mode": "daily",
             "schedule_value": "",
@@ -74,7 +73,7 @@ def test_load_export_jobs_fills_missing_identity_fields() -> None:
     assert jobs[0]["name"] == ""
 
 
-def test_load_export_jobs_normalizes_auth_token_through_config_manager(tmp_config) -> None:
+def test_load_export_jobs_drops_legacy_gas_fields_through_config_manager(tmp_config) -> None:
     tmp_config.save(
         AppConfig(
             export_jobs=[
@@ -103,7 +102,6 @@ def test_load_export_jobs_normalizes_auth_token_through_config_manager(tmp_confi
 
     assert jobs[0]["gas_options"] == {
         "sheet_name": "Exports",
-        "auth_token": "secret-token",
     }
 
 
@@ -115,7 +113,7 @@ def test_find_duplicate_export_target_detects_same_webhook_and_sheet() -> None:
                 "name": "Nightly",
                 "sql_query": "SELECT 1",
                 "webhook_url": "https://script.google.com/macros/s/abc/exec",
-                "gas_options": {"sheet_name": "Exports", "auth_token": "token-1"},
+                "gas_options": {"sheet_name": "Exports"},
                 "schedule_enabled": False,
                 "schedule_mode": "daily",
                 "schedule_value": "",
@@ -126,7 +124,7 @@ def test_find_duplicate_export_target_detects_same_webhook_and_sheet() -> None:
                 "name": "Archive",
                 "sql_query": "SELECT 2",
                 "webhook_url": "https://script.google.com/macros/s/abc/exec",
-                "gas_options": {"sheet_name": "Exports", "auth_token": "token-2"},
+                "gas_options": {"sheet_name": "Exports"},
                 "schedule_enabled": False,
                 "schedule_mode": "daily",
                 "schedule_value": "",
@@ -158,7 +156,6 @@ def test_persist_export_jobs_preserves_other_config_fields() -> None:
                     "sheet_name": "Archive",
                     "header_row": 3,
                     "dedupe_key_columns": ["id"],
-                    "auth_token": "token-2",
                     "scheme_id": "library_v1",
                 },
                 "schedule_enabled": True,
@@ -183,6 +180,5 @@ def test_new_export_job_starts_blank_with_generated_id() -> None:
     assert job["schedule_mode"] == "daily"
     assert job["gas_options"] == {
         "sheet_name": "",
-        "auth_token": "",
     }
     assert job["history"] == []

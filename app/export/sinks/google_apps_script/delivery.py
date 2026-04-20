@@ -80,30 +80,22 @@ def build_user_delivery_error(*, delivered_chunks: int, total_chunks: int) -> st
 
 
 def _build_actionable_ack_message(cause: "_ChunkDeliveryError") -> str:
-    field_name = str((cause.ack_details or {}).get("field", "") or "").strip()
-
     if cause.error_code == "UNAUTHORIZED":
-        if field_name in {"auth_token", "token"}:
-            return (
-                "Ключ доступа не подошёл. Проверьте, что в приложении и "
-                "в свойствах проекта Apps Script указано одно и то же значение AUTH_TOKEN."
-            )
-        return "Доступ к обработчику запрещён. Проверьте ключ доступа и настройки проекта Apps Script."
+        return "Доступ к обработчику запрещён. Проверьте публикацию проекта Apps Script и права доступа."
 
     if cause.error_code == "INVALID_REQUEST_METHOD":
-        return "Адрес обработки настроен неверно. Проверьте, что указан адрес веб-приложения Apps Script."
+        return "РђРґСЂРµСЃ РѕР±СЂР°Р±РѕС‚РєРё РЅР°СЃС‚СЂРѕРµРЅ РЅРµРІРµСЂРЅРѕ. РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ СѓРєР°Р·Р°РЅ Р°РґСЂРµСЃ РІРµР±-РїСЂРёР»РѕР¶РµРЅРёСЏ Apps Script."
 
     if cause.error_code == "MALFORMED_JSON":
         return (
-            "Адрес обработки ответил некорректно. Проверьте, что используется "
-            "опубликованный адрес проекта Apps Script таблицы."
+            "РђРґСЂРµСЃ РѕР±СЂР°Р±РѕС‚РєРё РѕС‚РІРµС‚РёР» РЅРµРєРѕСЂСЂРµРєС‚РЅРѕ. РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ "
+            "РѕРїСѓР±Р»РёРєРѕРІР°РЅРЅС‹Р№ Р°РґСЂРµСЃ РїСЂРѕРµРєС‚Р° Apps Script С‚Р°Р±Р»РёС†С‹."
         )
 
     if cause.error_code == "INVALID_ACTION":
-        return "Адрес обработки не поддерживает ожидаемые действия. Проверьте, что развернута актуальная версия скрипта."
+        return "РђРґСЂРµСЃ РѕР±СЂР°Р±РѕС‚РєРё РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚ РѕР¶РёРґР°РµРјС‹Рµ РґРµР№СЃС‚РІРёСЏ. РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ СЂР°Р·РІРµСЂРЅСѓС‚Р° Р°РєС‚СѓР°Р»СЊРЅР°СЏ РІРµСЂСЃРёСЏ СЃРєСЂРёРїС‚Р°."
 
     return ""
-
 
 def _preview_response_body(raw_body: bytes | None) -> str:
     if not raw_body:
@@ -129,13 +121,11 @@ def _build_ack_failure_message(ack: GasAck) -> str:
     return str(ack.message or ack.error_code or "Ack failure").strip()
 
 
-def _build_gas_get_url(url: str, *, action: str, auth_token: str = "") -> str:
+def _build_gas_get_url(url: str, *, action: str) -> str:
     parsed = urllib.parse.urlsplit(url)
     query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    filtered_query = [(key, value) for key, value in query_items if key not in {"action", "token"}]
+    filtered_query = [(key, value) for key, value in query_items if key != "action"]
     filtered_query.append(("action", action))
-    if auth_token.strip():
-        filtered_query.append(("token", auth_token.strip()))
     return urllib.parse.urlunsplit(
         (
             parsed.scheme,
@@ -260,9 +250,8 @@ class GoogleAppsScriptSink:
             ) from exc
 
     def _ping_backend(self) -> None:
-        auth_token = str((self._gas_options or {}).get("auth_token", "") or "").strip()
         req = urllib.request.Request(
-            _build_gas_get_url(self._url, action="ping", auth_token=auth_token),
+            _build_gas_get_url(self._url, action="ping"),
             headers={"Accept": "application/json", "User-Agent": USER_AGENT},
             method="GET",
         )

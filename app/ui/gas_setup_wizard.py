@@ -1,22 +1,17 @@
-"""Окно подключения Google Apps Script."""
+"""Dialog for connecting a Google Apps Script webhook."""
 
 from __future__ import annotations
 
-import secrets
 from pathlib import Path
 from typing import override
 
-from PySide6.QtCore import QSignalBlocker
 from PySide6.QtWidgets import (
-    QApplication,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
-    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -77,6 +72,19 @@ _DIALOG_QSS = (
     f"}}"
 )
 
+_TITLE = "\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u0435 Google \u0422\u0430\u0431\u043b\u0438\u0446"
+_INTRO = (
+    "1. \u0412\u0441\u0442\u0430\u0432\u044c\u0442\u0435 \u0430\u0434\u0440\u0435\u0441 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438.\n"
+    "2. \u0421\u043a\u043e\u043f\u0438\u0440\u0443\u0439\u0442\u0435 \u043a\u043e\u0434 \u043d\u0438\u0436\u0435 \u0432 Apps Script.\n"
+    "3. \u041e\u043f\u0443\u0431\u043b\u0438\u043a\u0443\u0439\u0442\u0435 \u043f\u0440\u043e\u0435\u043a\u0442 \u043a\u0430\u043a \u0432\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u0435."
+)
+_WEBHOOK_LABEL = "\u0410\u0434\u0440\u0435\u0441 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438"
+_CODE_LABEL = "\u041a\u043e\u0434 \u0434\u043b\u044f Apps Script"
+_PREVIEW_PLACEHOLDER = "\u041a\u043e\u0434 \u0431\u0443\u0434\u0435\u0442 \u043f\u043e\u043a\u0430\u0437\u0430\u043d \u0437\u0434\u0435\u0441\u044c."
+_SAVE_LABEL = "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c"
+_CANCEL_LABEL = "\u041e\u0442\u043c\u0435\u043d\u0430"
+_SHIM_FALLBACK = "// \u043a\u043e\u0434 \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d"
+
 
 def _shim_preview_text() -> str:
     root = Path(__file__).resolve().parents[2]
@@ -84,29 +92,24 @@ def _shim_preview_text() -> str:
     try:
         return shim_path.read_text(encoding="utf-8")
     except OSError:
-        return "// код недоступен"
+        return _SHIM_FALLBACK
 
 
 class GasSetupWizard(QDialog):
-    """Собирает адрес обработки и ключ доступа для подключения."""
+    """Collects webhook settings for connecting a sheet."""
 
     def __init__(
         self,
         *,
         initial_webhook_url: str = "",
-        initial_auth_token: str = "",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("Подключение Google Таблиц")
+        self.setWindowTitle(_TITLE)
         self.resize(760, 620)
         self.setStyleSheet(_DIALOG_QSS)
         self._build_ui()
         self._webhook_url_edit.setText((initial_webhook_url or "").strip())
-        if initial_auth_token:
-            self._set_auth_token(initial_auth_token)
-        else:
-            self._generate_token()
         self._refresh_actions()
 
     def _build_ui(self) -> None:
@@ -114,12 +117,7 @@ class GasSetupWizard(QDialog):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(12)
 
-        self._intro_label = QLabel(
-            "1. Вставьте адрес обработки.\n"
-            "2. Создайте ключ доступа при необходимости.\n"
-            "3. Скопируйте код ниже в Apps Script.",
-            self,
-        )
+        self._intro_label = QLabel(_INTRO, self)
         self._intro_label.setWordWrap(True)
         root.addWidget(self._intro_label)
 
@@ -132,32 +130,14 @@ class GasSetupWizard(QDialog):
         self._webhook_url_edit = QLineEdit(self)
         self._webhook_url_edit.setPlaceholderText("https://script.google.com/macros/s/.../exec")
         self._webhook_url_edit.textChanged.connect(self._refresh_actions)
-        form.addRow("Адрес обработки", self._webhook_url_edit)
+        form.addRow(_WEBHOOK_LABEL, self._webhook_url_edit)
 
-        token_row = QHBoxLayout()
-        token_row.setSpacing(8)
-
-        self._auth_token_edit = QLineEdit(self)
-        self._auth_token_edit.setPlaceholderText("Ключ доступа")
-        self._auth_token_edit.textChanged.connect(self._refresh_actions)
-        token_row.addWidget(self._auth_token_edit, stretch=1)
-
-        self._generate_btn = QPushButton("Создать", self)
-        self._generate_btn.clicked.connect(self._generate_token)
-        token_row.addWidget(self._generate_btn)
-
-        self._copy_btn = QPushButton("Копировать", self)
-        self._copy_btn.clicked.connect(self._copy_token)
-        token_row.addWidget(self._copy_btn)
-
-        form.addRow("Ключ доступа", token_row)
-
-        self._code_label = QLabel("Код для Apps Script", self)
+        self._code_label = QLabel(_CODE_LABEL, self)
         root.addWidget(self._code_label)
 
         self._shim_preview = QPlainTextEdit(self)
         self._shim_preview.setReadOnly(True)
-        self._shim_preview.setPlaceholderText("Код будет показан здесь.")
+        self._shim_preview.setPlaceholderText(_PREVIEW_PLACEHOLDER)
         self._shim_preview.setPlainText(_shim_preview_text())
         root.addWidget(self._shim_preview, stretch=1)
 
@@ -169,37 +149,21 @@ class GasSetupWizard(QDialog):
         self._buttons.rejected.connect(self.reject)
         self._apply_btn = self._buttons.button(QDialogButtonBox.StandardButton.Save)
         self._apply_btn.setObjectName("primaryBtn")
-        self._apply_btn.setText("Сохранить")
+        self._apply_btn.setText(_SAVE_LABEL)
         self._cancel_btn = self._buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        self._cancel_btn.setText("Отмена")
+        self._cancel_btn.setText(_CANCEL_LABEL)
         root.addWidget(self._buttons)
-
-    def _set_auth_token(self, value: str) -> None:
-        with QSignalBlocker(self._auth_token_edit):
-            self._auth_token_edit.setText((value or "").strip())
-        self._refresh_actions()
-
-    def _generate_token(self) -> None:
-        self._set_auth_token(secrets.token_urlsafe(32))
-
-    def _copy_token(self) -> None:
-        clipboard = QApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(self._auth_token_edit.text().strip())
 
     def _refresh_actions(self) -> None:
         webhook_url = self._webhook_url_edit.text().strip()
-        auth_token = self._auth_token_edit.text().strip()
-        self._apply_btn.setEnabled(bool(webhook_url and auth_token))
+        self._apply_btn.setEnabled(bool(webhook_url))
 
     def selected_config(self) -> dict[str, str]:
         return {
             "webhook_url": self._webhook_url_edit.text().strip(),
-            "auth_token": self._auth_token_edit.text().strip(),
         }
 
     @override
     def accept(self) -> None:
         self._webhook_url_edit.setText(self._webhook_url_edit.text().strip())
-        self._auth_token_edit.setText(self._auth_token_edit.text().strip())
         super().accept()

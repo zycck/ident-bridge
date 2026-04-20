@@ -74,7 +74,6 @@ class _FakeShell:
         self._schedule_mode = ScheduleMode.DAILY
         self._schedule_value = ""
         self._gas_sheet_name = ""
-        self._gas_auth_token = ""
         self._history: list[dict] = []
         self.status_calls: list[tuple[str, str]] = []
         self.refresh_calls = 0
@@ -114,17 +113,13 @@ class _FakeShell:
     def gas_sheet_name(self) -> str:
         return self._gas_sheet_name
 
-    def gas_auth_token(self) -> str:
-        return self._gas_auth_token
 
     def set_gas_options(
         self,
         *,
         sheet_name: str,
-        auth_token: str,
     ) -> None:
         self._gas_sheet_name = sheet_name
-        self._gas_auth_token = auth_token
 
     def history(self) -> list[dict]:
         return list(self._history)
@@ -185,7 +180,6 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
         webhook_url="https://example.test/hook",
         gas_options={
             "sheet_name": "Exports",
-            "auth_token": "secret-token",
         },
         schedule_enabled=True,
         schedule_mode="hourly",
@@ -208,7 +202,6 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
     assert shell.sql_text() == "SELECT 1"
     assert shell.webhook_url() == "https://example.test/hook"
     assert shell.gas_sheet_name() == "Exports"
-    assert shell.gas_auth_token() == "secret-token"
     assert shell.history()[0]["rows"] == 3
     assert shell.status_calls == [("ok", "✓ 3 строк · 09:10:11 · 9 мс")]
     assert shell.refresh_calls == 0

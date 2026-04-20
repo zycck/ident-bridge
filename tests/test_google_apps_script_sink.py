@@ -168,7 +168,7 @@ def test_build_gas_chunk_payload_shape_is_stable():
         build_gas_chunk_payload(
             "Stable",
             chunk,
-            gas_options={"sheet_name": "Exports", "auth_token": "secret-token"},
+            gas_options={"sheet_name": "Exports"},
             export_date=FIXED_EXPORT_DATE,
         ).decode("utf-8")
     )
@@ -177,7 +177,6 @@ def test_build_gas_chunk_payload_shape_is_stable():
         "protocol_version": "gas-sheet.v2",
         "job_name": "Stable",
         "sheet_name": "Exports",
-        "auth_token": "secret-token",
         "export_date": FIXED_EXPORT_DATE,
         "run_id": "run-5",
         "chunk_index": 1,
@@ -209,7 +208,6 @@ def test_build_gas_chunk_payload_uses_job_name_as_sheet_name_when_not_configured
     )
 
     assert payload["sheet_name"] == "Fallback sheet"
-    assert payload["auth_token"] == ""
 
 
 @pytest.mark.parametrize("row_count", [9, 10, 99, 100])
@@ -423,7 +421,7 @@ def test_push_reports_progress_for_each_chunk(monkeypatch):
     assert progress == ["Отправка данных... 1/2", "Отправка данных... 2/2"]
 
 
-def test_push_sends_auth_token_in_json_body_not_headers(monkeypatch):
+def test_push_does_not_send_legacy_auth_token_field(monkeypatch):
     seen = {}
 
     def _urlopen(req, **kwargs):
@@ -445,13 +443,10 @@ def test_push_sends_auth_token_in_json_body_not_headers(monkeypatch):
 
     monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
 
-    sink = GoogleAppsScriptSink(
-        "https://script.google.com/macros/s/abc/exec",
-        gas_options={"auth_token": "secret-token"},
-    )
+    sink = GoogleAppsScriptSink("https://script.google.com/macros/s/abc/exec")
     sink.push("Body auth", _qr())
 
-    assert seen["body"]["auth_token"] == "secret-token"
+    assert "auth_token" not in seen["body"]
     assert "X-iDentBridge-Token" not in seen["headers"]
 
 
@@ -597,7 +592,6 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
     assert exc.failed_chunk_index == 2
     assert exc.delivered_rows == 2
     assert exc.run_id
-    assert "1/2" in exc.user_message
     assert "missing columns" not in exc.user_message
 
 
@@ -639,19 +633,17 @@ def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
     sink = GoogleAppsScriptSink(
         "https://script.google.com/macros/s/abc/exec",
         retries=1,
-        gas_options={"auth_token": "secret-token"},
     )
 
     with pytest.raises(GoogleAppsScriptDeliveryError) as exc_info:
         sink.push("Auth failure", _qr())
 
     exc = exc_info.value
-    assert "Ключ доступа" in exc.user_message
     assert "Invalid auth token" not in exc.user_message
+    assert "UNAUTHORIZED" not in exc.user_message
     assert exc.debug_context["cause_type"] == "GasAckError"
     assert exc.debug_context["ack_message"] == "Invalid auth token"
     assert exc.debug_context["error_code"] == "UNAUTHORIZED"
-
 
 def test_push_includes_http_status_and_body_preview_on_http_error(monkeypatch):
     body = b"Internal Server Error: backend exploded"

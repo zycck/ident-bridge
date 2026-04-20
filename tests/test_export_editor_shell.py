@@ -21,7 +21,6 @@ class _FakeAcceptedWizard(QDialog):
     def selected_config(self) -> dict[str, str]:
         return {
             "webhook_url": "https://script.google.com/macros/s/library/exec",
-            "auth_token": "generated-token",
         }
 
 
@@ -37,17 +36,13 @@ def test_export_editor_shell_roundtrips_core_fields(qtbot) -> None:
     shell.set_job_name("Nightly")
     shell.set_sql_text("SELECT 1")
     shell.set_webhook_url("https://example.com")
-    shell.set_gas_options(
-        sheet_name="Exports",
-        auth_token="secret-token",
-    )
+    shell.set_gas_options(sheet_name="Exports")
     shell.set_schedule(True, ScheduleMode.HOURLY, "4")
 
     assert shell.job_name() == "Nightly"
     assert shell.sql_text() == "SELECT 1"
     assert shell.webhook_url() == "https://example.com"
     assert shell.gas_sheet_name() == "Exports"
-    assert shell.gas_auth_token() == "secret-token"
     assert shell.schedule_enabled() is True
     assert shell.schedule_mode() is ScheduleMode.HOURLY
     assert shell.schedule_value() == "4"
@@ -91,12 +86,12 @@ def test_export_editor_shell_routes_status_progress_and_history_helpers(qtbot) -
     qtbot.addWidget(shell)
 
     shell.set_status("ok", "Done")
-    shell.set_progress_text("Работаем…")
+    shell.set_progress_text("Работаем...")
     shell.set_run_enabled(False)
     shell.prepend_history_entry({"ts": "2026-04-16 12:00:00", "ok": True, "rows": 2})
 
     assert shell._header._status_summary.text() == "Done"
-    assert shell._schedule_panel._progress_lbl.text() == "Работаем…"
+    assert shell._schedule_panel._progress_lbl.text() == "Работаем..."
     assert shell._header._run_btn.isEnabled() is False
     assert shell.latest_history_entry() is not None
 
@@ -105,19 +100,15 @@ def test_export_editor_shell_applies_gas_setup_wizard_result(qtbot) -> None:
     shell = ExportEditorShell(gas_setup_wizard_factory=_FakeAcceptedWizard)
     qtbot.addWidget(shell)
     shell.set_webhook_url("https://script.google.com/macros/s/old/exec")
-    shell.set_gas_options(
-        sheet_name="Exports",
-        auth_token="old-token",
-    )
+    shell.set_gas_options(sheet_name="Exports")
 
     changed = []
     shell.changed.connect(lambda: changed.append(True))
 
-    assert shell._gas_setup_wizard_btn.text() == "Подключить таблицу…"
+    assert shell._gas_setup_wizard_btn.text() == "Подключить таблицу..."
     qtbot.mouseClick(shell._gas_setup_wizard_btn, Qt.MouseButton.LeftButton)
 
     assert shell.webhook_url() == "https://script.google.com/macros/s/library/exec"
-    assert shell.gas_auth_token() == "generated-token"
     assert shell.gas_sheet_name() == "Exports"
     assert changed == [True]
 
@@ -126,12 +117,8 @@ def test_export_editor_shell_ignores_rejected_gas_setup_wizard(qtbot) -> None:
     shell = ExportEditorShell(gas_setup_wizard_factory=_FakeRejectedWizard)
     qtbot.addWidget(shell)
     shell.set_webhook_url("https://script.google.com/macros/s/original/exec")
-    shell.set_gas_options(
-        sheet_name="Exports",
-        auth_token="original-token",
-    )
+    shell.set_gas_options(sheet_name="Exports")
 
     qtbot.mouseClick(shell._gas_setup_wizard_btn, Qt.MouseButton.LeftButton)
 
     assert shell.webhook_url() == "https://script.google.com/macros/s/original/exec"
-    assert shell.gas_auth_token() == "original-token"

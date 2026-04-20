@@ -32,7 +32,6 @@ function backendHandleGetRequest_(event) {
   backendCollectStaleRuns_(backendGetSpreadsheet_());
 
   if (action === 'ping') {
-    backendValidateReadToken_(event);
     return backendMakeJsonResponse_({
       ok: true,
       status: 'ready',
@@ -42,7 +41,6 @@ function backendHandleGetRequest_(event) {
   }
 
   if (action === 'sheets') {
-    backendValidateReadToken_(event);
     var sheetNames = backendListVisibleSheetNames_();
     return backendMakeJsonResponse_({
       ok: true,
@@ -61,22 +59,6 @@ function backendHandleGetRequest_(event) {
   )));
 }
 
-function backendValidateReadToken_(event) {
-  var expected = backendResolveExpectedToken_(null);
-  if (!expected) {
-    return;
-  }
-
-  var provided = backendTrimString_(event && event.parameter ? event.parameter.token : '');
-  if (!provided || provided !== expected) {
-    throw backendCreateError_(
-      'UNAUTHORIZED',
-      false,
-      'Invalid auth token',
-      { field: 'token' }
-    );
-  }
-}
 
 function backendHandlePostRequest_(event, context) {
   return backendWithScriptLock_(function handleLockedPost() {
@@ -169,50 +151,10 @@ function backendParseV2Request_(event, context) {
     );
   }
 
-  backendValidateV2AuthToken_(payload, context);
   return backendNormalizeV2Payload_(payload);
 }
 
-function backendValidateV2AuthToken_(payload, context) {
-  var expected = backendResolveExpectedToken_(context);
-  var provided = backendTrimString_(payload && payload.auth_token);
 
-  if (!expected) {
-    throw backendCreateError_(
-      'UNAUTHORIZED',
-      false,
-      'Auth token is not configured',
-      { field: 'auth_token' }
-    );
-  }
-
-  if (!provided) {
-    throw backendCreateError_(
-      'UNAUTHORIZED',
-      false,
-      'Missing auth_token',
-      { field: 'auth_token' }
-    );
-  }
-
-  if (provided !== expected) {
-    throw backendCreateError_(
-      'UNAUTHORIZED',
-      false,
-      'Invalid auth token',
-      { field: 'auth_token' }
-    );
-  }
-}
-
-function backendResolveExpectedToken_(context) {
-  var contextToken = backendTrimString_(context && context.expectedToken);
-  if (contextToken) {
-    return contextToken;
-  }
-
-  return backendTrimString_(PropertiesService.getScriptProperties().getProperty(BACKEND_V2_CONFIG.authTokenProperty));
-}
 
 function backendNormalizeRequiredString_(value, fieldName) {
   var normalized = backendTrimString_(value);

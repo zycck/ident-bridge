@@ -11,7 +11,6 @@ def _normalize_gas_options(raw: object) -> dict[str, object]:
     source = raw if isinstance(raw, Mapping) else {}
     return {
         "sheet_name": str(source.get("sheet_name", "") or "").strip(),
-        "auth_token": str(source.get("auth_token", "") or "").strip(),
     }
 
 
@@ -79,7 +78,6 @@ def new_export_job() -> ExportJob:
         webhook_url="",
         gas_options={
             "sheet_name": "",
-            "auth_token": "",
         },
         schedule_enabled=False,
         schedule_mode=ScheduleMode.DAILY.value,

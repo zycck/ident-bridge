@@ -66,9 +66,9 @@ class ExportEditorShell(QWidget):
         url_row = QHBoxLayout()
         url_row.setSpacing(8)
         self._webhook_edit = QLineEdit(self)
-        self._webhook_edit.setPlaceholderText("https://… (необязательно)")
+        self._webhook_edit.setPlaceholderText("https://... (необязательно)")
         url_row.addWidget(self._webhook_edit, stretch=1)
-        self._gas_setup_wizard_btn = QPushButton("Подключить таблицу…", self)
+        self._gas_setup_wizard_btn = QPushButton("Подключить таблицу...", self)
         url_row.addWidget(self._gas_setup_wizard_btn)
         root.addLayout(url_row)
 
@@ -120,18 +120,13 @@ class ExportEditorShell(QWidget):
     def gas_sheet_name(self) -> str:
         return self._google_sheets_panel.sheet_name()
 
-    def gas_auth_token(self) -> str:
-        return self._google_sheets_panel.auth_token()
-
     def set_gas_options(
         self,
         *,
         sheet_name: str,
-        auth_token: str,
     ) -> None:
         self._google_sheets_panel.set_gas_options(
             sheet_name=sheet_name,
-            auth_token=auth_token,
         )
 
     def schedule_enabled(self) -> bool:
@@ -180,7 +175,6 @@ class ExportEditorShell(QWidget):
 
         dialog = dialog_factory(
             initial_webhook_url=self.webhook_url(),
-            initial_auth_token=self.gas_auth_token(),
             parent=self,
         )
         if dialog.exec() != int(QDialog.DialogCode.Accepted):
@@ -190,6 +184,5 @@ class ExportEditorShell(QWidget):
         self.set_webhook_url(str(selected.get("webhook_url", "") or "").strip())
         self.set_gas_options(
             sheet_name=self.gas_sheet_name(),
-            auth_token=str(selected.get("auth_token", "") or "").strip(),
         )
         self.changed.emit()

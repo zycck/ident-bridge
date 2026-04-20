@@ -70,11 +70,10 @@ def _resolve_export_date(export_date: str | None = None) -> str:
 def _normalize_v2_options(
     job_name: str,
     gas_options: GasOptions | None,
-) -> tuple[str, str]:
+) -> str:
     raw = gas_options or {}
     sheet_name = str(raw.get("sheet_name", "") or "").strip() or str(job_name or "").strip()
-    auth_token = str(raw.get("auth_token", "") or "").strip()
-    return sheet_name, auth_token
+    return sheet_name
 
 
 def _payload_without_checksum(
@@ -116,12 +115,10 @@ def _compute_checksum(
 def _payload_object(
     job_name: str,
     sheet_name: str,
-    auth_token: str,
     export_date: str,
     chunk: GasChunkPlan,
 ) -> dict[str, Any]:
     payload = _payload_without_checksum(job_name, sheet_name, export_date, chunk)
-    payload["auth_token"] = auth_token
     payload["checksum"] = chunk.checksum
     return payload
 
@@ -129,13 +126,12 @@ def _payload_object(
 def _measure_chunk_bytes(
     job_name: str,
     sheet_name: str,
-    auth_token: str,
     export_date: str,
     chunk: GasChunkPlan,
 ) -> int:
     return len(
         json.dumps(
-            _payload_object(job_name, sheet_name, auth_token, export_date, chunk),
+            _payload_object(job_name, sheet_name, export_date, chunk),
             ensure_ascii=False,
             cls=_SqlJSONEncoder,
         ).encode("utf-8")
@@ -146,12 +142,11 @@ def _finalize_chunk(
     *,
     job_name: str,
     sheet_name: str,
-    auth_token: str,
     export_date: str,
     chunk: GasChunkPlan,
 ) -> GasChunkPlan:
     chunk.checksum = _compute_checksum(job_name, sheet_name, export_date, chunk)
-    chunk.chunk_bytes = _measure_chunk_bytes(job_name, sheet_name, auth_token, export_date, chunk)
+    chunk.chunk_bytes = _measure_chunk_bytes(job_name, sheet_name, export_date, chunk)
     return chunk
 
 
@@ -188,7 +183,7 @@ def _split_chunks(
     gas_options: GasOptions | None = None,
     export_date: str | None = None,
 ) -> list[GasChunkPlan]:
-    sheet_name, auth_token = _normalize_v2_options(job_name, gas_options)
+    sheet_name = _normalize_v2_options(job_name, gas_options)
     export_date_value = _resolve_export_date(export_date)
     columns = list(result.columns)
     total_rows = result.count
@@ -207,7 +202,6 @@ def _split_chunks(
             _finalize_chunk(
                 job_name=job_name,
                 sheet_name=sheet_name,
-                auth_token=auth_token,
                 export_date=export_date_value,
                 chunk=chunk,
             )
@@ -229,7 +223,6 @@ def _split_chunks(
         _finalize_chunk(
             job_name=job_name,
             sheet_name=sheet_name,
-            auth_token=auth_token,
             export_date=export_date_value,
             chunk=candidate,
         )
@@ -254,7 +247,6 @@ def _split_chunks(
         _finalize_chunk(
             job_name=job_name,
             sheet_name=sheet_name,
-            auth_token=auth_token,
             export_date=export_date_value,
             chunk=single,
         )
@@ -279,7 +271,6 @@ def _split_chunks(
             _finalize_chunk(
                 job_name=job_name,
                 sheet_name=sheet_name,
-                auth_token=auth_token,
                 export_date=export_date_value,
                 chunk=chunk,
             )
@@ -324,17 +315,16 @@ def build_gas_chunk_payload(
     gas_options: GasOptions | None = None,
     export_date: str | None = None,
 ) -> bytes:
-    sheet_name, auth_token = _normalize_v2_options(job_name, gas_options)
+    sheet_name = _normalize_v2_options(job_name, gas_options)
     export_date_value = _resolve_export_date(export_date)
     _finalize_chunk(
         job_name=job_name,
         sheet_name=sheet_name,
-        auth_token=auth_token,
         export_date=export_date_value,
         chunk=chunk,
     )
     return json.dumps(
-        _payload_object(job_name, sheet_name, auth_token, export_date_value, chunk),
+        _payload_object(job_name, sheet_name, export_date_value, chunk),
         ensure_ascii=False,
         cls=_SqlJSONEncoder,
     ).encode("utf-8")

@@ -67,7 +67,6 @@ class GasOptions(TypedDict, total=False):
     """Per-job delivery settings for the Google Apps Script sink."""
 
     sheet_name: str
-    auth_token: str
 
 
 # ---------------------------------------------------------------------------
@@ -164,7 +163,6 @@ def _normalize_export_jobs(raw_jobs: object) -> list[dict]:
         if isinstance(gas_options, Mapping):
             normalized_gas_options = {
                 "sheet_name": str(gas_options.get("sheet_name", "") or "").strip(),
-                "auth_token": str(gas_options.get("auth_token", "") or "").strip(),
             }
             if any(normalized_gas_options.values()):
                 job["gas_options"] = normalized_gas_options
@@ -235,8 +233,7 @@ class ConfigManager:
                 gas_options = job.get("gas_options")
                 if isinstance(gas_options, dict):
                     gas_options["sheet_name"] = str(gas_options.get("sheet_name", "") or "").strip()
-                    gas_options["auth_token"] = str(gas_options.get("auth_token", "") or "").strip()
-                    for legacy_key in ("header_row", "dedupe_key_columns", "scheme_id"):
+                    for legacy_key in ("auth_token", "header_row", "dedupe_key_columns", "scheme_id"):
                         gas_options.pop(legacy_key, None)
                 for entry in job.get("history") or []:
                     if entry.get("trigger") == "auto":

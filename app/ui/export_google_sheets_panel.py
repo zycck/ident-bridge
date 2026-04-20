@@ -1,6 +1,7 @@
 """Google Sheets options panel for Google Apps Script export targets."""
 
 import json
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -22,10 +23,20 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.core.app_logger import get_logger
 from app.core.constants import GOOGLE_SCRIPT_HOSTS, USER_AGENT
 from app.ui.theme import Theme
 from app.ui.threading import run_worker
 from app.ui.widgets import HeaderLabel
+
+_log = get_logger(__name__)
+
+
+class _SheetOptionsFetchError(RuntimeError):
+    def __init__(self, user_message: str, *, debug_message: str = "") -> None:
+        super().__init__(user_message)
+        self.user_message = user_message
+        self.debug_message = debug_message or user_message
 
 
 def _looks_like_gas_url(url: str) -> bool:
@@ -33,7 +44,76 @@ def _looks_like_gas_url(url: str) -> bool:
     return (parsed.hostname or "").lower() in GOOGLE_SCRIPT_HOSTS
 
 
-def fetch_google_sheet_options(url: str, *, auth_token: str = "", timeout: float = 5.0) -> list[str]:
+def _preview_sheet_options_body(raw_body: bytes) -> str:
+    preview = raw_body.decode("utf-8", errors="replace").strip()
+    if not preview:
+        return ""
+    return " ".join(preview.split())[:240]
+
+
+def _build_sheet_options_user_message(*, error_code: str = "", message: str = "", fallback: str) -> str:
+    code = str(error_code or "").strip().upper()
+    text = str(message or "").strip()
+
+    if code == "UNAUTHORIZED":
+        return "Доступ к обработчику запрещён. Проверьте публикацию проекта Apps Script и права доступа."
+    if code in {"INVALID_ACTION", "INVALID_REQUEST_METHOD"}:
+        return (
+            "Адрес обработки настроен неверно. Проверьте, что указан адрес /exec "
+            "опубликованного веб-приложения Apps Script."
+        )
+    if code == "MALFORMED_JSON":
+        return (
+            "Адрес обработки ответил некорректно. Проверьте, что указан адрес /exec "
+            "опубликованного веб-приложения Apps Script."
+        )
+    if text:
+        return text
+    return fallback
+def _parse_sheet_options_payload(raw_body: bytes, *, target_url: str) -> dict[str, object]:
+    if not raw_body or not raw_body.strip():
+        raise _SheetOptionsFetchError(
+            "Адрес обработки вернул пустой ответ. Проверьте, что указан адрес /exec "
+            "опубликованного веб-приложения Apps Script.",
+            debug_message=f"URL={target_url}; response_preview=<empty>",
+        )
+
+    try:
+        payload = json.loads(raw_body.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        preview = _preview_sheet_options_body(raw_body) or "<empty>"
+        raise _SheetOptionsFetchError(
+            "Адрес обработки вернул не JSON. Проверьте, что указан адрес /exec "
+            "опубликованного веб-приложения Apps Script.",
+            debug_message=f"URL={target_url}; response_preview={preview}",
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise _SheetOptionsFetchError(
+            "Адрес обработки вернул неожиданный ответ. Проверьте публикацию проекта Apps Script.",
+            debug_message=f"URL={target_url}; payload_type={type(payload).__name__}",
+        )
+
+    if payload.get("ok") is False:
+        error_code = str(payload.get("error_code") or "").strip()
+        message = str(payload.get("message") or "").strip()
+        user_message = _build_sheet_options_user_message(
+            error_code=error_code,
+            message=message,
+            fallback="Не удалось получить список листов от Apps Script.",
+        )
+        raise _SheetOptionsFetchError(
+            user_message,
+            debug_message=(
+                f"URL={target_url}; error_code={error_code or '<none>'}; "
+                f"message={message or '<empty>'}"
+            ),
+        )
+
+    return payload
+
+
+def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
     parsed = urllib.parse.urlsplit((url or "").strip())
     if not parsed.scheme or not parsed.netloc:
         return []
@@ -41,8 +121,6 @@ def fetch_google_sheet_options(url: str, *, auth_token: str = "", timeout: float
     query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
     filtered_query = [(key, value) for key, value in query_items if key != "action"]
     filtered_query.append(("action", "sheets"))
-    if auth_token.strip():
-        filtered_query.append(("token", auth_token.strip()))
     target_url = urllib.parse.urlunsplit(
         (
             parsed.scheme,
@@ -58,11 +136,29 @@ def fetch_google_sheet_options(url: str, *, auth_token: str = "", timeout: float
         headers={"Accept": "application/json", "User-Agent": USER_AGENT},
         method="GET",
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-
-    if not isinstance(payload, dict):
-        return []
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            payload = _parse_sheet_options_payload(response.read(), target_url=target_url)
+    except urllib.error.HTTPError as exc:
+        raw_body = exc.read()
+        preview = _preview_sheet_options_body(raw_body) or "<empty>"
+        try:
+            payload = _parse_sheet_options_payload(raw_body, target_url=target_url)
+        except _SheetOptionsFetchError as payload_exc:
+            raise _SheetOptionsFetchError(
+                payload_exc.user_message,
+                debug_message=f"HTTP {exc.code}; {payload_exc.debug_message}",
+            ) from exc
+        raise _SheetOptionsFetchError(
+            "Не удалось открыть адрес обработки. Проверьте, что скрипт опубликован как "
+            "веб-приложение и указан адрес /exec.",
+            debug_message=f"HTTP {exc.code}; URL={target_url}; response_preview={preview}",
+        ) from exc
+    except urllib.error.URLError as exc:
+        raise _SheetOptionsFetchError(
+            "Не удалось подключиться к адресу обработки. Проверьте ссылку и доступ к сети.",
+            debug_message=f"URL={target_url}; reason={exc.reason}",
+        ) from exc
 
     raw = payload.get("sheets")
     if raw is None:
@@ -86,17 +182,28 @@ class _SheetOptionsWorker(QObject):
     error = Signal(str)
     finished = Signal()
 
-    def __init__(self, url: str, auth_token: str) -> None:
+    def __init__(self, url: str) -> None:
         super().__init__()
         self._url = url
-        self._auth_token = auth_token
 
     @Slot()
     def run(self) -> None:
         try:
-            self.result.emit(fetch_google_sheet_options(self._url, auth_token=self._auth_token))
-        except Exception as exc:  # noqa: BLE001
-            self.error.emit(str(exc))
+            self.result.emit(fetch_google_sheet_options(self._url))
+        except _SheetOptionsFetchError as exc:
+            _log.warning(
+                "Не удалось обновить список листов Google Таблиц: %s; url=%s; details=%s",
+                exc.user_message,
+                self._url,
+                exc.debug_message,
+            )
+            self.error.emit(exc.user_message)
+        except Exception:  # noqa: BLE001
+            _log.exception(
+                "Не удалось обновить список листов Google Таблиц: url=%s",
+                self._url,
+            )
+            self.error.emit("Не удалось обновить список листов. Подробности есть в окне отладки.")
         finally:
             self.finished.emit()
 
@@ -512,11 +619,6 @@ class ExportGoogleSheetsPanel(QWidget):
         )
         root.addWidget(self._alias_hint_label)
 
-        self._auth_token_edit = QLineEdit(self)
-        self._auth_token_edit.setPlaceholderText("Ключ доступа")
-        self._auth_token_edit.textChanged.connect(self.changed)
-        form.addRow("Ключ доступа", self._auth_token_edit)
-
         self._status_label = QLabel("", self)
         self._status_label.setStyleSheet(
             f"color: {Theme.gray_500}; font-size: {Theme.font_size_xs}pt;"
@@ -534,21 +636,13 @@ class ExportGoogleSheetsPanel(QWidget):
     def sheet_name(self) -> str:
         return self._sheet_name_field.text()
 
-    def auth_token(self) -> str:
-        return self._auth_token_edit.text().strip()
-
     def set_gas_options(
         self,
         *,
         sheet_name: str,
-        auth_token: str,
     ) -> None:
-        with (
-            QSignalBlocker(self._sheet_name_field),
-            QSignalBlocker(self._auth_token_edit),
-        ):
+        with QSignalBlocker(self._sheet_name_field):
             self._sheet_name_field.setText(sheet_name)
-            self._auth_token_edit.setText(auth_token)
 
     def set_sheet_options(self, options: list[str]) -> None:
         current = self.sheet_name()
@@ -569,7 +663,7 @@ class ExportGoogleSheetsPanel(QWidget):
 
         self._set_loading(True)
         self._status_label.setText("Обновляем список листов…")
-        worker = _SheetOptionsWorker(self._target_url, self.auth_token())
+        worker = _SheetOptionsWorker(self._target_url)
         run_worker(
             self,
             worker,
