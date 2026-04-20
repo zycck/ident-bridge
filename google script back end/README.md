@@ -1,33 +1,57 @@
 # Google Apps Script Webhook Backend
 
-This folder contains a compact Google Apps Script reference backend for chunked webhook ingest.
+This folder contains a single-file Google Apps Script backend for chunked webhook ingest into Google Sheets.
 
 ## What it does
 
 - Exposes global `doGet` and `doPost` entrypoints.
 - Accepts chunked ingest payloads with `protocol_version`, `job_name`, `run_id`, `chunk_index`, `total_chunks`, `total_rows`, `chunk_rows`, `chunk_bytes`, `schema`, and `records`.
-- Reads the data header once per request and writes data + audit ledger in one batched Sheets API call on the steady-state path.
-- Maintains idempotency primarily with `PropertiesService` and `CacheService`; the hidden ledger sheet named `_idem_ledger_v1` is audit-first and used only as a recovery fallback if the completion marker drifts.
-- Clears run-scoped property markers after the final chunk succeeds so temporary idempotency state does not accumulate across finished runs.
-- Applies schema policy v1:
-  - append-right additions are allowed
-  - reorder-by-name is allowed
-  - missing, removed, rename-like, empty, and duplicate columns are blocked
+- Keeps the external HTTP contract unchanged while simplifying the internal Apps Script implementation into one file.
+- Uses `PropertiesService` and `CacheService` for fast idempotency and the hidden `_idem_ledger_v1` sheet as an audit/recovery fallback.
+- Stores dedupe state in the hidden narrow index sheet `_dedupe_index_v2`.
+- Lazily migrates per-target dedupe state from legacy `_dedupe_index_v1` into `_dedupe_index_v2` on the first successful write for that target.
 - Uses Apps Script V8 / ES6+ syntax and the Advanced Sheets service.
 
-## Files
+## File layout
 
-- `src/00_entry.js` - web entrypoints and request orchestration
-- `src/10_ingest.js` - request parsing, validation, schema policy, and ack builders
-- `src/20_storage.js` - `SheetsStore`, idempotency state, and batched Sheets writes
-- `src/30_shared.js` - config, logging, JSON responses, and shared helpers
+- `src/backend.js` - the full backend implementation, split internally into these sections:
+  - config and hidden-sheet schema
+  - generic utilities and hashing
+  - logging / error / JSON response helpers
+  - request normalization / protocol validation / ACK builders
+  - schema planning
+  - idempotency state
+  - dedupe index v2 with lazy migration from `_dedupe_index_v1`
+  - spreadsheet bootstrap and request context loading
+  - chunk preparation and batched Sheets writes
+  - `doGet` / `doPost`
+
+## Hidden sheets
+
+- `ingest_chunks_v1` - default target data sheet
+- `_idem_ledger_v1` - idempotency audit ledger
+- `_dedupe_index_v2` - active dedupe index
+- `_dedupe_index_v1` - legacy read-only source used only for lazy migration compatibility
+
+### `_dedupe_index_v2` layout
+
+Each dedupe row is narrow and bucket-scoped:
+
+```text
+target_key | bucket_id | hashes_blob | updated_at
+```
+
+- One row = one `target_key` + one hex bucket `00..ff`
+- `hashes_blob` stores sorted SHA-256 hashes separated by `\n`
+- Runtime reads only the first 4 columns from the v2 index sheet
+- Runtime writes only touched bucket rows instead of rewriting a 260-column wide row
 
 ## Deployment
 
 1. Open the Apps Script editor for your target spreadsheet or create a standalone Apps Script project.
 2. Copy the contents of this folder into the script project.
-3. In the Apps Script editor, make sure the manifest includes the Advanced Sheets service (`Sheets`, `sheets`, `v4`), or enable it in **Services** for existing projects.
-4. If you are using a standalone project, set `targetSpreadsheetId` in `src/30_shared.js`.
+3. Make sure the manifest includes the Advanced Sheets service (`Sheets`, `sheets`, `v4`), or enable it in **Services** for an existing project.
+4. If you are using a standalone project, set `targetSpreadsheetId` in `src/backend.js`.
 5. Create a deployment as a Web App.
 6. Set access to the intended audience and execute as the deploying user.
 7. Send POST requests with JSON payloads to the deployed web app URL.
@@ -59,7 +83,7 @@ The backend expects a JSON body with this shape:
 
 ## Acknowledgements
 
-Successful responses return `status: "accepted"` when the schema is unchanged or reordered-by-name, and `status: "schema_extended"` when new columns are appended to the right. A successful response looks like:
+Successful responses return `status: "accepted"` when the schema is unchanged and `status: "schema_extended"` when new columns are inserted while preserving the order of existing columns. A successful response looks like:
 
 ```json
 {
@@ -94,12 +118,12 @@ Failures return:
 }
 ```
 
-## Limitations
+## Notes
 
 - The implementation targets one spreadsheet at a time.
 - Apps Script does not provide a true transactional rollback for sheet writes.
-- The schema policy is intentionally strict and blocks ambiguous column changes.
-- Logging is intentionally conservative and avoids payload values, URLs, and tokens.
+- Schema policy stays strict and blocks ambiguous rename/remove/reorder cases.
+- Logging stays conservative and avoids payload values, URLs, and tokens.
 - `schema.mode` must be `append_only_v1`.
 - `chunk_index` is 1-based and must be within `1..total_chunks`.
-- The first bootstrap request may issue extra structural spreadsheet calls to create or configure sheets.
+- The first bootstrap request may issue extra structural spreadsheet calls to create hidden sheets and initialize headers.

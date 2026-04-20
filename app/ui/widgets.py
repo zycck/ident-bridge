@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from app.ui.theme import Theme
 
-StatusKind = Literal["neutral", "ok", "error", "warning", "info"]
+type StatusKind = Literal["neutral", "ok", "error", "warning", "info"]
 
 
 def _apply_light_popup_palette(widget: QWidget) -> None:

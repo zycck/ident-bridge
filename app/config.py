@@ -4,14 +4,16 @@ import base64
 import json
 import logging
 import os
+import uuid
 import threading
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum, UNIQUE, verify
+from collections.abc import Iterator, Mapping
 from pathlib import Path
-from typing import Iterator, TypedDict
+from typing import NotRequired, TypedDict
 
 from app.core import dpapi
 from app.core.constants import CONFIG_DIR_NAME
@@ -28,21 +30,47 @@ class SqlInstance:
     display: str
 
 
-@dataclass(slots=True)
+@dataclass(kw_only=True, slots=True)
 class QueryResult:
+    """Materialized SQL result set with row count and timing metadata."""
+
     columns: list[str]
     rows:    list[tuple]
     count:   int
     duration_ms: int
+    duration_us: int = 0
     truncated: bool = False
 
+    def __post_init__(self) -> None:
+        if self.duration_us <= 0:
+            self.duration_us = max(0, int(self.duration_ms)) * 1000
+        self.duration_ms = max(0, int(self.duration_us // 1000))
 
-@dataclass(slots=True)
+
+@dataclass(kw_only=True, slots=True)
 class SyncResult:
+    """Outcome of one export attempt reported back to the UI."""
+
     success:     bool
     rows_synced: int
     error:       str | None
     timestamp:   datetime
+    duration_us: int = 0
+    sql_duration_us: int = 0
+
+    def __post_init__(self) -> None:
+        self.duration_us = max(0, int(self.duration_us))
+        self.sql_duration_us = max(0, int(self.sql_duration_us))
+
+
+class GasOptions(TypedDict, total=False):
+    """Per-job delivery settings for the Google Apps Script sink."""
+
+    sheet_name: str
+    header_row: int
+    dedupe_key_columns: list[str]
+    auth_token: str
+    scheme_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -56,25 +84,29 @@ class ExportHistoryEntry(TypedDict, total=False):
     trigger: str   # "manual" | "scheduled" | "test"
     ok:      bool
     err:     str
+    duration_us: int
+    sql_duration_us: int
 
 
-class TriggerType(str, Enum):
+@verify(UNIQUE)
+class TriggerType(StrEnum):
     """How an export run was initiated."""
     MANUAL    = "manual"
     SCHEDULED = "scheduled"   # was "auto" in older configs — migrated on read
     TEST      = "test"        # dry-run via TestRunDialog
 
 
-class ExportJob(TypedDict, total=False):
+class ExportJob(TypedDict):
     """Configuration for a single named export job."""
     id:               str
     name:             str
-    sql_query:        str
-    webhook_url:      str
-    schedule_enabled: bool
-    schedule_mode:    str   # "daily" | "hourly"
-    schedule_value:   str   # "14:30" | "4"
-    history:          list[ExportHistoryEntry]
+    sql_query:        NotRequired[str]
+    webhook_url:      NotRequired[str]
+    gas_options:      NotRequired[GasOptions]
+    schedule_enabled: NotRequired[bool]
+    schedule_mode:    NotRequired[str]
+    schedule_value:   NotRequired[str]
+    history:          NotRequired[list[ExportHistoryEntry]]
 
 
 class AppConfig(TypedDict, total=False):
@@ -122,6 +154,19 @@ def _default_config_dir() -> Path:
     return Path.home() / ".config" / CONFIG_DIR_NAME
 
 
+def _normalize_export_jobs(raw_jobs: object) -> list[dict]:
+    normalized: list[dict] = []
+    if not isinstance(raw_jobs, list):
+        return normalized
+
+    for raw_job in raw_jobs:
+        job = dict(raw_job) if isinstance(raw_job, Mapping) else {}
+        job["id"] = str(job.get("id") or uuid.uuid4())
+        job["name"] = str(job.get("name", "") or "")
+        normalized.append(job)
+    return normalized
+
+
 # ---------------------------------------------------------------------------
 # ConfigManager
 # ---------------------------------------------------------------------------
@@ -132,6 +177,8 @@ ENCRYPTED_KEYS: frozenset[str] = frozenset({"sql_user", "sql_password"})
 
 
 class ConfigManager:
+    """Thread-safe loader/saver for the persisted application config."""
+
     def __init__(self) -> None:
         self._lock = threading.RLock()
         # Batch mode: update() mutates in-memory only while depth > 0, and
@@ -146,6 +193,7 @@ class ConfigManager:
             self._cfg = self.load()
 
     def load(self) -> AppConfig:
+        """Load config from disk, decrypt secrets, and normalize legacy fields."""
         with self._lock:
             if not CONFIG_PATH.exists():
                 return self._cfg
@@ -177,9 +225,37 @@ class ConfigManager:
 
             # Backward-compat migration: trigger "auto" → "scheduled"
             for job in data.get("export_jobs") or []:
+                gas_options = job.get("gas_options")
+                if isinstance(gas_options, dict):
+                    header_row = gas_options.get("header_row", 1)
+                    try:
+                        gas_options["header_row"] = max(1, int(header_row))
+                    except (TypeError, ValueError):
+                        gas_options["header_row"] = 1
+                    dedupe_columns = gas_options.get("dedupe_key_columns") or []
+                    gas_options["dedupe_key_columns"] = [
+                        str(column).strip()
+                        for column in dedupe_columns
+                        if str(column).strip()
+                    ]
+                    gas_options["auth_token"] = str(gas_options.get("auth_token", "") or "").strip()
+                    gas_options["scheme_id"] = str(gas_options.get("scheme_id", "") or "").strip()
                 for entry in job.get("history") or []:
                     if entry.get("trigger") == "auto":
                         entry["trigger"] = "scheduled"
+                    if "duration_us" not in entry and "duration_ms" in entry:
+                        try:
+                            entry["duration_us"] = max(0, int(entry["duration_ms"])) * 1000
+                        except (TypeError, ValueError):
+                            entry["duration_us"] = 0
+                    if "sql_duration_us" not in entry and "sql_duration_ms" in entry:
+                        try:
+                            entry["sql_duration_us"] = max(0, int(entry["sql_duration_ms"])) * 1000
+                        except (TypeError, ValueError):
+                            entry["sql_duration_us"] = 0
+
+            if "export_jobs" in data:
+                data["export_jobs"] = _normalize_export_jobs(data.get("export_jobs"))
 
             self._cfg = AppConfig(
                 **{k: v for k, v in data.items() if k in _APP_CONFIG_KEYS}
@@ -187,11 +263,14 @@ class ConfigManager:
             return self._cfg
 
     def save(self, cfg: AppConfig) -> None:
+        """Persist config atomically after encrypting secret fields."""
         with self._lock:
-            self._cfg = AppConfig(
-                **{k: v for k, v in dict(cfg).items() if k in _APP_CONFIG_KEYS}
-            )  # type: ignore[typeddict-item]
             out: dict = dict(cfg)
+            if "export_jobs" in out:
+                out["export_jobs"] = _normalize_export_jobs(out.get("export_jobs"))
+            self._cfg = AppConfig(
+                **{k: v for k, v in out.items() if k in _APP_CONFIG_KEYS}
+            )  # type: ignore[typeddict-item]
             for key in ENCRYPTED_KEYS:
                 if key in out and out[key]:
                     encrypted_bytes = dpapi.encrypt(out[key])
@@ -276,9 +355,11 @@ class ConfigManager:
                     self.save(self._cfg)
 
     def get(self, key: str) -> str | None:
+        """Return a plain string config value from the in-memory snapshot."""
         with self._lock:
             return self._cfg.get(key)  # type: ignore[return-value]
 
     def set(self, key: str, value: str) -> None:
+        """Set one plain string config value and persist it immediately."""
         with self._lock:
             self._cfg[key] = value  # type: ignore[literal-required]

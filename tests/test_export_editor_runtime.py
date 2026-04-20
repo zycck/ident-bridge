@@ -12,6 +12,8 @@ def _success_result() -> SyncResult:
         rows_synced=7,
         error=None,
         timestamp=datetime(2026, 1, 1, 12, 5, 0, tzinfo=timezone.utc),
+        duration_us=12_345,
+        sql_duration_us=7_500,
     )
 
 
@@ -23,13 +25,15 @@ def test_runtime_state_builds_success_status_and_history_entry() -> None:
     status_kind, status_text, entry = state.on_success(_success_result())
 
     assert status_kind == "ok"
-    assert status_text == "✓ 7 строк · 12:05:00"
+    assert status_text == "✓ 7 строк · 12:05:00 · 12.3 мс"
     assert entry == {
         "ts": "2026-01-01 12:05:00",
         "trigger": TriggerType.MANUAL.value,
         "ok": True,
         "rows": 7,
         "err": "",
+        "duration_us": 12_345,
+        "sql_duration_us": 7_500,
     }
     assert state.consecutive_failures == 0
 
@@ -79,6 +83,7 @@ def test_runtime_state_restores_status_from_latest_history_entry() -> None:
             "ok": True,
             "rows": 3,
             "err": "",
+            "duration_us": 9_000,
         }
     )
     err_kind, err_text = ExportEditorRuntimeState.status_from_latest_entry(
@@ -91,5 +96,5 @@ def test_runtime_state_restores_status_from_latest_history_entry() -> None:
         }
     )
 
-    assert (ok_kind, ok_text) == ("ok", "✓ 3 строк · 09:10:11")
+    assert (ok_kind, ok_text) == ("ok", "✓ 3 строк · 09:10:11 · 9 мс")
     assert (err_kind, err_text) == ("error", "✗ Ошибка отправки данных.")

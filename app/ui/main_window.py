@@ -1,8 +1,12 @@
 """MainWindow — top-level application shell for iDentBridge."""
-from PySide6.QtCore import Qt, Slot
+from typing import override
+
+from PySide6.QtCore import QEvent, Qt, Slot
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QMainWindow,
     QSystemTrayIcon,
+    QWidget,
 )
 
 from app.config import ConfigManager
@@ -112,7 +116,8 @@ class MainWindow(QMainWindow):
     # Maximize toggle
     # ------------------------------------------------------------------
 
-    def changeEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def changeEvent(self, event: QEvent) -> None:
         if hasattr(self, "_chrome"):
             self._chrome.handle_change_event(event)
         super().changeEvent(event)
@@ -173,5 +178,6 @@ class MainWindow(QMainWindow):
     def _cleanup(self) -> None:
         self._lifecycle.cleanup()
 
-    def closeEvent(self, event) -> None:  # type: ignore[override]
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
         self._lifecycle.handle_close_event(event)

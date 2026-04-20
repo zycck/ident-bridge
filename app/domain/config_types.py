@@ -6,8 +6,6 @@ For now re-exports the definitions still physically living in
 Stage 5 while keeping the legacy module as a shim.
 """
 
-from __future__ import annotations
-
 from app.config import (
     AppConfig,
     ExportHistoryEntry,

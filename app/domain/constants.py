@@ -5,8 +5,6 @@ so new call-sites can import from the canonical
 ``app.domain.constants`` path.
 """
 
-from __future__ import annotations
-
 from app.core.constants import *  # noqa: F401,F403
 from app.core import constants as _legacy
 

@@ -2,13 +2,10 @@
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 
-from app.core.app_logger import get_logger
 from app.core.updater import GITHUB_REPO
 from app.ui.dashboard_widget import DashboardWidget
 from app.ui.threading import run_worker
 from app.workers.update_worker import UpdateApplyWorker, UpdateDownloadWorker, UpdateWorker
-
-_log = get_logger(__name__)
 
 
 class UpdateFlowCoordinator(QObject):
@@ -30,6 +27,7 @@ class UpdateFlowCoordinator(QObject):
         self._update_apply_worker: object | None = None
         self._update_download_running = False
         self._update_apply_running = False
+        self._pending_update_digest: str | None = None
 
     def run_silent_check(self) -> None:
         worker = UpdateWorker(current_version=self._current_version, repo=GITHUB_REPO)
@@ -38,13 +36,14 @@ class UpdateFlowCoordinator(QObject):
             worker,
             pin_attr="_update_worker",
             entry="check",
-            connect_signals=lambda update_worker, _thread: update_worker.update_available.connect(
+            connect_signals=lambda update_worker, _thread: update_worker.update_available_with_digest.connect(
                 self.on_update_available
             ),
         )
 
-    @Slot(str, str)
-    def on_update_available(self, version: str, url: str) -> None:
+    @Slot(str, str, object)
+    def on_update_available(self, version: str, url: str, digest: object | None) -> None:
+        self._pending_update_digest = digest if isinstance(digest, str) else None
         self._window.show_tray_message(
             "Доступно обновление",
             f"Версия {version} готова к установке.",
@@ -59,7 +58,7 @@ class UpdateFlowCoordinator(QObject):
         self._update_download_running = True
         self._dashboard.set_update_in_progress(True)
 
-        worker = UpdateDownloadWorker(url)
+        worker = UpdateDownloadWorker(url, expected_digest=self._pending_update_digest)
         run_worker(
             self,
             worker,

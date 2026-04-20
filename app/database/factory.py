@@ -10,8 +10,6 @@ Current backends: ``mssql`` → :class:`app.core.sql_client.SqlClient`
 the audit plan).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 
 from app.config import AppConfig

@@ -78,9 +78,7 @@ def encrypt(plaintext: str) -> bytes:
         ctypes.byref(blob_out),
     )
     if not ok:
-        raise RuntimeError(
-            f"CryptProtectData failed (error {kernel32.GetLastError()})"
-        )
+        raise ctypes.WinError()
 
     try:
         return bytes(ctypes.string_at(blob_out.pbData, blob_out.cbData))
@@ -105,9 +103,7 @@ def decrypt(ciphertext: bytes) -> str:
         ctypes.byref(blob_out),
     )
     if not ok:
-        raise RuntimeError(
-            f"CryptUnprotectData failed (error {kernel32.GetLastError()})"
-        )
+        raise ctypes.WinError()
 
     try:
         raw = bytes(ctypes.string_at(blob_out.pbData, blob_out.cbData))

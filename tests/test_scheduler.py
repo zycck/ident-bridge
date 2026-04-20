@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 import pytest
 from PySide6.QtCore import QObject
 
-from app.core.scheduler import SyncScheduler, schedule_value_is_valid
+from app.core.scheduler import ScheduleMode, SyncScheduler, schedule_value_is_valid
 
 
 @pytest.fixture
@@ -26,6 +26,11 @@ def test_configure_sets_mode_and_value(scheduler):
     scheduler.configure("hourly", "1")
     scheduler.configure("minutely", "5")
     scheduler.configure("secondly", "10")
+
+
+def test_schedule_mode_is_str_enum():
+    assert issubclass(ScheduleMode, str)
+    assert ScheduleMode("daily") is ScheduleMode.DAILY
 
 
 @pytest.mark.parametrize("mode,value", [("garbage", "14:30"), ("cron", "* * * * *")])

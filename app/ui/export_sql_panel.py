@@ -1,6 +1,6 @@
 """SQL editor section for ExportJobEditor."""
 
-from PySide6.QtCore import Signal, Slot
+from PySide6.QtCore import QSignalBlocker, Signal, Slot
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -62,11 +62,8 @@ class ExportSqlPanel(QWidget):
         return self._query_edit.toPlainText().strip()
 
     def set_sql_text(self, sql: str) -> None:
-        self._query_edit.blockSignals(True)
-        try:
+        with QSignalBlocker(self._query_edit):
             self._query_edit.setPlainText(sql)
-        finally:
-            self._query_edit.blockSignals(False)
 
     def refresh_syntax(self) -> None:
         sql = self.sql_text()

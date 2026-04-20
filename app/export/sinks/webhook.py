@@ -15,8 +15,6 @@ Design choices:
   Enum) so we don't pay ``default=str`` ``repr()`` cost on every cell.
 """
 
-from __future__ import annotations
-
 import datetime as _dt
 import decimal
 import enum
@@ -27,7 +25,7 @@ import ssl
 import time
 import urllib.request
 import uuid
-from typing import Any
+from typing import Any, final
 
 from app.config import QueryResult
 
@@ -81,6 +79,7 @@ def build_webhook_payload(job_name: str, result: QueryResult) -> bytes:
     ).encode("utf-8")
 
 
+@final
 class WebhookSink:
     """POST a :class:`QueryResult` as JSON to an HTTP(S) endpoint.
 

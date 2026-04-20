@@ -1,16 +1,10 @@
-"""Shared presentation-layer formatters.
-
-Keeps the "today/yesterday/date HH:MM:SS" logic in one place — the two
-existing copies (ExportJobTilePresenter and HistoryRowPresenter) differed
-only in label casing and whether two-digit-year suffixes should appear
-for old entries. One function with keyword toggles now covers both.
-"""
-
-from __future__ import annotations
+"""Shared presentation-layer formatters."""
 
 from datetime import datetime, timedelta
 
-__all__ = ["format_relative_timestamp"]
+from app.core.formatters import format_duration_compact
+
+__all__ = ["format_duration_compact", "format_relative_timestamp"]
 
 
 def format_relative_timestamp(
@@ -30,7 +24,7 @@ def format_relative_timestamp(
       ``include_year_on_other=True``; otherwise falls back to ``DD.MM``
       (previous behaviour in ExportJobTile).
     * Returns the original string unchanged when the input can't be
-      parsed — no exceptions bubble out of a UI formatter.
+      parsed - no exceptions bubble out of a UI formatter.
     """
     if not ts or len(ts) < 16:
         return ts

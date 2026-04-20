@@ -10,9 +10,8 @@ Marking the protocol ``runtime_checkable`` lets tests assert structural
 conformance without forcing inheritance.
 """
 
-from __future__ import annotations
-
-from typing import Callable, Protocol, runtime_checkable
+from collections.abc import Callable
+from typing import Protocol, runtime_checkable
 
 from app.config import QueryResult
 

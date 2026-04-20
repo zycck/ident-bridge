@@ -1,6 +1,7 @@
+import hashlib
 import json
-import os
 import ssl
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -8,7 +9,9 @@ import time
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
+from string import hexdigits
 
+from app.core.app_logger import get_logger
 from app.core.constants import (
     EXE_NAME,
     GITHUB_API_URL,
@@ -21,9 +24,25 @@ _DETACHED_FLAGS = (
     getattr(subprocess, "DETACHED_PROCESS", 0)
     | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
 )
+_log = get_logger(__name__)
 
 
-def _pick_download_url(release_data: dict) -> str | None:
+def _normalize_digest(digest: object) -> str | None:
+    if not isinstance(digest, str):
+        return None
+
+    digest = digest.strip()
+    if not digest.startswith("sha256:"):
+        return None
+
+    value = digest.split(":", 1)[1].strip()
+    if len(value) != 64 or any(char not in hexdigits for char in value):
+        return None
+
+    return f"sha256:{value.lower()}"
+
+
+def _pick_download_asset(release_data: dict) -> tuple[str, str | None] | None:
     """Choose the most appropriate packaged update asset from a release."""
     assets = release_data.get("assets", [])
     if not assets:
@@ -34,15 +53,22 @@ def _pick_download_url(release_data: dict) -> str | None:
         name = str(asset.get("name") or "").lower()
         url = asset.get("browser_download_url")
         if name == expected_name and url:
-            return url
+            return (url, _normalize_digest(asset.get("digest")))
 
     for asset in assets:
         name = str(asset.get("name") or "").lower()
         url = asset.get("browser_download_url")
         if name.endswith(".exe") and url:
-            return url
+            return (url, _normalize_digest(asset.get("digest")))
 
     return None
+
+
+def _pick_download_url(release_data: dict) -> str | None:
+    asset = _pick_download_asset(release_data)
+    if asset is None:
+        return None
+    return asset[0]
 
 
 def _parse_version(version: str) -> tuple[int, ...]:
@@ -66,18 +92,18 @@ def get_exe_path() -> str:
 
 def cleanup_old_exe() -> None:
     """Remove leftover self-update artifacts from a previous run."""
-    old_exe = os.path.join(os.path.dirname(get_exe_path()), f"{EXE_NAME}_old.exe")
+    old_exe = Path(get_exe_path()).parent / f"{EXE_NAME}_old.exe"
     for attempt in range(5):
         try:
-            if os.path.exists(old_exe):
-                os.remove(old_exe)
+            if old_exe.exists():
+                old_exe.unlink()
             return
         except (OSError, PermissionError):
             if attempt < 4:
                 time.sleep(0.5)
 
 
-def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
+def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str, str | None] | None:
     url = GITHUB_API_URL.format(repo=repo)
     headers = {"User-Agent": USER_AGENT}
     request = urllib.request.Request(url, headers=headers)
@@ -85,32 +111,56 @@ def check_latest(repo: str = GITHUB_REPO) -> tuple[str, str] | None:
     try:
         with urllib.request.urlopen(request, context=ssl_ctx, timeout=10) as resp:
             data = json.loads(resp.read().decode())
-        download_url = _pick_download_url(data)
-        if not download_url:
+        asset = _pick_download_asset(data)
+        if not asset:
             return None
-        return (data["tag_name"], download_url)
+        download_url, digest = asset
+        return (data["tag_name"], download_url, digest)
     except Exception:
         return None
 
 
-def download_update(download_url: str) -> str:
+def download_update(download_url: str, expected_digest: str | None = None) -> str:
     """Download the update payload to a temporary file and return its path."""
-    new_exe = os.path.join(tempfile.gettempdir(), f"{EXE_NAME}_new.exe")
+    new_exe = Path(tempfile.gettempdir()) / f"{EXE_NAME}_new.exe"
 
     ssl_ctx = ssl.create_default_context()
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=ssl_ctx)
     )
     request = urllib.request.Request(download_url, headers={"User-Agent": USER_AGENT})
-    with opener.open(request, timeout=120) as resp, open(new_exe, "wb") as fh:
-        fh.write(resp.read())
+    hasher = hashlib.sha256()
+    with opener.open(request, timeout=120) as resp, new_exe.open("wb") as fh:
+        while True:
+            chunk = resp.read(64 * 1024)
+            if not chunk:
+                break
+            fh.write(chunk)
+            hasher.update(chunk)
 
-    if os.path.getsize(new_exe) <= MIN_DOWNLOAD_BYTES:
+    size = new_exe.stat().st_size
+    if size <= MIN_DOWNLOAD_BYTES:
         raise ValueError(
-            f"Downloaded file is too small ({os.path.getsize(new_exe)} bytes); "
+            f"Downloaded file is too small ({size} bytes); "
             "aborting update to avoid replacing the app with a corrupt file."
         )
-    return new_exe
+
+    actual_digest = f"sha256:{hasher.hexdigest()}"
+    if expected_digest is None:
+        _log.warning(
+            "Release asset digest is missing for %s; skipping verification.",
+            download_url,
+        )
+    else:
+        normalized_expected = _normalize_digest(expected_digest)
+        if normalized_expected is None:
+            raise ValueError("expected_digest must be a sha256:<hex> value")
+        if actual_digest != normalized_expected:
+            raise ValueError(
+                "Downloaded file digest mismatch: "
+                f"expected {normalized_expected}, got {actual_digest}"
+            )
+    return str(new_exe)
 
 
 def apply_downloaded_update(
@@ -125,16 +175,16 @@ def apply_downloaded_update(
     while keeping the fast script-generation + process-launch phase on the
     main thread.
     """
-    exe_path = get_exe_path()
-    new_exe = downloaded_path
+    exe_path = Path(get_exe_path())
+    new_exe = Path(downloaded_path)
 
-    old_exe = os.path.join(os.path.dirname(exe_path), f"{EXE_NAME}_old.exe")
+    old_exe = exe_path.with_name(f"{EXE_NAME}_old.exe")
     # Write script next to the exe (not world-writable tempdir) to prevent TOCTOU attacks.
-    script_dir = os.path.dirname(exe_path) if getattr(sys, "frozen", False) else tempfile.gettempdir()
+    script_dir = exe_path.parent if getattr(sys, "frozen", False) else Path(tempfile.gettempdir())
 
     if getattr(sys, "frozen", False):
         # В замороженном .exe нет интерпретатора Python — используем .bat через cmd.exe
-        script_path = os.path.join(script_dir, "_ident_updater.bat")
+        script_path = script_dir / "_ident_updater.bat"
         script = (
             "@echo off\n"
             ":wait\n"
@@ -145,10 +195,10 @@ def apply_downloaded_update(
             f'start "" "{exe_path}"\n'
             'del "%~f0"\n'
         )
-        with open(script_path, "w", encoding="ascii") as fh:
+        with script_path.open("w", encoding="ascii") as fh:
             fh.write(script)
         subprocess.Popen(
-            ["cmd.exe", "/c", script_path],
+            ["cmd.exe", "/c", str(script_path)],
             creationflags=_DETACHED_FLAGS,
             close_fds=True,
             stdin=subprocess.DEVNULL,
@@ -156,12 +206,12 @@ def apply_downloaded_update(
             stderr=subprocess.DEVNULL,
         )
     else:
-        script_path = os.path.join(script_dir, "_ident_updater.py")
+        script_path = script_dir / "_ident_updater.py"
         script = (
             "import os, shutil, time\n"
-            f"src = {new_exe!r}\n"
-            f"dst = {exe_path!r}\n"
-            f"old = {old_exe!r}\n"
+            f"src = {str(new_exe)!r}\n"
+            f"dst = {str(exe_path)!r}\n"
+            f"old = {str(old_exe)!r}\n"
             "for _ in range(10):\n"
             "    try:\n"
             "        os.rename(dst, old)\n"
@@ -171,10 +221,10 @@ def apply_downloaded_update(
             "shutil.move(src, dst)\n"
             "os.startfile(dst)\n"
         )
-        with open(script_path, "w", encoding="utf-8") as fh:
+        with script_path.open("w", encoding="utf-8") as fh:
             fh.write(script)
         subprocess.Popen(
-            [sys.executable, script_path],
+            [sys.executable, str(script_path)],
             creationflags=_DETACHED_FLAGS,
             close_fds=True,
             stdin=subprocess.DEVNULL,
@@ -187,6 +237,6 @@ def apply_downloaded_update(
     exit_hook()
 
 
-def download_and_apply(download_url: str) -> None:
-    downloaded_path = download_update(download_url)
+def download_and_apply(download_url: str, expected_digest: str | None = None) -> None:
+    downloaded_path = download_update(download_url, expected_digest=expected_digest)
     apply_downloaded_update(downloaded_path)

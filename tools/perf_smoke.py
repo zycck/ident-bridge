@@ -9,6 +9,7 @@ performance work can start from evidence instead of guesswork.
 import argparse
 import gc
 import os
+import random
 import sys
 import tempfile
 import tracemalloc
@@ -23,8 +24,9 @@ if str(REPO_ROOT) not in sys.path:
 from PySide6.QtWidgets import QApplication, QWidget
 
 import app.config as config_module
-from app.config import ConfigManager
+from app.config import ConfigManager, QueryResult
 from app.core.constants import APP_VERSION
+from app.export.sinks.google_apps_script import build_gas_chunk_payload, plan_gas_chunks
 from app.ui.debug_window import DebugWindow
 from app.ui.error_dialog import ErrorDialog
 from app.ui.export_job_editor import ExportJobEditor
@@ -138,6 +140,31 @@ def _run_test_run_dialog_cycle(app: QApplication, iteration: int) -> None:
     _dispose_widget(dialog, app)
 
 
+def _run_gas_chunking_cycle(app: QApplication, iteration: int) -> None:
+    rng = random.Random(20260420 + iteration)
+    rows = []
+    for idx in range(96):
+        label = "".join(rng.choice("abcдеёжз") for _ in range(rng.randint(1, 6)))
+        payload = "".join(rng.choice("01xyzЖ") for _ in range(rng.randint(0, 8)))
+        rows.append((idx, f"{label}-{idx}", payload))
+
+    result = QueryResult(
+        columns=["id", "label", "payload"],
+        rows=rows,
+        count=len(rows),
+        duration_ms=1,
+    )
+    chunks = plan_gas_chunks(
+        "Perf GAS",
+        result,
+        run_id=f"perf-gas-{iteration}",
+        max_rows_per_chunk=7,
+        max_payload_bytes=24_000,
+    )
+    for chunk in chunks:
+        build_gas_chunk_payload("Perf GAS", chunk)
+
+
 SCENARIOS = {
     "main-window": _run_main_window_cycle,
     "debug-window": _run_debug_window_cycle,
@@ -146,6 +173,7 @@ SCENARIOS = {
     "export-editor": _run_export_editor_cycle,
     "settings-widget": _run_settings_widget_cycle,
     "test-run-dialog": _run_test_run_dialog_cycle,
+    "gas-chunking": _run_gas_chunking_cycle,
 }
 
 

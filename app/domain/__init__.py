@@ -8,8 +8,6 @@ Currently re-exports from the legacy modules; the physical move to this
 package is planned for the final wave of the audit-plan Stage 5.
 """
 
-from __future__ import annotations
-
 from app.domain.config_types import (
     AppConfig,
     ExportHistoryEntry,

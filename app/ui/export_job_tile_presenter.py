@@ -2,10 +2,10 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from collections.abc import Mapping
 
-from app.config import ExportJob
 from app.ui.export_editor_runtime import format_short_user_error
-from app.ui.formatters import format_relative_timestamp
+from app.ui.formatters import format_duration_compact, format_relative_timestamp
 from app.ui.theme import Theme
 
 
@@ -18,7 +18,7 @@ class ExportJobTileDisplay:
 
 
 def build_export_job_tile_display(
-    job: ExportJob,
+    job: Mapping[str, object],
     *,
     now: datetime | None = None,
 ) -> ExportJobTileDisplay:
@@ -32,7 +32,7 @@ def build_export_job_tile_display(
     )
 
 
-def _build_status_text(job: ExportJob, now: datetime) -> str:
+def _build_status_text(job: Mapping[str, object], now: datetime) -> str:
     history = job.get("history") or []
     if not history:
         return "Ещё не запускалось"
@@ -40,20 +40,26 @@ def _build_status_text(job: ExportJob, now: datetime) -> str:
     latest = history[0]
     if latest.get("ok"):
         ts_short = _format_short_ts(latest.get("ts", ""), now=now)
-        return f"✓ {latest.get('rows', 0)} строк · {ts_short}"
+        duration_us = int(latest.get("duration_us") or 0)
+        duration_suffix = (
+            f" · {format_duration_compact(duration_us)}"
+            if duration_us > 0
+            else ""
+        )
+        return f"✓ {latest.get('rows', 0)} строк · {ts_short}{duration_suffix}"
 
     err = latest.get("err", "Ошибка")
     return f"✗ {format_short_user_error(err, max_length=40)}"
 
 
-def _build_status_color(job: ExportJob) -> str:
+def _build_status_color(job: Mapping[str, object]) -> str:
     history = job.get("history") or []
     if not history:
         return Theme.gray_500
     return Theme.success if history[0].get("ok") else Theme.error
 
 
-def _build_schedule_text(job: ExportJob) -> str:
+def _build_schedule_text(job: Mapping[str, object]) -> str:
     if not job.get("schedule_enabled"):
         return "Ручной запуск"
     mode = job.get("schedule_mode", "daily")

@@ -54,7 +54,8 @@ def test_factory_registry_is_extendable(monkeypatch):
         def connect(self): pass
         def disconnect(self): pass
         def is_alive(self): return True
-        def query(self, sql, params=()): return QueryResult([], [], 0, 0)
+        def query(self, sql, params=()):
+            return QueryResult(columns=[], rows=[], count=0, duration_us=0)
         def test_connection(self): return True, ""
 
     monkeypatch.setitem(_REGISTRY, "fake", lambda: _FakeClient)

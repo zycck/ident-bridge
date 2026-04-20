@@ -1,6 +1,7 @@
 """Runtime controller for the test-run SQL dialog."""
 
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -8,14 +9,17 @@ from app.config import AppConfig, QueryResult
 from app.core.app_logger import get_logger
 from app.core.constants import TEST_DIALOG_MAX_ROWS
 from app.core.sql_client import SqlClient
-from app.ui.test_run_dialog_shell import TestRunDialogShell
+from app.ui.formatters import format_duration_compact
 from app.ui.threading import run_worker
+
+if TYPE_CHECKING:
+    from app.ui.test_run_dialog_shell import TestRunDialogShell
 
 _log = get_logger(__name__)
 
-RunWorkerFn = Callable[..., object]
-EmitTestCompletedFn = Callable[[bool, int, str], None]
-QueryWorkerFactory = Callable[[AppConfig, str], object]
+type RunWorkerFn = Callable[..., object]
+type EmitTestCompletedFn = Callable[[bool, int, str, int], None]
+type QueryWorkerFactory = Callable[[AppConfig, str], object]
 
 
 class _QueryWorker(QObject):
@@ -34,7 +38,11 @@ class _QueryWorker(QObject):
         try:
             client.connect()
             query_result = client.query(self._sql, max_rows=TEST_DIALOG_MAX_ROWS)
-            _log.info("Query: %d строк за %d мс", query_result.count, query_result.duration_ms)
+            _log.info(
+                "Query: %d строк за %s",
+                query_result.count,
+                format_duration_compact(query_result.duration_us),
+            )
             self.result.emit(query_result)
         except ConnectionError as exc:
             _log.error("Query connection failed: %s", exc)
@@ -54,7 +62,7 @@ class TestRunDialogController(QObject):
         self,
         *,
         owner: QObject,
-        shell: TestRunDialogShell,
+        shell: "TestRunDialogShell",
         cfg: AppConfig,
         emit_test_completed: EmitTestCompletedFn,
         run_worker_fn: RunWorkerFn = run_worker,
@@ -95,15 +103,18 @@ class TestRunDialogController(QObject):
     @Slot(object)
     def handle_result(self, result: QueryResult) -> None:
         self._shell.populate_result(result)
-        status = f"{result.count} строк · {result.duration_ms} мс"
+        status = (
+            f"{result.count} строк · "
+            f"{format_duration_compact(result.duration_us)}"
+        )
         if result.truncated:
             status += " · показаны первые строки"
         self._shell.set_status(status, color="")
         self._shell.set_run_enabled(True)
-        self._emit_test_completed(True, result.count, "")
+        self._emit_test_completed(True, result.count, "", result.duration_us)
 
     @Slot(str)
     def handle_error(self, msg: str) -> None:
         self._shell.set_status(msg, color="#EF4444")
         self._shell.set_run_enabled(True)
-        self._emit_test_completed(False, 0, msg)
+        self._emit_test_completed(False, 0, msg, 0)

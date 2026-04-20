@@ -1,6 +1,13 @@
 """Deletion flow extracted from ExportJobsWidget."""
 
 
+def _safe_signal_disconnect(signal) -> None:
+    try:
+        signal.disconnect()
+    except (TypeError, RuntimeError):
+        pass
+
+
 class ExportJobsDeleteController:
     def __init__(
         self,
@@ -48,6 +55,15 @@ class ExportJobsDeleteController:
             scroll = self._editor_page.remove_editor(job_id)
             if scroll is not None:
                 scroll.deleteLater()
+            for signal_name in (
+                "changed",
+                "sync_completed",
+                "history_changed",
+                "failure_alert",
+            ):
+                signal = getattr(editor, signal_name, None)
+                if signal is not None:
+                    _safe_signal_disconnect(signal)
             editor.deleteLater()
             del editors[job_id]
 

@@ -8,7 +8,7 @@ from app.ui.export_editor_runtime import (
     format_short_user_error,
     normalize_short_user_error,
 )
-from app.ui.formatters import format_relative_timestamp
+from app.ui.formatters import format_duration_compact, format_relative_timestamp
 from app.ui.theme import Theme
 
 
@@ -53,7 +53,13 @@ def build_history_row_display(
 
     if ok:
         rows = entry.get("rows", 0)
-        status_text = f"✓  {rows} строк"
+        duration_us = int(entry.get("duration_us") or 0)
+        duration_suffix = (
+            f" · {format_duration_compact(duration_us)}"
+            if duration_us > 0
+            else ""
+        )
+        status_text = f"✓  {rows} строк{duration_suffix}"
         status_color = Theme.success
         status_tooltip = ""
     else:

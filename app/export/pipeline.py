@@ -17,17 +17,17 @@ exceptions. The worker catches and translates to signals; unit tests
 catch and assert directly.
 """
 
-from __future__ import annotations
-
 import logging
+import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
 from app.core.constants import GOOGLE_SCRIPT_HOSTS, MAX_WEBHOOK_ROWS
+from app.core.formatters import format_duration_compact
 from app.core.sql_client import SqlClient
 from app.export.protocol import ExportSink
 from app.export.sinks.google_apps_script import GoogleAppsScriptSink
@@ -36,7 +36,7 @@ from app.export.sinks.webhook import WebhookSink
 _log = logging.getLogger(__name__)
 
 # ProgressCallback: step_number (0–3), human-readable message.
-ProgressCallback = Callable[[int, str], None]
+type ProgressCallback = Callable[[int, str], None]
 
 
 def _noop_progress(step: int, message: str) -> None:
@@ -65,6 +65,7 @@ class ExportPipeline:
         sql = (job.get("sql_query") or "").strip()
         if not sql:
             raise ValueError("SQL запрос не задан в карточке выгрузки")
+        started_ns = time.perf_counter_ns()
 
         try:
             progress(0, "Подключение к БД...")
@@ -85,16 +86,24 @@ class ExportPipeline:
                 )
             else:
                 self.logger.info(
-                    "Выгрузка '%s': %d строк (webhook не настроен)",
-                    job_name, result.count,
+                    "Выгрузка '%s': %d строк за %s (webhook не настроен)",
+                    job_name,
+                    result.count,
+                    format_duration_compact(result.duration_us),
                 )
 
             progress(3, "Готово")
+            total_duration_us = max(
+                result.duration_us,
+                max(0, (time.perf_counter_ns() - started_ns) // 1_000),
+            )
             return SyncResult(
                 success=True,
                 rows_synced=result.count,
                 error=None,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
+                duration_us=total_duration_us,
+                sql_duration_us=result.duration_us,
             )
         finally:
             self.db.disconnect()
@@ -116,12 +125,15 @@ def build_pipeline_for_job(
     DatabaseClient-factory wiring (see audit plan I.4).
     """
     db = sql_client_cls(cfg)
-    sink = resolve_export_sink(job.get("webhook_url") or "")
+    sink = resolve_export_sink(
+        job.get("webhook_url") or "",
+        gas_options=job.get("gas_options"),
+    )
 
     return ExportPipeline(db=db, sink=sink)
 
 
-def resolve_export_sink(webhook_url: str) -> ExportSink | None:
+def resolve_export_sink(webhook_url: str, *, gas_options: dict[str, Any] | None = None) -> ExportSink | None:
     """Return the appropriate sink for a configured export URL."""
     url = webhook_url.strip()
     if not url:
@@ -130,7 +142,7 @@ def resolve_export_sink(webhook_url: str) -> ExportSink | None:
     parsed = urlsplit(url)
     host = (parsed.hostname or "").lower()
     if host in GOOGLE_SCRIPT_HOSTS:
-        return GoogleAppsScriptSink(url)
+        return GoogleAppsScriptSink(url, gas_options=gas_options)
     return WebhookSink(url, max_rows=MAX_WEBHOOK_ROWS)
 
 

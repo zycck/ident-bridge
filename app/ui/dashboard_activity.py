@@ -1,9 +1,10 @@
-
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from typing import cast
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from app.config import ExportHistoryEntry
 from app.ui.history_row import HistoryRow
 from app.ui.theme import Theme
 
@@ -13,14 +14,14 @@ _EMPTY_ACTIVITY_TEXT = "Нет запусков. Запустите выгруз
 def refresh_dashboard_activity(
     layout: QVBoxLayout,
     parent: QWidget,
-    jobs: Iterable[dict],
+    jobs: Iterable[Mapping[str, object]],
 ) -> int:
     """Rebuild the activity list from export jobs and return rendered row count."""
-    all_entries: list[tuple[dict, str]] = []
+    all_entries: list[tuple[ExportHistoryEntry, str]] = []
     for job in jobs:
         job_name = job.get("name", "") or "(без названия)"
         for entry in (job.get("history") or []):
-            all_entries.append((entry, job_name))
+            all_entries.append((cast(ExportHistoryEntry, entry), job_name))
 
     # Sort by ts desc; string ordering works because the persisted timestamp
     # format is YYYY-MM-DD HH:MM[:SS].
@@ -58,15 +59,14 @@ def _make_empty_state_label() -> QLabel:
     return label
 
 
-def clear_job_histories(jobs: list[dict]) -> tuple[int, list[dict]]:
+def clear_job_histories(jobs: list[Mapping[str, object]]) -> tuple[int, list[dict[str, object]]]:
     """Return (cleared_total_entries, jobs-with-empty-history).
 
-    Pure helper — no Qt, no config mutation. Used by the dashboard's
-    "Очистить историю" action before persisting the cleared jobs back
-    into config.
+    Pure helper - no Qt, no config mutation. Used by the dashboard's
+    clear-history action before persisting the cleared jobs back into config.
     """
     total = 0
-    cleared: list[dict] = []
+    cleared: list[dict[str, object]] = []
     for job in jobs:
         copied = dict(job)
         history = list(job.get("history") or [])

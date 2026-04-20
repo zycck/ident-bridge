@@ -1,7 +1,7 @@
-import time
 import random
+import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, final
 
 try:
     import pyodbc
@@ -13,6 +13,7 @@ else:
 
 from app.config import AppConfig, QueryResult
 from app.core.connection import build_sql_connection_string
+from app.core.formatters import format_duration_compact
 from app.core.odbc_utils import best_driver
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -23,6 +24,7 @@ _BASE_DELAY = 2.0   # seconds; doubles each retry
 _JITTER = 0.10      # ±10 %
 
 
+@final
 class SqlClient:
     """pyodbc-based SQL Server client. NOT thread-safe — one instance per thread."""
 
@@ -37,6 +39,7 @@ class SqlClient:
             ) from _PYODBC_IMPORT_ERROR
 
     def connect(self) -> None:
+        """Open a live SQL Server connection with bounded retries."""
         self._require_pyodbc()
         instance = self._cfg.get("sql_instance") or ""
         database = self._cfg.get("sql_database") or ""
@@ -83,6 +86,7 @@ class SqlClient:
         ) from last_exc
 
     def disconnect(self) -> None:
+        """Close the current connection if one is open."""
         if self._conn is not None:
             try:
                 self._conn.close()
@@ -95,6 +99,7 @@ class SqlClient:
                 self._conn = None
 
     def is_alive(self) -> bool:
+        """Return ``True`` when the current connection responds to ``SELECT 1``."""
         if self._conn is None:
             return False
         try:
@@ -107,9 +112,10 @@ class SqlClient:
             raise
 
     def query(self, sql: str, params: tuple = (), *, max_rows: int | None = None) -> QueryResult:
+        """Execute one SQL statement and materialize the result rows."""
         if self._conn is None:
             raise RuntimeError("Not connected")
-        start = datetime.now(timezone.utc)
+        started_ns = time.perf_counter_ns()
         with self._conn.cursor() as cursor:
             cursor.execute(sql, params)
             columns = [d[0] for d in cursor.description]
@@ -141,16 +147,18 @@ class SqlClient:
                         all_rows = list(all_rows)
                     truncated = len(all_rows) > max_rows
                     rows = all_rows[:max_rows]
-        elapsed = int((datetime.now(timezone.utc) - start).total_seconds() * 1000)
+        elapsed_us = max(0, (time.perf_counter_ns() - started_ns) // 1_000)
         return QueryResult(
             columns=columns,
             rows=rows,
             count=len(rows),
-            duration_ms=elapsed,
+            duration_ms=elapsed_us // 1_000,
+            duration_us=elapsed_us,
             truncated=truncated,
         )
 
     def test_connection(self) -> tuple[bool, str]:
+        """Connect, run a cheap probe query, and return a user-facing status."""
         try:
             self.connect()
             if not self.is_alive():
@@ -160,7 +168,11 @@ class SqlClient:
                 " WHERE TABLE_TYPE = 'BASE TABLE'"
             )
             table_count = result.rows[0][0] if result.rows else 0
-            return (True, f"Подключено · {table_count} таблиц · {result.duration_ms} мс")
+            return (
+                True,
+                f"Подключено · {table_count} таблиц · "
+                f"{format_duration_compact(result.duration_us)}",
+            )
         except ConnectionError as exc:
             # ConnectionError already contains a sanitized message (no DSN)
             return (False, str(exc))

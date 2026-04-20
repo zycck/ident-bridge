@@ -27,8 +27,6 @@ Attach once on the root logger at startup — see
 :func:`app.core.app_logger.setup`.
 """
 
-from __future__ import annotations
-
 import logging
 import re
 import urllib.parse

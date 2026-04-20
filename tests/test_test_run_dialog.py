@@ -18,6 +18,10 @@ def _cfg() -> AppConfig:
     return AppConfig(sql_instance="localhost", sql_database="test")
 
 
+def test_dialog_class_marks_itself_non_collectable_for_pytest() -> None:
+    assert TestRunDialog.__test__ is False
+
+
 def test_dialog_shows_exactly_the_sql_passed_in(qtbot):
     dialog = TestRunDialog(_cfg(), initial_sql="SELECT id FROM Orders")
     qtbot.addWidget(dialog)

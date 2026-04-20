@@ -3,12 +3,46 @@ import os
 import random
 import re
 from datetime import datetime, timedelta
-from typing import Literal
+from enum import StrEnum, UNIQUE, verify
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
 _log = logging.getLogger(__name__)
-SUPPORTED_SCHEDULE_MODES = ("daily", "hourly", "minutely", "secondly")
+
+
+@verify(UNIQUE)
+class ScheduleMode(StrEnum):
+    """Supported recurrence modes for export scheduling."""
+
+    DAILY = "daily"
+    HOURLY = "hourly"
+    MINUTELY = "minutely"
+    SECONDLY = "secondly"
+
+
+SUPPORTED_SCHEDULE_MODES: tuple[ScheduleMode, ...] = tuple(ScheduleMode)
+
+
+def coerce_schedule_mode(mode: ScheduleMode | str) -> ScheduleMode:
+    """Convert a raw string or enum member into :class:`ScheduleMode`."""
+    if isinstance(mode, ScheduleMode):
+        return mode
+    return ScheduleMode(mode)
+
+
+def schedule_mode_from_raw(mode: object, *, default: ScheduleMode = ScheduleMode.DAILY) -> ScheduleMode:
+    """Parse a persisted schedule mode and fall back to ``default`` on bad data."""
+    if isinstance(mode, ScheduleMode):
+        return mode
+    try:
+        return ScheduleMode(str(mode))
+    except (TypeError, ValueError):
+        return default
+
+
+def schedule_mode_to_raw(mode: ScheduleMode | str) -> str:
+    """Serialize a schedule mode back to the config-friendly string form."""
+    return coerce_schedule_mode(mode).value
 
 # Daily-mode scheduling uses datetime.now().astimezone() to be DST-aware.
 # When the local timezone observes DST transitions, "daily at 14:30" stays
@@ -18,23 +52,32 @@ def _local_now() -> datetime:
     return datetime.now().astimezone()
 
 
-def schedule_value_is_valid(mode: str, value: str) -> bool:
+def schedule_value_is_valid(mode: ScheduleMode | str, value: str) -> bool:
+    """Validate that ``value`` matches the rules of the selected mode."""
     value = value.strip()
     if not value:
         return False
-    if mode == "daily":
-        if not re.fullmatch(r"\d{1,2}:\d{2}", value):
-            return False
-        hour_text, minute_text = value.split(":")
-        hour = int(hour_text)
-        minute = int(minute_text)
-        return 0 <= hour <= 23 and 0 <= minute <= 59
-    if mode in ("hourly", "minutely", "secondly"):
-        return value.isdigit() and int(value) >= 1
+    try:
+        selected_mode = coerce_schedule_mode(mode)
+    except ValueError:
+        return False
+
+    match selected_mode:
+        case ScheduleMode.DAILY:
+            if not re.fullmatch(r"\d{1,2}:\d{2}", value):
+                return False
+            hour_text, minute_text = value.split(":")
+            hour = int(hour_text)
+            minute = int(minute_text)
+            return 0 <= hour <= 23 and 0 <= minute <= 59
+        case ScheduleMode.HOURLY | ScheduleMode.MINUTELY | ScheduleMode.SECONDLY:
+            return value.isdigit() and int(value) >= 1
     return False
 
 
 class SyncScheduler(QObject):
+    """Qt timer wrapper that emits export triggers on a configured cadence."""
+
     trigger = Signal()
     next_run_changed = Signal(object)  # datetime | None
 
@@ -43,19 +86,20 @@ class SyncScheduler(QObject):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self._fire)
-        self._mode: Literal["daily", "hourly", "minutely", "secondly"] | None = None
+        self._mode: ScheduleMode | None = None
         self._value: str | None = None
         self._next_run: datetime | None = None
 
-    def configure(self, mode: Literal["daily", "hourly", "minutely", "secondly"], value: str) -> None:
-        if mode not in SUPPORTED_SCHEDULE_MODES:
-            raise ValueError(f"Unsupported mode: {mode!r}")
-        if not schedule_value_is_valid(mode, value):
-            raise ValueError(f"Invalid value for {mode!r}: {value!r}")
-        self._mode = mode
+    def configure(self, mode: ScheduleMode | str, value: str) -> None:
+        """Store a validated recurrence mode/value pair for later start()."""
+        selected_mode = coerce_schedule_mode(mode)
+        if not schedule_value_is_valid(selected_mode, value):
+            raise ValueError(f"Invalid value for {selected_mode.value!r}: {value!r}")
+        self._mode = selected_mode
         self._value = value
 
     def start(self) -> None:
+        """Arm the timer and emit the first calculated ``next_run``."""
         self._timer.stop()
         fast = os.environ.get("IDENTBRIDGE_FAST_TRIGGER_SECONDS")
         if fast and fast.strip().lstrip("-").isdigit() and int(fast) > 0:
@@ -90,11 +134,13 @@ class SyncScheduler(QObject):
         self._schedule_next()
 
     def stop(self) -> None:
+        """Stop scheduling and clear the cached next-run timestamp."""
         self._timer.stop()
         self._next_run = None
         self.next_run_changed.emit(None)
 
     def next_run(self) -> datetime | None:
+        """Return the currently scheduled run time, if any."""
         return self._next_run
 
     def _schedule_next(self) -> None:
@@ -104,22 +150,22 @@ class SyncScheduler(QObject):
         now = _local_now()
 
         match self._mode:
-            case "secondly":
+            case ScheduleMode.SECONDLY:
                 n = int(self._value)
                 if n < 1:
                     return
                 base_delay = float(n)
-            case "minutely":
+            case ScheduleMode.MINUTELY:
                 n = int(self._value)
                 if n < 1:
                     return
                 base_delay = n * 60.0
-            case "hourly":
+            case ScheduleMode.HOURLY:
                 n = int(self._value)
                 if n < 1:
                     return
                 base_delay = n * 3600.0
-            case "daily":
+            case ScheduleMode.DAILY:
                 hour_text, minute_text = self._value.split(":")
                 candidate = now.replace(
                     hour=int(hour_text),
@@ -130,8 +176,6 @@ class SyncScheduler(QObject):
                 if candidate <= now:
                     candidate += timedelta(days=1)
                 base_delay = (candidate - now).total_seconds()
-            case _:
-                raise ValueError(f"Unknown mode: {self._mode!r}")
 
         jitter = random.uniform(-base_delay * 0.05, base_delay * 0.05)
         delay = max(1.0, base_delay + jitter)

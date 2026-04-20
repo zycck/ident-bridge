@@ -4,6 +4,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from app.config import SyncResult
+from app.ui.formatters import format_duration_compact
 from app.ui.lucide_icons import lucide
 from app.ui.theme import Theme
 
@@ -97,7 +98,10 @@ class DashboardStatusCards(QWidget):
 
     def update_last_sync(self, result: SyncResult) -> None:
         ts = result.timestamp.strftime("%H:%M:%S  %d.%m")
-        self._last_sync_label.setText(f"{ts}  ·  {result.rows_synced} стр.")
+        self._last_sync_label.setText(
+            f"{ts}  ·  {result.rows_synced} стр.  ·  "
+            f"{format_duration_compact(result.duration_us)}"
+        )
 
     def connection_label_text(self) -> str:
         return self._status_text.text()

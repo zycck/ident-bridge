@@ -21,6 +21,7 @@ def test_trigger_type_values():
     assert TriggerType.MANUAL.value == "manual"
     assert TriggerType.SCHEDULED.value == "scheduled"
     assert TriggerType.TEST.value == "test"
+    assert issubclass(TriggerType, str)
 
 
 def test_trigger_type_can_be_constructed_from_string():
@@ -32,6 +33,10 @@ def test_trigger_type_can_be_constructed_from_string():
 def test_trigger_type_invalid_raises():
     with pytest.raises(ValueError):
         TriggerType("bogus")
+
+
+def test_export_job_requires_identity_fields():
+    assert {"id", "name"} <= set(ExportJob.__required_keys__)
 
 
 # ── ConfigManager basic load/save ─────────────────────────────────────
@@ -270,6 +275,38 @@ def test_credentials_stored_encrypted_on_disk(tmp_config, tmp_path):
     assert "s3cret" not in raw
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="DPAPI is Windows-only")
+def test_dpapi_encrypt_raises_winerror_on_failure(monkeypatch):
+    import app.core.dpapi as dpapi
+
+    class _FakeCrypt32:
+        def CryptProtectData(self, *args, **kwargs):
+            return False
+
+    class _FakeKernel32:
+        def GetLastError(self):
+            return 123
+
+        def LocalFree(self, *args, **kwargs):
+            raise AssertionError("cleanup should not run on failed encrypt")
+
+    winerror_calls: list[tuple[object, ...]] = []
+
+    def _fake_winerror(*args):
+        winerror_calls.append(args)
+        raise OSError("winerror")
+
+    monkeypatch.setattr(dpapi, "_IS_WINDOWS", True)
+    monkeypatch.setattr(dpapi, "_crypt32", _FakeCrypt32())
+    monkeypatch.setattr(dpapi, "_kernel32", _FakeKernel32())
+    monkeypatch.setattr(dpapi.ctypes, "WinError", _fake_winerror)
+
+    with pytest.raises(OSError, match="winerror"):
+        dpapi.encrypt("secret")
+
+    assert winerror_calls == [()]
+
+
 def test_empty_credentials_no_warning(tmp_config, caplog):
     """sql_user/sql_password = "" should NOT log a warning."""
     import logging
@@ -338,6 +375,27 @@ def test_legacy_auto_trigger_migrated_to_scheduled_on_load(tmp_config, tmp_path)
     assert "auto" not in triggers, "legacy 'auto' should be migrated"
     assert triggers[0] == "scheduled"
     assert triggers[1] == "manual"  # unchanged
+
+
+def test_export_jobs_missing_identity_fields_are_normalized_on_load(tmp_config, tmp_path):
+    config_file = tmp_path / "config.json"
+    config_file.write_text(
+        json.dumps({
+            "export_jobs": [
+                {
+                    "history": [],
+                    "sql_query": "SELECT 1",
+                }
+            ],
+        }),
+        encoding="utf-8",
+    )
+
+    cfg = tmp_config.load()
+    jobs = cfg.get("export_jobs") or []
+    assert len(jobs) == 1
+    assert jobs[0]["id"]
+    assert jobs[0]["name"] == ""
 
 
 # ── Invalid JSON resilience ───────────────────────────────────────────

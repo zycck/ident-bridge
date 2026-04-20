@@ -1,5 +1,7 @@
 """Tests for extracted dashboard activity/history panel."""
 
+import json
+
 from PySide6.QtWidgets import QMessageBox
 
 from app.ui.dashboard_activity_panel import DashboardActivityPanel
@@ -34,6 +36,33 @@ def test_activity_panel_refresh_tracks_aggregated_history_count(qtbot, tmp_confi
     panel.refresh_activity()
 
     assert panel.activity_count_text() == "3"
+
+
+def test_activity_panel_refresh_handles_jobs_missing_identity_fields(
+    qtbot,
+    tmp_config,
+    tmp_path,
+) -> None:
+    tmp_path.joinpath("config.json").write_text(
+        json.dumps(
+            {
+                "export_jobs": [
+                    {
+                        "history": [
+                            {"ts": "2026-04-16 11:00:00", "ok": True, "rows": 2},
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    panel = DashboardActivityPanel(tmp_config)
+    qtbot.addWidget(panel)
+
+    panel.refresh_activity()
+
+    assert panel.activity_count_text() == "1"
 
 
 def test_activity_panel_clear_all_history_noops_when_empty(qtbot, tmp_config) -> None:

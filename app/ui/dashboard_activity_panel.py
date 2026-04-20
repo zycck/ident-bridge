@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from app.config import ConfigManager
 from app.ui.dashboard_activity import clear_job_histories, refresh_dashboard_activity
+from app.ui.export_jobs_store import load_export_jobs
 from app.ui.theme import Theme
 
 
@@ -88,17 +89,14 @@ class DashboardActivityPanel(QFrame):
         return self._activity_count.text()
 
     def refresh_activity(self) -> None:
-        count = refresh_dashboard_activity(
-            self._activity_layout,
-            self,
-            self._config.load().get("export_jobs") or [],  # type: ignore[arg-type]
-        )
+        jobs = load_export_jobs(self._config)
+        count = refresh_dashboard_activity(self._activity_layout, self, jobs)
         self._activity_count.setText(str(count))
 
     @Slot()
     def clear_all_history(self) -> bool:
         cfg = self._config.load()
-        jobs = cfg.get("export_jobs") or []  # type: ignore[assignment]
+        jobs = load_export_jobs(self._config)
         total, cleared_jobs = clear_job_histories(jobs)
         if total == 0:
             return False
@@ -110,7 +108,7 @@ class DashboardActivityPanel(QFrame):
         )
         if reply != QMessageBox.StandardButton.Yes:
             return False
-        cfg["export_jobs"] = cleared_jobs  # type: ignore[typeddict-unknown-key]
+        cfg["export_jobs"] = cleared_jobs
         self._config.save(cfg)
         self.refresh_activity()
         return True
