@@ -109,7 +109,7 @@ def _job(job_id: str, name: str) -> ExportJob:
     )
 
 
-def _build_controller(*, jobs: list[ExportJob]):
+def _build_controller(*, jobs: list[ExportJob], warn_duplicate_target=None):
     opens: list[str] = []
     syncs: list[object] = []
     history_changed: list[bool] = []
@@ -127,6 +127,7 @@ def _build_controller(*, jobs: list[ExportJob]):
         emit_sync_completed=lambda result: syncs.append(result),
         emit_history_changed=lambda: history_changed.append(True),
         emit_failure_alert=lambda name, count: alerts.append((name, count)),
+        warn_duplicate_target=warn_duplicate_target,
         tile_factory=_FakeTile,
         editor_factory=_FakeEditor,
     )
@@ -194,3 +195,41 @@ def test_collection_controller_forwards_editor_actions(qtbot) -> None:
     assert syncs == [{"rows_synced": 5}]
     assert history_changed == [True]
     assert alerts == [("One", 3)]
+
+
+def test_collection_controller_blocks_duplicate_webhook_and_sheet_targets(qtbot) -> None:
+    warnings: list[tuple[str, str]] = []
+    controller, config, _tiles_page, _editor_page, *_ = _build_controller(
+        jobs=[
+            {
+                "id": "job-1",
+                "name": "One",
+                "sql_query": "SELECT 1",
+                "webhook_url": "https://script.google.com/macros/s/abc/exec",
+                "gas_options": {"sheet_name": "Exports", "auth_token": "one"},
+                "schedule_enabled": False,
+                "schedule_mode": "daily",
+                "schedule_value": "",
+                "history": [],
+            },
+            {
+                "id": "job-2",
+                "name": "Two",
+                "sql_query": "SELECT 2",
+                "webhook_url": "https://script.google.com/macros/s/abc/exec",
+                "gas_options": {"sheet_name": "Exports", "auth_token": "two"},
+                "schedule_enabled": False,
+                "schedule_mode": "daily",
+                "schedule_value": "",
+                "history": [],
+            },
+        ],
+        warn_duplicate_target=lambda title, message: warnings.append((title, message)),
+    )
+
+    controller.load_jobs()
+    controller.save_jobs()
+
+    assert config.saved is None
+    assert warnings
+    assert "адрес обработки" in warnings[0][1]

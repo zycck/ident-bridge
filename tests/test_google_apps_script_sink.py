@@ -21,6 +21,9 @@ from app.export.sinks.google_apps_script import (
     plan_gas_chunks,
 )
 
+FIXED_EXPORT_DATE = "2026-04-20"
+REAL_PING_BACKEND = GoogleAppsScriptSink._ping_backend
+
 
 def _qr(columns=("id",), rows=((1,),), duration=1) -> QueryResult:
     return QueryResult(
@@ -35,7 +38,7 @@ def _seeded_qr(seed: int, row_count: int) -> QueryResult:
     rng = random.Random(seed)
     rows = []
     for idx in range(row_count):
-        left = "".join(rng.choice("abcдеёжз") for _ in range(rng.randint(1, 6)))
+        left = "".join(rng.choice("abcдежз") for _ in range(rng.randint(1, 6)))
         right = "".join(rng.choice("01xyzЖ") for _ in range(rng.randint(0, 8)))
         rows.append((idx, f"{left}-{idx}", right))
     return _qr(columns=("id", "label", "payload"), rows=tuple(rows), duration=seed)
@@ -93,6 +96,7 @@ def test_plan_gas_chunks_keeps_single_chunk_under_limits():
         run_id="run-1",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
+        export_date=FIXED_EXPORT_DATE,
     )
 
     assert len(chunks) == 1
@@ -111,6 +115,7 @@ def test_plan_gas_chunks_splits_by_row_limit():
         run_id="run-2",
         max_rows_per_chunk=10_000,
         max_payload_bytes=50 * 1024 * 1024,
+        export_date=FIXED_EXPORT_DATE,
     )
 
     assert len(chunks) == 2
@@ -126,6 +131,7 @@ def test_plan_gas_chunks_splits_by_payload_bytes():
         run_id="run-3",
         max_rows_per_chunk=10_000,
         max_payload_bytes=2_000,
+        export_date=FIXED_EXPORT_DATE,
     )
 
     assert len(chunks) == 2
@@ -140,6 +146,7 @@ def test_plan_gas_chunks_builds_one_empty_chunk_for_empty_results():
         run_id="run-4",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
+        export_date=FIXED_EXPORT_DATE,
     )
 
     assert len(chunks) == 1
@@ -154,78 +161,55 @@ def test_build_gas_chunk_payload_shape_is_stable():
         run_id="run-5",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
+        export_date=FIXED_EXPORT_DATE,
     )[0]
 
-    payload = json.loads(build_gas_chunk_payload("Stable", chunk).decode("utf-8"))
+    payload = json.loads(
+        build_gas_chunk_payload(
+            "Stable",
+            chunk,
+            gas_options={"sheet_name": "Exports", "auth_token": "secret-token"},
+            export_date=FIXED_EXPORT_DATE,
+        ).decode("utf-8")
+    )
+
     assert payload == {
-        "protocol_version": "gas-sheet.v1",
+        "protocol_version": "gas-sheet.v2",
         "job_name": "Stable",
+        "sheet_name": "Exports",
+        "auth_token": "secret-token",
+        "export_date": FIXED_EXPORT_DATE,
         "run_id": "run-5",
         "chunk_index": 1,
         "total_chunks": 1,
         "total_rows": 1,
         "chunk_rows": 1,
-        "chunk_bytes": chunk.chunk_bytes,
-        "schema": {
-            "mode": "append_only_v1",
-            "columns": ["id", "name"],
-            "checksum": chunk.checksum,
-        },
+        "columns": ["id", "name"],
         "records": [{"id": 1, "name": "alice"}],
+        "checksum": chunk.checksum,
     }
 
 
-def test_build_gas_chunk_payload_includes_target_and_dedupe_blocks_when_configured():
+def test_build_gas_chunk_payload_uses_job_name_as_sheet_name_when_not_configured():
     chunk = plan_gas_chunks(
-        "Configured",
-        _qr(columns=("id", "updated_at"), rows=((1, "2026-04-18"),)),
+        "Fallback sheet",
+        _qr(rows=((1,),)),
         run_id="run-5b",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
+        export_date=FIXED_EXPORT_DATE,
     )[0]
 
     payload = json.loads(
         build_gas_chunk_payload(
-            "Configured",
+            "Fallback sheet",
             chunk,
-            gas_options={
-                "sheet_name": "Exports",
-                "header_row": 2,
-                "dedupe_key_columns": ["id", "updated_at"],
-            },
+            export_date=FIXED_EXPORT_DATE,
         ).decode("utf-8")
     )
 
-    assert payload["target"] == {
-        "sheet_name": "Exports",
-        "header_row": 2,
-    }
-    assert payload["dedupe"] == {
-        "key_columns": ["id", "updated_at"],
-    }
-    assert "gas_options" not in payload
-
-
-def test_build_gas_chunk_payload_includes_auth_token_in_body():
-    chunk = plan_gas_chunks(
-        "Authenticated",
-        _qr(columns=("id",), rows=((1,),)),
-        run_id="run-auth",
-        max_rows_per_chunk=10_000,
-        max_payload_bytes=5 * 1024 * 1024,
-    )[0]
-
-    payload = json.loads(
-        build_gas_chunk_payload(
-            "Authenticated",
-            chunk,
-            gas_options={
-                "auth_token": "secret-token",
-            },
-        ).decode("utf-8")
-    )
-
-    assert payload["auth_token"] == "secret-token"
+    assert payload["sheet_name"] == "Fallback sheet"
+    assert payload["auth_token"] == ""
 
 
 @pytest.mark.parametrize("row_count", [9, 10, 99, 100])
@@ -239,6 +223,7 @@ def test_plan_gas_chunks_keeps_payload_size_exact_when_total_chunks_cross_digit_
         run_id=f"run-total-{row_count}",
         max_rows_per_chunk=1,
         max_payload_bytes=10_000_000,
+        export_date=FIXED_EXPORT_DATE,
     )
 
     assert len(chunks) == row_count
@@ -246,7 +231,11 @@ def test_plan_gas_chunks_keeps_payload_size_exact_when_total_chunks_cross_digit_
 
     for chunk in chunks:
         planned_bytes = chunk.chunk_bytes
-        payload = build_gas_chunk_payload("Digit total chunks", chunk)
+        payload = build_gas_chunk_payload(
+            "Digit total chunks",
+            chunk,
+            export_date=FIXED_EXPORT_DATE,
+        )
         assert len(payload) == planned_bytes
         assert chunk.chunk_bytes == planned_bytes
 
@@ -262,13 +251,18 @@ def test_plan_gas_chunks_keeps_payload_size_exact_when_chunk_rows_cross_digit_bo
         run_id=f"run-rows-{row_count}",
         max_rows_per_chunk=row_count + 5,
         max_payload_bytes=10_000_000,
+        export_date=FIXED_EXPORT_DATE,
     )
 
     assert len(chunks) == 1
 
     chunk = chunks[0]
     planned_bytes = chunk.chunk_bytes
-    payload = build_gas_chunk_payload("Digit chunk rows", chunk)
+    payload = build_gas_chunk_payload(
+        "Digit chunk rows",
+        chunk,
+        export_date=FIXED_EXPORT_DATE,
+    )
     assert len(payload) == planned_bytes
     assert chunk.chunk_bytes == planned_bytes
     assert chunk.chunk_rows == row_count
@@ -292,6 +286,7 @@ def test_plan_gas_chunks_is_deterministic_for_seeded_random_scenarios(
         "run_id": f"seeded-{seed}",
         "max_rows_per_chunk": max_rows_per_chunk,
         "max_payload_bytes": 10_000_000,
+        "export_date": FIXED_EXPORT_DATE,
     }
 
     chunks_a = plan_gas_chunks("Seeded random", result, **plan_kwargs)
@@ -309,7 +304,11 @@ def test_plan_gas_chunks_is_deterministic_for_seeded_random_scenarios(
 
     for chunk in chunks_a:
         planned_bytes = chunk.chunk_bytes
-        payload = build_gas_chunk_payload("Seeded random", chunk)
+        payload = build_gas_chunk_payload(
+            "Seeded random",
+            chunk,
+            export_date=FIXED_EXPORT_DATE,
+        )
         assert len(payload) == planned_bytes
         assert chunk.chunk_bytes == planned_bytes
 
@@ -325,8 +324,6 @@ def test_parse_gas_ack_accepts_success_and_ignores_extra_fields():
                 "rows_received": 2,
                 "rows_written": 2,
                 "retryable": False,
-                "schema_action": "unchanged",
-                "added_columns": [],
                 "message": "ok",
                 "extra": "ignored",
             }
@@ -355,11 +352,7 @@ def test_parse_gas_ack_rejects_wrong_run_or_chunk():
                     "status": "accepted",
                     "run_id": "other-run",
                     "chunk_index": 1,
-                    "rows_received": 1,
-                    "rows_written": 1,
                     "retryable": False,
-                    "schema_action": "unchanged",
-                    "added_columns": [],
                     "message": "ok",
                 }
             ).encode("utf-8"),
@@ -390,33 +383,10 @@ def test_parse_gas_ack_accepts_failure_ack_without_matching_run_id():
     assert ack.message == "Invalid auth token"
     assert ack.details == {"field": "auth_token"}
 
-
-def test_parse_gas_ack_rejects_incompatible_api_version_major():
-    with pytest.raises(ValueError, match="api_version"):
-        parse_gas_ack(
-            json.dumps(
-                {
-                    "ok": True,
-                    "status": "accepted",
-                    "run_id": "run-9",
-                    "chunk_index": 1,
-                    "rows_received": 1,
-                    "rows_written": 1,
-                    "retryable": False,
-                    "schema_action": "unchanged",
-                    "added_columns": [],
-                    "message": "ok",
-                    "api_version": "2.0",
-                }
-            ).encode("utf-8"),
-            expected_run_id="run-9",
-            expected_chunk_index=1,
-        )
-
-
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
     monkeypatch.setattr("app.export.sinks.google_apps_script.time.sleep", lambda *_: None)
+    monkeypatch.setattr("app.export.sinks.google_apps_script.GoogleAppsScriptSink._ping_backend", lambda self: None)
 
 
 def test_push_reports_progress_for_each_chunk(monkeypatch):
@@ -425,17 +395,16 @@ def test_push_reports_progress_for_each_chunk(monkeypatch):
     def _urlopen(req, **kwargs):
         attempts.append(req)
         body = json.loads(req.data.decode("utf-8"))
+        row_count = len(body["records"])
         return _FakeResp(
             {
                 "ok": True,
                 "status": "accepted",
                 "run_id": body["run_id"],
                 "chunk_index": body["chunk_index"],
-                "rows_received": body["chunk_rows"],
-                "rows_written": body["chunk_rows"],
+                "rows_received": row_count,
+                "rows_written": row_count,
                 "retryable": False,
-                "schema_action": "unchanged",
-                "added_columns": [],
                 "message": "ok",
             }
         )
@@ -460,17 +429,16 @@ def test_push_sends_auth_token_in_json_body_not_headers(monkeypatch):
     def _urlopen(req, **kwargs):
         seen["headers"] = dict(req.headers)
         seen["body"] = json.loads(req.data.decode("utf-8"))
+        row_count = len(seen["body"]["records"])
         return _FakeResp(
             {
                 "ok": True,
                 "status": "accepted",
                 "run_id": seen["body"]["run_id"],
                 "chunk_index": seen["body"]["chunk_index"],
-                "rows_received": seen["body"]["chunk_rows"],
-                "rows_written": seen["body"]["chunk_rows"],
+                "rows_received": row_count,
+                "rows_written": row_count,
                 "retryable": False,
-                "schema_action": "unchanged",
-                "added_columns": [],
                 "message": "ok",
             }
         )
@@ -496,11 +464,9 @@ def test_push_treats_duplicate_ack_as_success(monkeypatch):
                 "status": "duplicate",
                 "run_id": body["run_id"],
                 "chunk_index": body["chunk_index"],
-                "rows_received": body["chunk_rows"],
+                "rows_received": len(body["records"]),
                 "rows_written": 0,
                 "retryable": False,
-                "schema_action": "unchanged",
-                "added_columns": [],
                 "message": "already applied",
             }
         )
@@ -515,10 +481,12 @@ def test_push_retries_on_retryable_ack(monkeypatch):
     def _urlopen(req, **kwargs):
         attempts["count"] += 1
         body = json.loads(req.data.decode("utf-8"))
+        row_count = len(body["records"])
         if attempts["count"] == 1:
             return _FakeResp(
                 {
                     "ok": False,
+                    "status": "retry",
                     "error_code": "LOCK_TIMEOUT",
                     "retryable": True,
                     "run_id": body["run_id"],
@@ -533,11 +501,9 @@ def test_push_retries_on_retryable_ack(monkeypatch):
                 "status": "accepted",
                 "run_id": body["run_id"],
                 "chunk_index": body["chunk_index"],
-                "rows_received": body["chunk_rows"],
-                "rows_written": body["chunk_rows"],
+                "rows_received": row_count,
+                "rows_written": row_count,
                 "retryable": False,
-                "schema_action": "unchanged",
-                "added_columns": [],
                 "message": "ok",
             }
         )
@@ -559,17 +525,16 @@ def test_push_retries_on_malformed_ack_then_succeeds(monkeypatch):
         if attempts["count"] == 1:
             return _FakeResp("oops")
         body = json.loads(req.data.decode("utf-8"))
+        row_count = len(body["records"])
         return _FakeResp(
             {
                 "ok": True,
                 "status": "accepted",
                 "run_id": body["run_id"],
                 "chunk_index": body["chunk_index"],
-                "rows_received": body["chunk_rows"],
-                "rows_written": body["chunk_rows"],
+                "rows_received": row_count,
+                "rows_written": row_count,
                 "retryable": False,
-                "schema_action": "unchanged",
-                "added_columns": [],
                 "message": "ok",
             }
         )
@@ -589,6 +554,7 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
     def _urlopen(req, **kwargs):
         attempts["count"] += 1
         body = json.loads(req.data.decode("utf-8"))
+        row_count = len(body["records"])
         if body["chunk_index"] == 1:
             return _FakeResp(
                 {
@@ -596,17 +562,16 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
                     "status": "accepted",
                     "run_id": body["run_id"],
                     "chunk_index": body["chunk_index"],
-                    "rows_received": body["chunk_rows"],
-                    "rows_written": body["chunk_rows"],
+                    "rows_received": row_count,
+                    "rows_written": row_count,
                     "retryable": False,
-                    "schema_action": "unchanged",
-                    "added_columns": [],
                     "message": "ok",
                 }
             )
         return _FakeResp(
             {
                 "ok": False,
+                "status": "rejected",
                 "error_code": "SCHEMA_MISMATCH_MISSING_COLUMNS",
                 "retryable": False,
                 "run_id": body["run_id"],
@@ -632,14 +597,34 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
     assert exc.failed_chunk_index == 2
     assert exc.delivered_rows == 2
     assert exc.run_id
-    assert "1/2 чанков" in exc.user_message
+    assert "1/2" in exc.user_message
+    assert "missing columns" not in exc.user_message
 
 
 def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
+    monkeypatch.setattr(
+        "app.export.sinks.google_apps_script.GoogleAppsScriptSink._ping_backend",
+        REAL_PING_BACKEND,
+    )
+
     def _urlopen(req, **kwargs):
+        if req.get_method() == "GET":
+            return _FakeResp(
+                {
+                    "ok": False,
+                    "status": "rejected",
+                    "error_code": "UNAUTHORIZED",
+                    "retryable": False,
+                    "run_id": "",
+                    "chunk_index": "",
+                    "message": "Invalid auth token",
+                    "details": {"field": "auth_token"},
+                }
+            )
         return _FakeResp(
             {
                 "ok": False,
+                "status": "rejected",
                 "error_code": "UNAUTHORIZED",
                 "retryable": False,
                 "run_id": "",
@@ -662,6 +647,7 @@ def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
 
     exc = exc_info.value
     assert "Ключ доступа" in exc.user_message
+    assert "Invalid auth token" not in exc.user_message
     assert exc.debug_context["cause_type"] == "GasAckError"
     assert exc.debug_context["ack_message"] == "Invalid auth token"
     assert exc.debug_context["error_code"] == "UNAUTHORIZED"
@@ -700,6 +686,7 @@ def test_push_preserves_retryable_ack_details_in_debug_context(monkeypatch):
         return _FakeResp(
             {
                 "ok": False,
+                "status": "retry",
                 "error_code": "INTERNAL_WRITE_ERROR",
                 "retryable": True,
                 "run_id": body["run_id"],
@@ -722,8 +709,9 @@ def test_push_preserves_retryable_ack_details_in_debug_context(monkeypatch):
         sink.push("Retryable ack", _qr())
 
     exc = exc_info.value
+    assert exc.user_message == "Не удалось отправить данные в Google Таблицы"
     assert exc.debug_context["cause_type"] == "GasAckError"
-    assert exc.debug_context["error"] == "Unexpected server error: Sheets is not defined"
+    assert exc.debug_context["error"] == "Unexpected server error"
     assert exc.debug_context["ack_message"] == "Unexpected server error"
     assert exc.debug_context["error_code"] == "INTERNAL_WRITE_ERROR"
     assert exc.debug_context["ack_details"] == {
@@ -731,12 +719,13 @@ def test_push_preserves_retryable_ack_details_in_debug_context(monkeypatch):
     }
 
 
-def test_push_adds_deployment_hint_for_generic_internal_error_without_details(monkeypatch):
+def test_push_stays_user_neutral_for_generic_internal_error(monkeypatch):
     def _urlopen(req, **kwargs):
         body = json.loads(req.data.decode("utf-8"))
         return _FakeResp(
             {
                 "ok": False,
+                "status": "retry",
                 "error_code": "INTERNAL_WRITE_ERROR",
                 "retryable": True,
                 "run_id": body["run_id"],
@@ -757,6 +746,6 @@ def test_push_adds_deployment_hint_for_generic_internal_error_without_details(mo
         sink.push("Generic internal", _qr())
 
     exc = exc_info.value
+    assert exc.user_message == "Не удалось отправить данные в Google Таблицы"
+    assert "Unexpected server error" not in exc.user_message
     assert exc.debug_context["cause_type"] == "GasAckError"
-    assert exc.debug_context["error"] == "Unexpected server error"
-    assert "publish the latest backend version" in exc.debug_context["hint"]

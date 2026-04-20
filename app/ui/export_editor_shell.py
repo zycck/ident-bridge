@@ -120,33 +120,18 @@ class ExportEditorShell(QWidget):
     def gas_sheet_name(self) -> str:
         return self._google_sheets_panel.sheet_name()
 
-    def gas_header_row(self) -> int:
-        return self._google_sheets_panel.header_row()
-
-    def gas_dedupe_key_columns(self) -> list[str]:
-        return self._google_sheets_panel.dedupe_key_columns()
-
     def gas_auth_token(self) -> str:
         return self._google_sheets_panel.auth_token()
-
-    def gas_scheme_id(self) -> str:
-        return self._google_sheets_panel.scheme_id()
 
     def set_gas_options(
         self,
         *,
         sheet_name: str,
-        header_row: int,
-        dedupe_key_columns: list[str],
         auth_token: str,
-        scheme_id: str,
     ) -> None:
         self._google_sheets_panel.set_gas_options(
             sheet_name=sheet_name,
-            header_row=header_row,
-            dedupe_key_columns=dedupe_key_columns,
             auth_token=auth_token,
-            scheme_id=scheme_id,
         )
 
     def schedule_enabled(self) -> bool:
@@ -205,9 +190,6 @@ class ExportEditorShell(QWidget):
         self.set_webhook_url(str(selected.get("webhook_url", "") or "").strip())
         self.set_gas_options(
             sheet_name=self.gas_sheet_name(),
-            header_row=self.gas_header_row(),
-            dedupe_key_columns=self.gas_dedupe_key_columns(),
             auth_token=str(selected.get("auth_token", "") or "").strip(),
-            scheme_id=str(selected.get("scheme_id", "") or "").strip(),
         )
         self.changed.emit()

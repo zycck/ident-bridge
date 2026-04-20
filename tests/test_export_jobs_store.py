@@ -2,6 +2,7 @@
 
 from app.config import AppConfig
 from app.ui.export_jobs_store import (
+    find_duplicate_export_target,
     load_export_jobs,
     new_export_job,
     persist_export_jobs,
@@ -46,13 +47,7 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
             "name": "Nightly",
             "sql_query": "SELECT 1",
             "webhook_url": "",
-            "gas_options": {
-                "sheet_name": "Exports",
-                "header_row": 2,
-                "dedupe_key_columns": ["id", "updated_at"],
-                "auth_token": "secret-token",
-                "scheme_id": "library_v1",
-            },
+            "gas_options": {"sheet_name": "Exports", "auth_token": "secret-token"},
             "schedule_enabled": False,
             "schedule_mode": "daily",
             "schedule_value": "",
@@ -108,11 +103,44 @@ def test_load_export_jobs_normalizes_auth_token_through_config_manager(tmp_confi
 
     assert jobs[0]["gas_options"] == {
         "sheet_name": "Exports",
-        "header_row": 2,
-        "dedupe_key_columns": ["id"],
         "auth_token": "secret-token",
-        "scheme_id": "library_v1",
     }
+
+
+def test_find_duplicate_export_target_detects_same_webhook_and_sheet() -> None:
+    duplicate = find_duplicate_export_target(
+        [
+            {
+                "id": "job-1",
+                "name": "Nightly",
+                "sql_query": "SELECT 1",
+                "webhook_url": "https://script.google.com/macros/s/abc/exec",
+                "gas_options": {"sheet_name": "Exports", "auth_token": "token-1"},
+                "schedule_enabled": False,
+                "schedule_mode": "daily",
+                "schedule_value": "",
+                "history": [],
+            },
+            {
+                "id": "job-2",
+                "name": "Archive",
+                "sql_query": "SELECT 2",
+                "webhook_url": "https://script.google.com/macros/s/abc/exec",
+                "gas_options": {"sheet_name": "Exports", "auth_token": "token-2"},
+                "schedule_enabled": False,
+                "schedule_mode": "daily",
+                "schedule_value": "",
+                "history": [],
+            },
+        ]
+    )
+
+    assert duplicate == (
+        "job-1",
+        "job-2",
+        "https://script.google.com/macros/s/abc/exec",
+        "Exports",
+    )
 
 
 def test_persist_export_jobs_preserves_other_config_fields() -> None:
@@ -155,9 +183,6 @@ def test_new_export_job_starts_blank_with_generated_id() -> None:
     assert job["schedule_mode"] == "daily"
     assert job["gas_options"] == {
         "sheet_name": "",
-        "header_row": 1,
-        "dedupe_key_columns": [],
         "auth_token": "",
-        "scheme_id": "",
     }
     assert job["history"] == []

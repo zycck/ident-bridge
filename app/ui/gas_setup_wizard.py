@@ -24,8 +24,6 @@ from PySide6.QtWidgets import (
 from app.ui.theme import Theme
 
 
-LIBRARY_SCHEME_ID = "library_v1"
-
 _DIALOG_QSS = (
     f"QDialog {{"
     f"  background-color: {Theme.surface_tinted};"
@@ -90,7 +88,7 @@ def _shim_preview_text() -> str:
 
 
 class GasSetupWizard(QDialog):
-    """Собирает данные для подключения таблицы."""
+    """Собирает адрес обработки и ключ доступа для подключения."""
 
     def __init__(
         self,
@@ -118,9 +116,8 @@ class GasSetupWizard(QDialog):
 
         self._intro_label = QLabel(
             "1. Вставьте адрес обработки.\n"
-            "2. Если нужно, создайте ключ доступа.\n"
-            "3. Скопируйте код ниже в проект Apps Script.\n"
-            "4. Сохраните адрес и ключ доступа в iDentBridge.",
+            "2. Создайте ключ доступа при необходимости.\n"
+            "3. Скопируйте код ниже в Apps Script.",
             self,
         )
         self._intro_label.setWordWrap(True)
@@ -199,7 +196,6 @@ class GasSetupWizard(QDialog):
         return {
             "webhook_url": self._webhook_url_edit.text().strip(),
             "auth_token": self._auth_token_edit.text().strip(),
-            "scheme_id": LIBRARY_SCHEME_ID,
         }
 
     @override

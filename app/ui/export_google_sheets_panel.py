@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListView,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -34,7 +33,7 @@ def _looks_like_gas_url(url: str) -> bool:
     return (parsed.hostname or "").lower() in GOOGLE_SCRIPT_HOSTS
 
 
-def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
+def fetch_google_sheet_options(url: str, *, auth_token: str = "", timeout: float = 5.0) -> list[str]:
     parsed = urllib.parse.urlsplit((url or "").strip())
     if not parsed.scheme or not parsed.netloc:
         return []
@@ -42,6 +41,8 @@ def fetch_google_sheet_options(url: str, *, timeout: float = 5.0) -> list[str]:
     query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
     filtered_query = [(key, value) for key, value in query_items if key != "action"]
     filtered_query.append(("action", "sheets"))
+    if auth_token.strip():
+        filtered_query.append(("token", auth_token.strip()))
     target_url = urllib.parse.urlunsplit(
         (
             parsed.scheme,
@@ -85,14 +86,15 @@ class _SheetOptionsWorker(QObject):
     error = Signal(str)
     finished = Signal()
 
-    def __init__(self, url: str) -> None:
+    def __init__(self, url: str, auth_token: str) -> None:
         super().__init__()
         self._url = url
+        self._auth_token = auth_token
 
     @Slot()
     def run(self) -> None:
         try:
-            self.result.emit(fetch_google_sheet_options(self._url))
+            self.result.emit(fetch_google_sheet_options(self._url, auth_token=self._auth_token))
         except Exception as exc:  # noqa: BLE001
             self.error.emit(str(exc))
         finally:
@@ -452,7 +454,6 @@ class ExportGoogleSheetsPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._target_url = ""
-        self._scheme_id = ""
         self._loading = False
         self._loading_tick = 0
         self._refresh_timer = QTimer(self)
@@ -501,17 +502,15 @@ class ExportGoogleSheetsPanel(QWidget):
         sheet_row.addWidget(self._refresh_btn)
         form.addRow("Лист", sheet_row)
 
-        self._header_row_spin = QSpinBox(self)
-        self._header_row_spin.setMinimum(1)
-        self._header_row_spin.setMaximum(9999)
-        self._header_row_spin.setValue(1)
-        self._header_row_spin.valueChanged.connect(self.changed)
-        form.addRow("Строка заголовка", self._header_row_spin)
-
-        self._dedupe_edit = QLineEdit(self)
-        self._dedupe_edit.setPlaceholderText("id, updated_at")
-        self._dedupe_edit.textChanged.connect(self.changed)
-        form.addRow("Ключевые столбцы", self._dedupe_edit)
+        self._alias_hint_label = QLabel(
+            "В SQL задавайте алиасы столбцов, чтобы имена в листе были понятнее.",
+            self,
+        )
+        self._alias_hint_label.setWordWrap(True)
+        self._alias_hint_label.setStyleSheet(
+            f"color: {Theme.gray_500}; font-size: {Theme.font_size_xs}pt;"
+        )
+        root.addWidget(self._alias_hint_label)
 
         self._auth_token_edit = QLineEdit(self)
         self._auth_token_edit.setPlaceholderText("Ключ доступа")
@@ -535,41 +534,20 @@ class ExportGoogleSheetsPanel(QWidget):
     def sheet_name(self) -> str:
         return self._sheet_name_field.text()
 
-    def header_row(self) -> int:
-        return int(self._header_row_spin.value())
-
-    def dedupe_key_columns(self) -> list[str]:
-        return [
-            part.strip()
-            for part in self._dedupe_edit.text().split(",")
-            if part.strip()
-        ]
-
     def auth_token(self) -> str:
         return self._auth_token_edit.text().strip()
-
-    def scheme_id(self) -> str:
-        return self._scheme_id
 
     def set_gas_options(
         self,
         *,
         sheet_name: str,
-        header_row: int,
-        dedupe_key_columns: list[str],
         auth_token: str,
-        scheme_id: str,
     ) -> None:
-        self._scheme_id = str(scheme_id or "").strip()
         with (
             QSignalBlocker(self._sheet_name_field),
-            QSignalBlocker(self._header_row_spin),
-            QSignalBlocker(self._dedupe_edit),
             QSignalBlocker(self._auth_token_edit),
         ):
             self._sheet_name_field.setText(sheet_name)
-            self._header_row_spin.setValue(max(1, int(header_row or 1)))
-            self._dedupe_edit.setText(", ".join(dedupe_key_columns))
             self._auth_token_edit.setText(auth_token)
 
     def set_sheet_options(self, options: list[str]) -> None:
@@ -591,7 +569,7 @@ class ExportGoogleSheetsPanel(QWidget):
 
         self._set_loading(True)
         self._status_label.setText("Обновляем список листов…")
-        worker = _SheetOptionsWorker(self._target_url)
+        worker = _SheetOptionsWorker(self._target_url, self.auth_token())
         run_worker(
             self,
             worker,

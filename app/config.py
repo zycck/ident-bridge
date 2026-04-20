@@ -67,10 +67,7 @@ class GasOptions(TypedDict, total=False):
     """Per-job delivery settings for the Google Apps Script sink."""
 
     sheet_name: str
-    header_row: int
-    dedupe_key_columns: list[str]
     auth_token: str
-    scheme_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +160,16 @@ def _normalize_export_jobs(raw_jobs: object) -> list[dict]:
         job = dict(raw_job) if isinstance(raw_job, Mapping) else {}
         job["id"] = str(job.get("id") or uuid.uuid4())
         job["name"] = str(job.get("name", "") or "")
+        gas_options = job.get("gas_options")
+        if isinstance(gas_options, Mapping):
+            normalized_gas_options = {
+                "sheet_name": str(gas_options.get("sheet_name", "") or "").strip(),
+                "auth_token": str(gas_options.get("auth_token", "") or "").strip(),
+            }
+            if any(normalized_gas_options.values()):
+                job["gas_options"] = normalized_gas_options
+            else:
+                job.pop("gas_options", None)
         normalized.append(job)
     return normalized
 
@@ -227,19 +234,10 @@ class ConfigManager:
             for job in data.get("export_jobs") or []:
                 gas_options = job.get("gas_options")
                 if isinstance(gas_options, dict):
-                    header_row = gas_options.get("header_row", 1)
-                    try:
-                        gas_options["header_row"] = max(1, int(header_row))
-                    except (TypeError, ValueError):
-                        gas_options["header_row"] = 1
-                    dedupe_columns = gas_options.get("dedupe_key_columns") or []
-                    gas_options["dedupe_key_columns"] = [
-                        str(column).strip()
-                        for column in dedupe_columns
-                        if str(column).strip()
-                    ]
+                    gas_options["sheet_name"] = str(gas_options.get("sheet_name", "") or "").strip()
                     gas_options["auth_token"] = str(gas_options.get("auth_token", "") or "").strip()
-                    gas_options["scheme_id"] = str(gas_options.get("scheme_id", "") or "").strip()
+                    for legacy_key in ("header_row", "dedupe_key_columns", "scheme_id"):
+                        gas_options.pop(legacy_key, None)
                 for entry in job.get("history") or []:
                     if entry.get("trigger") == "auto":
                         entry["trigger"] = "scheduled"

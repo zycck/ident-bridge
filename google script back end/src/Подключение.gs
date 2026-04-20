@@ -1,18 +1,9 @@
 /*
-Скопируйте код ниже в проект Apps Script у нужной таблицы.
-
-Как подключить:
-1. Добавьте библиотеку: 1gCHuAaNHvQmelAnG2bLBlCoiuj1EPx0uu8D0e3leBp1XQ6X6sukBm5iu
-2. Имя библиотеки: iDBBackend
-3. Выберите последнюю версию библиотеки
-4. Создайте свойство AUTH_TOKEN
-5. Вставьте код ниже в новый файл проекта
-6. Разверните проект таблицы как веб-приложение
+Скопируйте этот файл в Apps Script-проект, который будет вызывать библиотеку backend.
+*/
 
 function doGet(e) {
-  return iDBBackend.handleRequest(e, 'GET', {
-    expectedToken: requiredScriptProperty_('AUTH_TOKEN'),
-  });
+  return iDBBackend.handleRequest(e, 'GET', null);
 }
 
 function doPost(e) {
@@ -22,11 +13,10 @@ function doPost(e) {
 }
 
 function requiredScriptProperty_(name) {
-  const value = PropertiesService.getScriptProperties().getProperty(name);
-  const normalized = typeof value === 'string' ? value.trim() : '';
+  var value = PropertiesService.getScriptProperties().getProperty(name);
+  var normalized = typeof value === 'string' ? value.trim() : '';
   if (!normalized) {
-    throw new Error(`Missing Script Property: ${name}`);
+    throw new Error('Missing Script Property: ' + name);
   }
   return normalized;
 }
-*/

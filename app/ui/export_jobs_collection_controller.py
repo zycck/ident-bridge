@@ -4,12 +4,17 @@ from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMessageBox, QFrame, QScrollArea, QVBoxLayout, QWidget
 
 from app.config import ConfigManager, ExportJob
 from app.ui.export_job_editor import ExportJobEditor
 from app.ui.export_job_tile import ExportJobTile
-from app.ui.export_jobs_store import load_export_jobs, new_export_job, persist_export_jobs
+from app.ui.export_jobs_store import (
+    find_duplicate_export_target,
+    load_export_jobs,
+    new_export_job,
+    persist_export_jobs,
+)
 
 
 class ExportJobsCollectionController:
@@ -27,6 +32,7 @@ class ExportJobsCollectionController:
         emit_sync_completed: Callable[[object], None],
         emit_history_changed: Callable[[], None],
         emit_failure_alert: Callable[[str, int], None],
+        warn_duplicate_target: Callable[[str, str], None] | None = None,
         tile_factory: type[QWidget] = ExportJobTile,
         editor_factory: type[Any] = ExportJobEditor,
     ) -> None:
@@ -39,6 +45,11 @@ class ExportJobsCollectionController:
         self._emit_sync_completed = emit_sync_completed
         self._emit_history_changed = emit_history_changed
         self._emit_failure_alert = emit_failure_alert
+        self._warn_duplicate_target = (
+            warn_duplicate_target
+            if warn_duplicate_target is not None
+            else lambda title, message: QMessageBox.warning(self._parent, title, message)
+        )
         self._tile_factory = tile_factory
         self._editor_factory = editor_factory
         self._editors: dict[str, Any] = {}
@@ -53,10 +64,25 @@ class ExportJobsCollectionController:
         self._tiles_page.reflow_tiles()
 
     def save_jobs(self) -> None:
-        persist_export_jobs(
-            self._config,
-            [editor.to_job() for editor in self._editors.values()],
-        )
+        jobs = [editor.to_job() for editor in self._editors.values()]
+        duplicate = find_duplicate_export_target(jobs)
+        if duplicate is not None:
+            first_job_id, second_job_id, webhook_url, sheet_name = duplicate
+            job_by_id = {job["id"]: job for job in jobs}
+            first_name = str(job_by_id.get(first_job_id, {}).get("name", "") or "без названия")
+            second_name = str(job_by_id.get(second_job_id, {}).get("name", "") or "без названия")
+            self._warn_duplicate_target(
+                "Дубликат выгрузки",
+                (
+                    f"Нельзя использовать один и тот же адрес обработки и лист в нескольких выгрузках.\n"
+                    f"Адрес: {webhook_url}\n"
+                    f"Лист: {sheet_name}\n"
+                    f"Уже есть: «{first_name}» и «{second_name}»."
+                ),
+            )
+            return
+
+        persist_export_jobs(self._config, jobs)
         self.sync_tiles_from_editors()
 
     def add_new_job(self) -> None:

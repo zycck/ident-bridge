@@ -24,6 +24,8 @@ def test_google_sheets_panel_closes_overlay_popup_with_host(qtbot) -> None:
         timeout=2000,
     )
 
+    assert "алиасы столбцов" in panel._alias_hint_label.text()
+
     panel.close()
 
     qtbot.waitUntil(lambda: host.findChild(QFrame, "sheetSuggestionsFrame") is None, timeout=2000)

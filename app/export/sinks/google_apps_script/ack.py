@@ -4,8 +4,6 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-SUPPORTED_API_MAJOR = 1
-
 
 @dataclass(slots=True)
 class GasAck:
@@ -13,30 +11,19 @@ class GasAck:
     status: str
     run_id: str
     chunk_index: int
-    rows_received: int
-    rows_written: int
     retryable: bool
-    schema_action: str
-    added_columns: list[str]
     message: str
-    api_version: str = ""
+    rows_received: int = 0
+    rows_written: int = 0
     error_code: str = ""
     details: dict[str, Any] | None = None
 
 
-def _validate_api_version(payload: dict[str, Any]) -> str:
-    api_version = str(payload.get("api_version", "") or "").strip()
-    if not api_version:
-        return ""
-
-    major_text = api_version.split(".", 1)[0]
-    if not major_text.isdigit():
-        raise ValueError("Ack содержит некорректный api_version")
-
-    if int(major_text) != SUPPORTED_API_MAJOR:
-        raise ValueError("Ack содержит несовместимый api_version")
-
-    return api_version
+def _coerce_int(value: Any, *, field_name: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Ack содержит некорректный {field_name}") from exc
 
 
 def parse_gas_ack(raw_body: bytes, *, expected_run_id: str, expected_chunk_index: int) -> GasAck:
@@ -47,56 +34,52 @@ def parse_gas_ack(raw_body: bytes, *, expected_run_id: str, expected_chunk_index
 
     if not isinstance(payload, dict):
         raise ValueError("Некорректный формат ack")
+
     ok = bool(payload.get("ok"))
     if ok:
-        required = (
-            "status",
-            "rows_received",
-            "rows_written",
-            "retryable",
-            "schema_action",
-            "added_columns",
-            "message",
-        )
+        required = ("status", "run_id", "chunk_index", "retryable", "message")
     else:
         required = ("retryable", "message")
     missing = [field for field in required if field not in payload]
     if missing:
         raise ValueError(f"Ack не содержит обязательные поля: {', '.join(missing)}")
-    api_version = _validate_api_version(payload)
+
+    status = str(payload.get("status", "") or "").strip()
+    if ok and not status:
+        raise ValueError("Ack не содержит обязательные поля: status")
 
     raw_run_id = payload.get("run_id")
     raw_chunk_index = payload.get("chunk_index")
-
     if ok:
-        if raw_run_id != expected_run_id:
+        if str(raw_run_id) != expected_run_id:
             raise ValueError("Ack содержит другой run_id")
-        if raw_chunk_index != expected_chunk_index:
+        if _coerce_int(raw_chunk_index, field_name="chunk_index") != expected_chunk_index:
             raise ValueError("Ack содержит другой chunk_index")
         run_id = str(raw_run_id)
-        chunk_index = int(raw_chunk_index)
+        chunk_index = expected_chunk_index
     else:
         if raw_run_id not in {"", None, expected_run_id}:
             raise ValueError("Ack содержит другой run_id")
         if raw_chunk_index not in {"", None, expected_chunk_index}:
             raise ValueError("Ack содержит другой chunk_index")
         run_id = str(raw_run_id or expected_run_id)
-        chunk_index = int(raw_chunk_index or expected_chunk_index)
+        chunk_index = _coerce_int(raw_chunk_index or expected_chunk_index, field_name="chunk_index")
+
+    rows_received = int(payload.get("rows_received", payload.get("chunk_rows", 0)) or 0)
+    rows_written = int(payload.get("rows_written", payload.get("chunk_rows", 0)) or 0)
+    details = payload.get("details") if isinstance(payload.get("details"), dict) else None
 
     return GasAck(
         ok=ok,
-        status=str(payload.get("status", "")),
+        status=status,
         run_id=run_id,
         chunk_index=chunk_index,
-        rows_received=int(payload.get("rows_received", 0)),
-        rows_written=int(payload.get("rows_written", 0)),
         retryable=bool(payload.get("retryable", False)),
-        schema_action=str(payload.get("schema_action", "")),
-        added_columns=list(payload.get("added_columns") or []),
-        message=str(payload.get("message", "")),
-        api_version=api_version,
-        error_code=str(payload.get("error_code", "")),
-        details=payload.get("details") if isinstance(payload.get("details"), dict) else None,
+        message=str(payload.get("message", "") or "").strip(),
+        rows_received=rows_received,
+        rows_written=rows_written,
+        error_code=str(payload.get("error_code", "") or "").strip(),
+        details=details,
     )
 
 

@@ -1,10 +1,12 @@
 """Delivery transport and sink implementation for Google Apps Script."""
 
+import json
 import logging
 import os
 import re
 import ssl
 import time
+from datetime import datetime
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -97,8 +99,8 @@ def _build_actionable_ack_message(cause: "_ChunkDeliveryError") -> str:
             "опубликованный адрес проекта Apps Script таблицы."
         )
 
-    if cause.ack_message:
-        return cause.ack_message
+    if cause.error_code == "INVALID_ACTION":
+        return "Адрес обработки не поддерживает ожидаемые действия. Проверьте, что развернута актуальная версия скрипта."
 
     return ""
 
@@ -124,57 +126,25 @@ def _build_http_failure_message(http_status: int | None, body_preview: str) -> s
 
 
 def _build_ack_failure_message(ack: GasAck) -> str:
-    details = ack.details or {}
-    internal_message = str(details.get("internal_message", "") or "").strip()
-    base_message = str(ack.message or ack.error_code or "Ack failure").strip()
-
-    if internal_message and internal_message not in base_message:
-        return f"{base_message}: {internal_message}"
-    return base_message
+    return str(ack.message or ack.error_code or "Ack failure").strip()
 
 
-def _normalize_gas_options(gas_options: GasOptions | None) -> GasOptions:
-    raw = gas_options or {}
-    header_row = raw.get("header_row", 1)
-    try:
-        normalized_header_row = max(1, int(header_row))
-    except (TypeError, ValueError):
-        normalized_header_row = 1
-    dedupe_columns = raw.get("dedupe_key_columns") or []
-    return {
-        "sheet_name": str(raw.get("sheet_name", "") or "").strip(),
-        "header_row": normalized_header_row,
-        "dedupe_key_columns": [
-            str(column).strip()
-            for column in dedupe_columns
-            if str(column).strip()
-        ],
-        "auth_token": str(raw.get("auth_token", "") or "").strip(),
-    }
-
-
-def _payload_target_block(gas_options: GasOptions) -> dict[str, Any] | None:
-    sheet_name = str(gas_options.get("sheet_name", "") or "").strip()
-    header_row = int(gas_options.get("header_row", 1) or 1)
-    if not sheet_name and header_row == 1:
-        return None
-    return {
-        "sheet_name": sheet_name,
-        "header_row": header_row,
-    }
-
-
-def _payload_dedupe_block(gas_options: GasOptions) -> dict[str, Any] | None:
-    key_columns = [
-        str(column).strip()
-        for column in (gas_options.get("dedupe_key_columns") or [])
-        if str(column).strip()
-    ]
-    if not key_columns:
-        return None
-    return {
-        "key_columns": key_columns,
-    }
+def _build_gas_get_url(url: str, *, action: str, auth_token: str = "") -> str:
+    parsed = urllib.parse.urlsplit(url)
+    query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    filtered_query = [(key, value) for key, value in query_items if key not in {"action", "token"}]
+    filtered_query.append(("action", action))
+    if auth_token.strip():
+        filtered_query.append(("token", auth_token.strip()))
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            urllib.parse.urlencode(filtered_query),
+            parsed.fragment,
+        )
+    )
 
 
 @final
@@ -194,7 +164,7 @@ class GoogleAppsScriptSink:
         ssl_context: ssl.SSLContext | None = None,
     ) -> None:
         self._url = str(os.environ.get("IDENTBRIDGE_GAS_DEV_URL", "") or "").strip() or url
-        self._gas_options = _normalize_gas_options(gas_options)
+        self._gas_options = gas_options
         self._max_rows_per_chunk = max_rows_per_chunk
         self._max_payload_bytes = max_payload_bytes
         self._retries = max(1, retries)
@@ -212,6 +182,9 @@ class GoogleAppsScriptSink:
 
     def push(self, job_name: str, result: QueryResult, *, on_progress=None) -> None:
         run_id = str(uuid.uuid4())
+        export_date = datetime.now().date().isoformat()
+        self._preflight_or_raise(run_id)
+
         try:
             chunks = plan_gas_chunks(
                 job_name,
@@ -220,6 +193,7 @@ class GoogleAppsScriptSink:
                 max_rows_per_chunk=self._max_rows_per_chunk,
                 max_payload_bytes=self._max_payload_bytes,
                 gas_options=self._gas_options,
+                export_date=export_date,
             )
         except ValueError as exc:
             raise GoogleAppsScriptDeliveryError(
@@ -238,6 +212,7 @@ class GoogleAppsScriptSink:
                 job_name,
                 chunk,
                 gas_options=self._gas_options,
+                export_date=export_date,
             )
             try:
                 ack = self._post_chunk(payload, chunk)
@@ -252,17 +227,84 @@ class GoogleAppsScriptSink:
                 ) from exc
 
             delivered_chunks += 1
-            delivered_rows += ack.rows_received
+            delivered_rows += ack.rows_written or ack.rows_received or chunk.chunk_rows
             if on_progress is not None:
                 on_progress(f"Отправка данных... {chunk.chunk_index}/{len(chunks)}")
-            if ack.status == "schema_extended":
-                _log.info(
-                    "event=export.schema.extended run_id=%s chunk=%s/%s added_columns=%s",
-                    run_id,
-                    chunk.chunk_index,
-                    len(chunks),
-                    ",".join(ack.added_columns),
-                )
+
+    def _preflight_or_raise(self, run_id: str) -> None:
+        try:
+            self._ping_backend()
+        except Exception as exc:  # noqa: BLE001
+            user_message = "Не удалось проверить адрес обработки Google Таблиц"
+            if isinstance(exc, _ChunkDeliveryError):
+                actionable = _build_actionable_ack_message(exc)
+                if actionable:
+                    user_message = actionable
+            raise GoogleAppsScriptDeliveryError(
+                user_message,
+                run_id=run_id,
+                delivered_chunks=0,
+                delivered_rows=0,
+                failed_chunk_index=1,
+                debug_context={
+                    "phase": "ping",
+                    "url": self._url,
+                    "error": str(exc),
+                    "cause_type": getattr(exc, "cause_type", type(exc).__name__),
+                    "ack_message": getattr(exc, "ack_message", ""),
+                    "error_code": getattr(exc, "error_code", ""),
+                    "ack_details": getattr(exc, "ack_details", {}),
+                    "http_status": getattr(exc, "http_status", None),
+                    "http_body_preview": getattr(exc, "http_body_preview", ""),
+                },
+            ) from exc
+
+    def _ping_backend(self) -> None:
+        auth_token = str((self._gas_options or {}).get("auth_token", "") or "").strip()
+        req = urllib.request.Request(
+            _build_gas_get_url(self._url, action="ping", auth_token=auth_token),
+            headers={"Accept": "application/json", "User-Agent": USER_AGENT},
+            method="GET",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout, context=self._ssl) as resp:
+                raw_body = resp.read()
+        except urllib.error.HTTPError as exc:
+            http_status = getattr(exc, "code", None)
+            body_preview = _preview_response_body(exc.read())
+            raise _ChunkDeliveryError(
+                _build_http_failure_message(http_status, body_preview),
+                cause_type=type(exc).__name__,
+                http_status=http_status,
+                http_body_preview=body_preview,
+            ) from exc
+
+        try:
+            payload = json.loads(raw_body.decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            raise _ChunkDeliveryError(
+                "Ping вернул некорректный JSON",
+                cause_type="PingError",
+                http_body_preview=_preview_response_body(raw_body),
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise _ChunkDeliveryError(
+                "Ping вернул неожиданный формат ответа",
+                cause_type="PingError",
+                http_body_preview=_preview_response_body(raw_body),
+            )
+
+        if bool(payload.get("ok")):
+            return
+
+        raise _ChunkDeliveryError(
+            str(payload.get("message", "") or payload.get("error_code", "") or "Ping rejected").strip(),
+            cause_type="GasAckError",
+            ack_message=str(payload.get("message", "") or "").strip(),
+            error_code=str(payload.get("error_code", "") or "").strip(),
+            ack_details=payload.get("details") if isinstance(payload.get("details"), dict) else None,
+        )
 
     def _post_chunk(self, payload: bytes, chunk: GasChunkPlan) -> GasAck:
         last_exc: Exception | None = None
@@ -294,7 +336,7 @@ class GoogleAppsScriptSink:
                         expected_run_id=chunk.run_id,
                         expected_chunk_index=chunk.chunk_index,
                     )
-                except Exception as parse_exc:  # noqa: BLE001
+                except Exception:  # noqa: BLE001
                     last_exc = _ChunkDeliveryError(
                         _build_http_failure_message(http_status, body_preview),
                         cause_type=type(exc).__name__,
@@ -303,11 +345,9 @@ class GoogleAppsScriptSink:
                     )
                     ack = None  # type: ignore[assignment]
                 else:
-                    if ack.ok or ack.retryable:
-                        pass
-                    else:
+                    if not ack.ok and not ack.retryable:
                         raise _ChunkDeliveryError(
-                            _build_http_failure_message(http_status, ack.message or body_preview),
+                            _build_http_failure_message(http_status, body_preview),
                             cause_type=type(exc).__name__,
                             http_status=http_status,
                             http_body_preview=body_preview,
@@ -360,9 +400,13 @@ class GoogleAppsScriptSink:
         failed_chunk: GasChunkPlan,
         cause: Exception,
     ) -> GoogleAppsScriptDeliveryError:
-        base_user_message = build_user_delivery_error(
-            delivered_chunks=delivered_chunks,
-            total_chunks=total_chunks,
+        base_user_message = (
+            build_user_delivery_error(
+                delivered_chunks=delivered_chunks,
+                total_chunks=total_chunks,
+            )
+            if delivered_chunks > 0
+            else "Не удалось отправить данные в Google Таблицы"
         )
         user_message = base_user_message
         debug_context = {
@@ -392,15 +436,6 @@ class GoogleAppsScriptSink:
                 debug_context["error_code"] = cause.error_code
             if cause.ack_details:
                 debug_context["ack_details"] = cause.ack_details
-            if (
-                cause.error_code == "INTERNAL_WRITE_ERROR"
-                and cause.ack_message == "Unexpected server error"
-                and not cause.ack_details
-            ):
-                debug_context["hint"] = (
-                    "Backend returned a generic internal error without details. "
-                    "If you are using an Apps Script /exec deployment, publish the latest backend version."
-                )
         return GoogleAppsScriptDeliveryError(
             user_message,
             run_id=run_id,

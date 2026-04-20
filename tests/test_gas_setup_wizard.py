@@ -21,7 +21,6 @@ def test_gas_setup_wizard_generates_token_and_returns_library_config(qtbot) -> N
     assert Theme.surface in dialog.styleSheet()
     assert selected["webhook_url"] == "https://script.google.com/macros/s/library/exec"
     assert selected["auth_token"]
-    assert selected["scheme_id"] == "library_v1"
 
 
 def test_gas_setup_wizard_shows_shim_preview_and_initial_values(qtbot) -> None:

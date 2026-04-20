@@ -25,17 +25,8 @@ class _FakeShell(QObject):
     def gas_sheet_name(self) -> str:
         return "Exports"
 
-    def gas_header_row(self) -> int:
-        return 2
-
-    def gas_dedupe_key_columns(self) -> list[str]:
-        return ["id", "updated_at"]
-
     def gas_auth_token(self) -> str:
         return "secret-token"
-
-    def gas_scheme_id(self) -> str:
-        return "library_v1"
 
     def schedule_enabled(self) -> bool:
         return True
@@ -91,13 +82,7 @@ def test_export_job_editor_bridge_builds_job_payload_and_prepends_history() -> N
     assert job["name"] == "Nightly"
     assert job["sql_query"] == "SELECT 1"
     assert job["webhook_url"] == "https://example.test/hook"
-    assert job["gas_options"] == {
-        "sheet_name": "Exports",
-        "header_row": 2,
-        "dedupe_key_columns": ["id", "updated_at"],
-        "auth_token": "secret-token",
-        "scheme_id": "library_v1",
-    }
+    assert job["gas_options"] == {"sheet_name": "Exports", "auth_token": "secret-token"}
     assert job["schedule_enabled"] is True
     assert job["schedule_mode"] == "hourly"
     assert job["schedule_value"] == "4"

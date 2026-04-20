@@ -14,13 +14,15 @@ def test_google_sheets_panel_keeps_sheet_picker_as_overlay_popup() -> None:
     assert ".setCompleter(" not in source
     assert "QListView" in source
     assert "_suggestions_frame" in source
-    assert "Не возвращать отдельный popup через QCompleter" in source
-    assert "Overlay popup: не добавлять в layout" in source
     assert "Qt.WindowType.Popup" not in source
+    assert "QSpinBox" not in source
+    assert "_header_row_spin" not in source
+    assert "_dedupe_edit" not in source
     assert 'root.addWidget(self._suggestions_frame)' not in source
     assert "self.window()" in source
     assert "self._sheet_name_field.setText(normalized[0])" not in source
     assert 'self._count_badge.setText(f"{len(self._all_options)} листов")' in source
+    assert "алиасы столбцов" in source
     assert "def shutdown(self) -> None:" in source
     assert "self._suggestions_frame.hide()" in source
     assert "self._overlay_parent.removeEventFilter(self)" in source
