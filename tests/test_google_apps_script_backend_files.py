@@ -53,9 +53,9 @@ def test_google_apps_script_backend_is_split_into_v2_modules() -> None:
     source_files = sorted(path.name for path in SRC_DIR.iterdir() if path.is_file())
 
     assert "backend.js" in source_files
-    assert "Подключение.gs" in source_files
     assert any(name.startswith("backend_") for name in source_files)
     assert len(source_files) >= 4
+    assert "Подключение.gs" not in source_files
 
     combined_source = "\n".join(
         (SRC_DIR / name).read_text(encoding="utf-8") for name in source_files
@@ -71,6 +71,19 @@ def test_google_apps_script_backend_is_split_into_v2_modules() -> None:
         assert legacy_token not in combined_source
 
 
+def test_library_project_keeps_connection_template_outside_src() -> None:
+    library_template = SRC_DIR / "Подключение.gs"
+    shim_template = ROOT / "resources" / "gas-shim" / "shim.gs"
+
+    assert not library_template.exists()
+    assert shim_template.exists()
+
+    shim_text = shim_template.read_text(encoding="utf-8")
+    assert "function doGet(e) {" in shim_text
+    assert "function doPost(e) {" in shim_text
+    assert LIBRARY_SCRIPT_ID in shim_text
+
+
 def test_do_get_supports_only_ping_and_sheets() -> None:
     result = _run_backend_probe(
         """
@@ -84,9 +97,9 @@ def test_do_get_supports_only_ping_and_sheets() -> None:
           values: [['__chunk_index', '__row_index', 'id', 'name', '__TECH_COLUMN__']]
         });
 
-        const ping = JSON.parse(doGet({ parameter: { action: 'ping' } }));
-        const sheets = JSON.parse(doGet({ parameter: { action: 'sheets' } }));
-        const invalid = JSON.parse(doGet({ parameter: { action: 'headers' } }));
+        const ping = JSON.parse(__callGet({ action: 'ping' }));
+        const sheets = JSON.parse(__callGet({ action: 'sheets' }));
+        const invalid = JSON.parse(__callGet({ action: 'headers' }));
 
         console.log(JSON.stringify({ ping, sheets, invalid }));
         """
@@ -106,9 +119,9 @@ def test_do_get_rejects_missing_or_wrong_token_when_auth_is_configured() -> None
         """
         __propertyStore.set('AUTH_TOKEN', 'secret-token');
 
-        const missing = JSON.parse(doGet({ parameter: { action: 'ping' } }));
-        const wrong = JSON.parse(doGet({ parameter: { action: 'ping', token: 'wrong-token' } }));
-        const ok = JSON.parse(doGet({ parameter: { action: 'ping', token: 'secret-token' } }));
+        const missing = JSON.parse(__callGet({ action: 'ping' }));
+        const wrong = JSON.parse(__callGet({ action: 'ping', token: 'wrong-token' }));
+        const ok = JSON.parse(__callGet({ action: 'ping', token: 'secret-token' }));
 
         console.log(JSON.stringify({ missing, wrong, ok }));
         """
@@ -157,29 +170,21 @@ def test_do_post_stages_chunks_and_promotes_on_completion() -> None:
           { id: 3, name: 'Vera' }
         ];
 
-        const first = JSON.parse(doPost({
-          postData: {
-            contents: JSON.stringify({
-              ...basePayload,
-              chunk_index: 1,
-              records: chunk1Records,
-              checksum: __checksum__({ ...basePayload, chunk_index: 1, records: chunk1Records })
-            })
-          }
-        }));
+        const first = JSON.parse(__callPost({
+          ...basePayload,
+          chunk_index: 1,
+          records: chunk1Records,
+          checksum: __checksum__({ ...basePayload, chunk_index: 1, records: chunk1Records })
+        }, { expectedToken: 'secret-token' }));
 
-        const second = JSON.parse(doPost({
-          postData: {
-            contents: JSON.stringify({
-              ...basePayload,
-              chunk_index: 2,
-              chunk_rows: 1,
-              total_rows: 3,
-              records: chunk2Records,
-              checksum: __checksum__({ ...basePayload, chunk_index: 2, chunk_rows: 1, total_rows: 3, records: chunk2Records })
-            })
-          }
-        }));
+        const second = JSON.parse(__callPost({
+          ...basePayload,
+          chunk_index: 2,
+          chunk_rows: 1,
+          total_rows: 3,
+          records: chunk2Records,
+          checksum: __checksum__({ ...basePayload, chunk_index: 2, chunk_rows: 1, total_rows: 3, records: chunk2Records })
+        }, { expectedToken: 'secret-token' }));
 
         const mainSheet = __spreadsheet.getSheetByName('Reports');
         const stagingSheet = __spreadsheet.getSheetByName('__stage__Reports__run-2026-04-20-001');
@@ -241,8 +246,8 @@ def test_do_post_repeating_same_chunk_keeps_staging_idempotent() -> None:
           ]
         };
         payload.checksum = __checksum__(payload);
-        const first = JSON.parse(doPost({ postData: { contents: JSON.stringify(payload) } }));
-        const second = JSON.parse(doPost({ postData: { contents: JSON.stringify(payload) } }));
+        const first = JSON.parse(__callPost(payload, { expectedToken: 'secret-token' }));
+        const second = JSON.parse(__callPost(payload, { expectedToken: 'secret-token' }));
         const stagingSheet = __spreadsheet.getSheetByName('__stage__Reports__run-duplicate');
 
         console.log(JSON.stringify({
@@ -308,9 +313,9 @@ def test_do_post_repeating_final_chunk_after_promotion_is_safe() -> None:
         };
         chunk2.checksum = __checksum__(chunk2);
 
-        const first = JSON.parse(doPost({ postData: { contents: JSON.stringify(chunk1) } }));
-        const second = JSON.parse(doPost({ postData: { contents: JSON.stringify(chunk2) } }));
-        const repeat = JSON.parse(doPost({ postData: { contents: JSON.stringify(chunk2) } }));
+        const first = JSON.parse(__callPost(chunk1, { expectedToken: 'secret-token' }));
+        const second = JSON.parse(__callPost(chunk2, { expectedToken: 'secret-token' }));
+        const repeat = JSON.parse(__callPost(chunk2, { expectedToken: 'secret-token' }));
         const mainSheet = __spreadsheet.getSheetByName('Reports');
 
         console.log(JSON.stringify({
@@ -355,25 +360,17 @@ def test_do_post_rejects_bad_token_and_bad_checksum() -> None:
           records: [{ id: 1, name: 'Ana' }]
         };
 
-        const badToken = JSON.parse(doPost({
-          postData: {
-            contents: JSON.stringify({
-              ...base,
-              auth_token: 'wrong-token',
-              checksum: __checksum__({ ...base, auth_token: 'wrong-token' })
-            })
-          }
-        }));
+        const badToken = JSON.parse(__callPost({
+          ...base,
+          auth_token: 'wrong-token',
+          checksum: __checksum__({ ...base, auth_token: 'wrong-token' })
+        }, { expectedToken: 'secret-token' }));
         __propertyStore.set('AUTH_TOKEN', 'secret-token');
-        const badChecksum = JSON.parse(doPost({
-          postData: {
-            contents: JSON.stringify({
-              ...base,
-              auth_token: 'secret-token',
-              checksum: 'not-a-real-checksum'
-            })
-          }
-        }));
+        const badChecksum = JSON.parse(__callPost({
+          ...base,
+          auth_token: 'secret-token',
+          checksum: 'not-a-real-checksum'
+        }, { expectedToken: 'secret-token' }));
 
         console.log(JSON.stringify({ badToken, badChecksum }));
         """
@@ -413,7 +410,7 @@ def test_do_post_maps_new_rows_by_column_name_and_keeps_existing_header_order() 
         };
         payload.checksum = __checksum__(payload);
 
-        const ack = JSON.parse(doPost({ postData: { contents: JSON.stringify(payload) } }));
+        const ack = JSON.parse(__callPost(payload, { expectedToken: 'secret-token' }));
         const mainSheet = __spreadsheet.getSheetByName('Reports');
 
         console.log(JSON.stringify({
@@ -448,7 +445,7 @@ def test_ping_cleans_stale_stage_sheet_and_run_state() -> None:
           updated_at: '2000-01-01T00:00:00.000Z'
         }));
 
-        const ping = JSON.parse(doGet({ parameter: { action: 'ping' } }));
+        const ping = JSON.parse(__callGet({ action: 'ping' }));
 
         console.log(JSON.stringify({
           ping,
@@ -686,6 +683,18 @@ global.__checksum__ = (payload) => {{
   }}));
   return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
 }};
+
+global.__callGet = (parameter = {{}}, context = null) => (
+  iDBBackend.handleRequest({{ parameter }}, 'GET', context)
+);
+
+global.__callPost = (payload, context = null) => (
+  iDBBackend.handleRequest({{
+    postData: {{
+      contents: JSON.stringify(payload)
+    }}
+  }}, 'POST', context)
+);
 
 {probe}
 """
