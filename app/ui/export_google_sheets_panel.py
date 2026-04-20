@@ -452,6 +452,7 @@ class ExportGoogleSheetsPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._target_url = ""
+        self._scheme_id = ""
         self._loading = False
         self._loading_tick = 0
         self._refresh_timer = QTimer(self)
@@ -478,7 +479,7 @@ class ExportGoogleSheetsPanel(QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(8)
 
-        root.addWidget(HeaderLabel("Google Sheets"))
+        root.addWidget(HeaderLabel("Google Таблицы"))
 
         form = QFormLayout()
         form.setContentsMargins(0, 0, 0, 0)
@@ -510,12 +511,12 @@ class ExportGoogleSheetsPanel(QWidget):
         self._dedupe_edit = QLineEdit(self)
         self._dedupe_edit.setPlaceholderText("id, updated_at")
         self._dedupe_edit.textChanged.connect(self.changed)
-        form.addRow("Dedupe key columns", self._dedupe_edit)
+        form.addRow("Ключевые столбцы", self._dedupe_edit)
 
         self._auth_token_edit = QLineEdit(self)
-        self._auth_token_edit.setPlaceholderText("Shared auth token")
+        self._auth_token_edit.setPlaceholderText("Ключ доступа")
         self._auth_token_edit.textChanged.connect(self.changed)
-        form.addRow("Auth token", self._auth_token_edit)
+        form.addRow("Ключ доступа", self._auth_token_edit)
 
         self._status_label = QLabel("", self)
         self._status_label.setStyleSheet(
@@ -547,6 +548,9 @@ class ExportGoogleSheetsPanel(QWidget):
     def auth_token(self) -> str:
         return self._auth_token_edit.text().strip()
 
+    def scheme_id(self) -> str:
+        return self._scheme_id
+
     def set_gas_options(
         self,
         *,
@@ -554,7 +558,9 @@ class ExportGoogleSheetsPanel(QWidget):
         header_row: int,
         dedupe_key_columns: list[str],
         auth_token: str,
+        scheme_id: str,
     ) -> None:
+        self._scheme_id = str(scheme_id or "").strip()
         with (
             QSignalBlocker(self._sheet_name_field),
             QSignalBlocker(self._header_row_spin),

@@ -108,6 +108,7 @@ _DIALOG_QSS = (
 class TestRunDialog(QDialog):
     """Dialog for executing a SQL query and previewing the result table."""
 
+    __test__ = False
     test_completed = Signal(bool, int, str, int)
 
     def __init__(

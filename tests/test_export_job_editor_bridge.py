@@ -34,6 +34,9 @@ class _FakeShell(QObject):
     def gas_auth_token(self) -> str:
         return "secret-token"
 
+    def gas_scheme_id(self) -> str:
+        return "library_v1"
+
     def schedule_enabled(self) -> bool:
         return True
 
@@ -93,6 +96,7 @@ def test_export_job_editor_bridge_builds_job_payload_and_prepends_history() -> N
         "header_row": 2,
         "dedupe_key_columns": ["id", "updated_at"],
         "auth_token": "secret-token",
+        "scheme_id": "library_v1",
     }
     assert job["schedule_enabled"] is True
     assert job["schedule_mode"] == "hourly"

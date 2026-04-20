@@ -1,6 +1,7 @@
 """Delivery transport and sink implementation for Google Apps Script."""
 
 import logging
+import os
 import re
 import ssl
 import time
@@ -166,7 +167,7 @@ class GoogleAppsScriptSink:
         timeout: float = GOOGLE_SCRIPT_TIMEOUT,
         ssl_context: ssl.SSLContext | None = None,
     ) -> None:
-        self._url = url
+        self._url = str(os.environ.get("IDENTBRIDGE_GAS_DEV_URL", "") or "").strip() or url
         self._gas_options = _normalize_gas_options(gas_options)
         self._max_rows_per_chunk = max_rows_per_chunk
         self._max_payload_bytes = max_payload_bytes

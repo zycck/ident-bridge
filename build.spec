@@ -13,6 +13,7 @@ a = Analysis(
         ("resources/check.svg",  "resources"),
         ("resources/icons",      "resources/icons"),
         ("resources/fonts",      "resources/fonts"),
+        ("resources/gas-shim/shim.gs", "resources/gas-shim"),
     ],
     hiddenimports=[
         "pyodbc",

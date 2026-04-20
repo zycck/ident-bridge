@@ -3,6 +3,8 @@
 var CONFIG = Object.freeze({
   protocolVersion: 'gas-sheet.v1',
   schemaMode: 'append_only_v1',
+  libraryScriptId: '1gCHuAaNHvQmelAnG2bLBlCoiuj1EPx0uu8D0e3leBp1XQ6X6sukBm5iu',
+  librarySymbol: 'iDBBackend',
   dataSheetName: 'ingest_chunks_v1',
   ledgerSheetName: '_idem_ledger_v1',
   indexSheetName: '_dedupe_index_v2',
@@ -47,6 +49,7 @@ var CONFIG = Object.freeze({
     'details_json',
   ],
 });
+var API_VERSION = '1.0';
 
 function buildLegacyIndexHeaders_() {
   const headers = [
@@ -281,8 +284,20 @@ function createWebhookError_(errorCode, retryable, message, details) {
 }
 
 function makeJsonResponse_(payload) {
+  const responsePayload = isPlainObject_(payload)
+    ? Object.assign({}, payload)
+    : { value: payload };
+  if (!Object.prototype.hasOwnProperty.call(responsePayload, 'api_version')) {
+    responsePayload.api_version = API_VERSION;
+  }
+  if (!Object.prototype.hasOwnProperty.call(responsePayload, 'library_script_id')) {
+    responsePayload.library_script_id = CONFIG.libraryScriptId;
+  }
+  if (!Object.prototype.hasOwnProperty.call(responsePayload, 'library_symbol')) {
+    responsePayload.library_symbol = CONFIG.librarySymbol;
+  }
   return ContentService
-    .createTextOutput(JSON.stringify(payload))
+    .createTextOutput(JSON.stringify(responsePayload))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
@@ -290,38 +305,63 @@ function trimString_(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function protocolValidateAuthToken_(payload) {
-  const expectedToken = trimString_(
-    PropertiesService.getScriptProperties().getProperty('AUTH_TOKEN')
-  );
-  const providedToken = trimString_(payload && payload.auth_token);
+function protocolResolveExpectedToken_(context) {
+  const contextToken = trimString_(context && context.expectedToken);
+  if (contextToken) {
+    return contextToken;
+  }
 
-  if (!expectedToken) {
+  return trimString_(PropertiesService.getScriptProperties().getProperty('AUTH_TOKEN'));
+}
+
+function protocolValidateProvidedToken_(providedToken, expectedToken, fieldName) {
+  const normalizedExpectedToken = trimString_(expectedToken);
+  const normalizedProvidedToken = trimString_(providedToken);
+  const tokenFieldName = fieldName || 'auth_token';
+
+  if (!normalizedExpectedToken) {
     throw createWebhookError_(
       'UNAUTHORIZED',
       false,
       'Auth token is not configured',
-      { field: 'auth_token' }
+      { field: tokenFieldName }
     );
   }
 
-  if (!providedToken) {
+  if (!normalizedProvidedToken) {
     throw createWebhookError_(
       'UNAUTHORIZED',
       false,
-      'Missing auth_token',
-      { field: 'auth_token' }
+      `Missing ${tokenFieldName}`,
+      { field: tokenFieldName }
     );
   }
 
-  if (providedToken !== expectedToken) {
+  if (normalizedProvidedToken !== normalizedExpectedToken) {
     throw createWebhookError_(
       'UNAUTHORIZED',
       false,
       'Invalid auth token',
-      { field: 'auth_token' }
+      { field: tokenFieldName }
     );
   }
+}
+
+function protocolValidateAuthToken_(payload, context) {
+  const expectedToken = protocolResolveExpectedToken_(context);
+  const providedToken = trimString_(payload && payload.auth_token);
+
+  protocolValidateProvidedToken_(providedToken, expectedToken, 'auth_token');
+}
+
+function protocolValidateQueryToken_(event, context) {
+  const expectedToken = trimString_(context && context.expectedToken);
+  if (!expectedToken) {
+    return;
+  }
+
+  const providedToken = trimString_(event && event.parameter ? event.parameter.token : '');
+  protocolValidateProvidedToken_(providedToken, expectedToken, 'token');
 }
 
 function normalizeColumnName_(value) {
@@ -628,7 +668,7 @@ function looksSensitiveString_(value) {
 
 /* ==================== 4. PROTOCOL ==================== */
 
-function protocolParseRequest_(event) {
+function protocolParseRequest_(event, context) {
   const raw = event && event.postData && typeof event.postData.contents === 'string'
     ? event.postData.contents
     : '';
@@ -654,7 +694,7 @@ function protocolParseRequest_(event) {
     });
   }
 
-  protocolValidateAuthToken_(payload);
+  protocolValidateAuthToken_(payload, context);
 
   return protocolNormalizeRequest_(payload);
 }
@@ -2245,7 +2285,8 @@ function getSheetsStore_() {
 
 function doGet(event) {
   try {
-    const action = trimString_(event && event.parameter ? event.parameter.action : '').toLowerCase();
+    const normalizedEvent = event || {};
+    const action = trimString_(normalizedEvent && normalizedEvent.parameter ? normalizedEvent.parameter.action : '').toLowerCase();
     const store = getSheetsStore_();
 
     if (action === 'sheets') {
@@ -2263,8 +2304,8 @@ function doGet(event) {
 
     if (action === 'headers') {
       const target = protocolNormalizeTarget_({
-        sheet_name: event && event.parameter ? event.parameter.sheet_name : '',
-        header_row: event && event.parameter ? event.parameter.header_row : 1,
+        sheet_name: normalizedEvent && normalizedEvent.parameter ? normalizedEvent.parameter.sheet_name : '',
+        header_row: normalizedEvent && normalizedEvent.parameter ? normalizedEvent.parameter.header_row : 1,
       });
       return makeJsonResponse_({
         ok: true,
@@ -2291,89 +2332,112 @@ function doGet(event) {
   }
 }
 
-function doPost(event) {
-  const store = getSheetsStore_();
-  let request = null;
-  let lease = null;
-  let context = null;
-
+function handleRequest(event, method, context) {
   try {
-    request = protocolParseRequest_(event);
-    logRequestStart_(request);
-
-    const startState = store.beginRequest(request);
-    if (startState.state === 'completed') {
-      const duplicateAck = protocolBuildDuplicateAck_(request, startState.record);
-      logSuccess_(duplicateAck);
-      return makeJsonResponse_(duplicateAck);
+    const normalizedMethod = trimString_(method).toUpperCase();
+    if (normalizedMethod === 'GET') {
+      protocolValidateQueryToken_(event, context);
+      return doGet(event);
     }
 
-    lease = startState.lease;
-    context = store.loadRequestContext(request);
+    if (normalizedMethod === 'POST') {
+      const store = getSheetsStore_();
+      let request = null;
+      let lease = null;
+      let requestContext = null;
 
-    const schemaPlan = schemaDeriveWritePlan_(context.existingHeaders, request.schema.columns);
-    if (!schemaPlan.allowed) {
-      throw createWebhookError_(
-        'SCHEMA_MISMATCH_RENAME_OR_REMOVE',
-        false,
-        schemaPlan.message,
-        schemaPlan.details
-      );
-    }
-
-    const preparedChunk = store.prepareChunk(context, request);
-    const successAck = protocolBuildSuccessAck_(
-      request,
-      preparedChunk.records.length,
-      schemaPlan
-    );
-
-    store.writeChunk({
-      context,
-      schemaPlan,
-      records: preparedChunk.records,
-      ledgerEntry: buildLedgerEntry_(request, successAck, 'completed'),
-      indexBucketOps: preparedChunk.indexBucketOps,
-    });
-
-    store.finalizeSuccess(request, successAck, lease);
-    lease = null;
-
-    logSuccess_(successAck);
-    return makeJsonResponse_(successAck);
-  } catch (error) {
-    const failureAck = protocolBuildFailureAck_(request, error);
-
-    if (lease) {
-      store.releaseLease(lease);
-      lease = null;
-    }
-
-    if (request && request.runId !== undefined) {
       try {
-        context = context || store.loadRequestContext(request);
+        request = protocolParseRequest_(event, context);
+        logRequestStart_(request);
+
+        const startState = store.beginRequest(request);
+        if (startState.state === 'completed') {
+          const duplicateAck = protocolBuildDuplicateAck_(request, startState.record);
+          logSuccess_(duplicateAck);
+          return makeJsonResponse_(duplicateAck);
+        }
+
+        lease = startState.lease;
+        requestContext = store.loadRequestContext(request);
+
+        const schemaPlan = schemaDeriveWritePlan_(requestContext.existingHeaders, request.schema.columns);
+        if (!schemaPlan.allowed) {
+          throw createWebhookError_(
+            'SCHEMA_MISMATCH_RENAME_OR_REMOVE',
+            false,
+            schemaPlan.message,
+            schemaPlan.details
+          );
+        }
+
+        const preparedChunk = store.prepareChunk(requestContext, request);
+        const successAck = protocolBuildSuccessAck_(
+          request,
+          preparedChunk.records.length,
+          schemaPlan
+        );
+
         store.writeChunk({
-          context,
-          schemaPlan: {
-            targetHeaders: cloneArray_(context.existingHeaders),
-            columnInsertions: [],
-          },
-          records: [],
-          ledgerEntry: buildLedgerEntry_(request, failureAck, 'failed'),
-          indexBucketOps: [],
+          context: requestContext,
+          schemaPlan,
+          records: preparedChunk.records,
+          ledgerEntry: buildLedgerEntry_(request, successAck, 'completed'),
+          indexBucketOps: preparedChunk.indexBucketOps,
         });
-      } catch (auditError) {
-        logWarn_('ledger_write_failed', {
-          run_id: request.runId,
-          chunk_index: request.chunkIndex,
-          message: auditError && auditError.message
-            ? auditError.message
-            : 'Unexpected ledger write failure',
-        });
+
+        store.finalizeSuccess(request, successAck, lease);
+        lease = null;
+
+        logSuccess_(successAck);
+        return makeJsonResponse_(successAck);
+      } catch (error) {
+        const failureAck = protocolBuildFailureAck_(request, error);
+
+        if (lease) {
+          store.releaseLease(lease);
+          lease = null;
+        }
+
+        if (request && request.runId !== undefined) {
+          try {
+            requestContext = requestContext || store.loadRequestContext(request);
+            store.writeChunk({
+              context: requestContext,
+              schemaPlan: {
+                targetHeaders: cloneArray_(requestContext.existingHeaders),
+                columnInsertions: [],
+              },
+              records: [],
+              ledgerEntry: buildLedgerEntry_(request, failureAck, 'failed'),
+              indexBucketOps: [],
+            });
+          } catch (auditError) {
+            logWarn_('ledger_write_failed', {
+              run_id: request.runId,
+              chunk_index: request.chunkIndex,
+              message: auditError && auditError.message
+                ? auditError.message
+                : 'Unexpected ledger write failure',
+            });
+          }
+        }
+
+        logFailure_(failureAck);
+        return makeJsonResponse_(failureAck);
       }
     }
 
-    logFailure_(failureAck);
-    return makeJsonResponse_(failureAck);
+    throw createWebhookError_(
+      'INVALID_REQUEST_METHOD',
+      false,
+      `Unsupported request method: ${normalizedMethod || '<empty>'}`,
+      { method: normalizedMethod || '' }
+    );
+  } catch (error) {
+    return makeJsonResponse_(protocolBuildFailureAck_(null, error));
   }
+}
+
+function doPost(event) {
+  return handleRequest(event, 'POST', null);
 }

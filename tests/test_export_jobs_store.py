@@ -22,6 +22,7 @@ class _DummyConfig:
                         "header_row": "2",
                         "dedupe_key_columns": ["id", "updated_at", ""],
                         "auth_token": "  secret-token  ",
+                        "scheme_id": "  library_v1  ",
                     },
                     "history": [{"ts": "2026-01-01 00:00:00"}],
                 }
@@ -50,6 +51,7 @@ def test_load_export_jobs_normalizes_missing_fields() -> None:
                 "header_row": 2,
                 "dedupe_key_columns": ["id", "updated_at"],
                 "auth_token": "secret-token",
+                "scheme_id": "library_v1",
             },
             "schedule_enabled": False,
             "schedule_mode": "daily",
@@ -91,6 +93,7 @@ def test_load_export_jobs_normalizes_auth_token_through_config_manager(tmp_confi
                         "header_row": "2",
                         "dedupe_key_columns": ["id", ""],
                         "auth_token": "  secret-token  ",
+                        "scheme_id": "  library_v1  ",
                     },
                     "schedule_enabled": False,
                     "schedule_mode": "daily",
@@ -108,6 +111,7 @@ def test_load_export_jobs_normalizes_auth_token_through_config_manager(tmp_confi
         "header_row": 2,
         "dedupe_key_columns": ["id"],
         "auth_token": "secret-token",
+        "scheme_id": "library_v1",
     }
 
 
@@ -127,6 +131,7 @@ def test_persist_export_jobs_preserves_other_config_fields() -> None:
                     "header_row": 3,
                     "dedupe_key_columns": ["id"],
                     "auth_token": "token-2",
+                    "scheme_id": "library_v1",
                 },
                 "schedule_enabled": True,
                 "schedule_mode": "hourly",
@@ -153,5 +158,6 @@ def test_new_export_job_starts_blank_with_generated_id() -> None:
         "header_row": 1,
         "dedupe_key_columns": [],
         "auth_token": "",
+        "scheme_id": "",
     }
     assert job["history"] == []

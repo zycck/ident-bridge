@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+SUPPORTED_API_MAJOR = 1
+
 
 @dataclass(slots=True)
 class GasAck:
@@ -17,8 +19,24 @@ class GasAck:
     schema_action: str
     added_columns: list[str]
     message: str
+    api_version: str = ""
     error_code: str = ""
     details: dict[str, Any] | None = None
+
+
+def _validate_api_version(payload: dict[str, Any]) -> str:
+    api_version = str(payload.get("api_version", "") or "").strip()
+    if not api_version:
+        return ""
+
+    major_text = api_version.split(".", 1)[0]
+    if not major_text.isdigit():
+        raise ValueError("Ack содержит некорректный api_version")
+
+    if int(major_text) != SUPPORTED_API_MAJOR:
+        raise ValueError("Ack содержит несовместимый api_version")
+
+    return api_version
 
 
 def parse_gas_ack(raw_body: bytes, *, expected_run_id: str, expected_chunk_index: int) -> GasAck:
@@ -33,6 +51,7 @@ def parse_gas_ack(raw_body: bytes, *, expected_run_id: str, expected_chunk_index
         raise ValueError("Ack содержит другой run_id")
     if payload.get("chunk_index") != expected_chunk_index:
         raise ValueError("Ack содержит другой chunk_index")
+    api_version = _validate_api_version(payload)
 
     ok = bool(payload.get("ok"))
     if ok:
@@ -62,6 +81,7 @@ def parse_gas_ack(raw_body: bytes, *, expected_run_id: str, expected_chunk_index
         schema_action=str(payload.get("schema_action", "")),
         added_columns=list(payload.get("added_columns") or []),
         message=str(payload.get("message", "")),
+        api_version=api_version,
         error_code=str(payload.get("error_code", "")),
         details=payload.get("details") if isinstance(payload.get("details"), dict) else None,
     )

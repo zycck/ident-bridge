@@ -1,7 +1,10 @@
 """Composite view shell for ExportJobEditor."""
 
+from collections.abc import Callable
+from typing import TYPE_CHECKING
+
 from PySide6.QtCore import QSignalBlocker, Signal
-from PySide6.QtWidgets import QLineEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QHBoxLayout, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from app.config import ExportHistoryEntry
 from app.core.scheduler import ScheduleMode
@@ -11,6 +14,9 @@ from app.ui.export_history_panel import ExportHistoryPanel
 from app.ui.export_schedule_panel import ExportSchedulePanel
 from app.ui.export_sql_panel import ExportSqlPanel
 from app.ui.widgets import HeaderLabel, hsep
+
+if TYPE_CHECKING:
+    from app.ui.gas_setup_wizard import GasSetupWizard
 
 
 class ExportEditorShell(QWidget):
@@ -23,8 +29,14 @@ class ExportEditorShell(QWidget):
     test_requested = Signal()
     run_requested = Signal()
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QWidget | None = None,
+        *,
+        gas_setup_wizard_factory: Callable[..., "GasSetupWizard"] | None = None,
+    ) -> None:
         super().__init__(parent)
+        self._gas_setup_wizard_factory = gas_setup_wizard_factory
         self._build_ui()
         self._wire_signals()
 
@@ -50,10 +62,15 @@ class ExportEditorShell(QWidget):
 
         self._section_break(root)
 
-        root.addWidget(HeaderLabel("Webhook URL"))
+        root.addWidget(HeaderLabel("Адрес обработки"))
+        url_row = QHBoxLayout()
+        url_row.setSpacing(8)
         self._webhook_edit = QLineEdit(self)
         self._webhook_edit.setPlaceholderText("https://… (необязательно)")
-        root.addWidget(self._webhook_edit)
+        url_row.addWidget(self._webhook_edit, stretch=1)
+        self._gas_setup_wizard_btn = QPushButton("Подключить таблицу…", self)
+        url_row.addWidget(self._gas_setup_wizard_btn)
+        root.addLayout(url_row)
 
         self._google_sheets_panel = ExportGoogleSheetsPanel(self)
         root.addWidget(self._google_sheets_panel)
@@ -72,6 +89,7 @@ class ExportEditorShell(QWidget):
         self._header.run_requested.connect(self.run_requested)
         self._sql_panel.changed.connect(self.query_changed)
         self._webhook_edit.editingFinished.connect(self._on_webhook_changed)
+        self._gas_setup_wizard_btn.clicked.connect(self._open_gas_setup_wizard)
         self._google_sheets_panel.changed.connect(self.changed)
         self._schedule_panel.changed.connect(self.schedule_changed)
         self._history_panel.changed.connect(self.history_changed)
@@ -111,6 +129,9 @@ class ExportEditorShell(QWidget):
     def gas_auth_token(self) -> str:
         return self._google_sheets_panel.auth_token()
 
+    def gas_scheme_id(self) -> str:
+        return self._google_sheets_panel.scheme_id()
+
     def set_gas_options(
         self,
         *,
@@ -118,12 +139,14 @@ class ExportEditorShell(QWidget):
         header_row: int,
         dedupe_key_columns: list[str],
         auth_token: str,
+        scheme_id: str,
     ) -> None:
         self._google_sheets_panel.set_gas_options(
             sheet_name=sheet_name,
             header_row=header_row,
             dedupe_key_columns=dedupe_key_columns,
             auth_token=auth_token,
+            scheme_id=scheme_id,
         )
 
     def schedule_enabled(self) -> bool:
@@ -161,4 +184,30 @@ class ExportEditorShell(QWidget):
 
     def _on_webhook_changed(self) -> None:
         self._google_sheets_panel.set_target_url(self.webhook_url())
+        self.changed.emit()
+
+    def _open_gas_setup_wizard(self) -> None:
+        dialog_factory = self._gas_setup_wizard_factory
+        if dialog_factory is None:
+            from app.ui.gas_setup_wizard import GasSetupWizard
+
+            dialog_factory = GasSetupWizard
+
+        dialog = dialog_factory(
+            initial_webhook_url=self.webhook_url(),
+            initial_auth_token=self.gas_auth_token(),
+            parent=self,
+        )
+        if dialog.exec() != int(QDialog.DialogCode.Accepted):
+            return
+
+        selected = dialog.selected_config()
+        self.set_webhook_url(str(selected.get("webhook_url", "") or "").strip())
+        self.set_gas_options(
+            sheet_name=self.gas_sheet_name(),
+            header_row=self.gas_header_row(),
+            dedupe_key_columns=self.gas_dedupe_key_columns(),
+            auth_token=str(selected.get("auth_token", "") or "").strip(),
+            scheme_id=str(selected.get("scheme_id", "") or "").strip(),
+        )
         self.changed.emit()

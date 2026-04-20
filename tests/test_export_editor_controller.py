@@ -77,6 +77,7 @@ class _FakeShell:
         self._gas_header_row = 1
         self._gas_dedupe_key_columns: list[str] = []
         self._gas_auth_token = ""
+        self._gas_scheme_id = ""
         self._history: list[dict] = []
         self.status_calls: list[tuple[str, str]] = []
         self.refresh_calls = 0
@@ -125,6 +126,9 @@ class _FakeShell:
     def gas_auth_token(self) -> str:
         return self._gas_auth_token
 
+    def gas_scheme_id(self) -> str:
+        return self._gas_scheme_id
+
     def set_gas_options(
         self,
         *,
@@ -132,11 +136,13 @@ class _FakeShell:
         header_row: int,
         dedupe_key_columns: list[str],
         auth_token: str,
+        scheme_id: str,
     ) -> None:
         self._gas_sheet_name = sheet_name
         self._gas_header_row = header_row
         self._gas_dedupe_key_columns = list(dedupe_key_columns)
         self._gas_auth_token = auth_token
+        self._gas_scheme_id = scheme_id
 
     def history(self) -> list[dict]:
         return list(self._history)
@@ -200,6 +206,7 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
             "header_row": 2,
             "dedupe_key_columns": ["id", "updated_at"],
             "auth_token": "secret-token",
+            "scheme_id": "library_v1",
         },
         schedule_enabled=True,
         schedule_mode="hourly",
@@ -225,6 +232,7 @@ def test_export_editor_controller_loads_job_restores_status_and_starts_schedule_
     assert shell.gas_header_row() == 2
     assert shell.gas_dedupe_key_columns() == ["id", "updated_at"]
     assert shell.gas_auth_token() == "secret-token"
+    assert shell.gas_scheme_id() == "library_v1"
     assert shell.history()[0]["rows"] == 3
     assert shell.status_calls == [("ok", "✓ 3 строк · 09:10:11 · 9 мс")]
     assert shell.refresh_calls == 0

@@ -67,6 +67,17 @@ def test_google_apps_script_sink_is_a_protocol_sink():
     assert sink.name == "google_apps_script"
 
 
+def test_google_apps_script_sink_prefers_dev_url_env_override(monkeypatch):
+    monkeypatch.setenv(
+        "IDENTBRIDGE_GAS_DEV_URL",
+        "https://script.google.com/macros/s/dev-override/exec",
+    )
+
+    sink = GoogleAppsScriptSink("https://script.google.com/macros/s/prod/exec")
+
+    assert sink._url == "https://script.google.com/macros/s/dev-override/exec"
+
+
 def test_build_chunk_records_maps_rows_to_objects():
     records = build_chunk_records(["id", "name"], [(1, "alice"), (2, "bob")])
     assert records == [
@@ -353,6 +364,29 @@ def test_parse_gas_ack_rejects_wrong_run_or_chunk():
                 }
             ).encode("utf-8"),
             expected_run_id="run-8",
+            expected_chunk_index=1,
+        )
+
+
+def test_parse_gas_ack_rejects_incompatible_api_version_major():
+    with pytest.raises(ValueError, match="api_version"):
+        parse_gas_ack(
+            json.dumps(
+                {
+                    "ok": True,
+                    "status": "accepted",
+                    "run_id": "run-9",
+                    "chunk_index": 1,
+                    "rows_received": 1,
+                    "rows_written": 1,
+                    "retryable": False,
+                    "schema_action": "unchanged",
+                    "added_columns": [],
+                    "message": "ok",
+                    "api_version": "2.0",
+                }
+            ).encode("utf-8"),
+            expected_run_id="run-9",
             expected_chunk_index=1,
         )
 

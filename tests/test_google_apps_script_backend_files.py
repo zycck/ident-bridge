@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_DIR = ROOT / "google script back end"
 SRC_DIR = BACKEND_DIR / "src"
+LIBRARY_SCRIPT_ID = "1gCHuAaNHvQmelAnG2bLBlCoiuj1EPx0uu8D0e3leBp1XQ6X6sukBm5iu"
+LIBRARY_SYMBOL = "iDBBackend"
 
 
 def _schema_checksum(columns: list[object], records: list[object]) -> str:
@@ -23,7 +26,7 @@ def _schema_checksum(columns: list[object], records: list[object]) -> str:
 
 def test_google_apps_script_backend_is_consolidated_into_one_js_module() -> None:
     source_files = sorted(path.name for path in SRC_DIR.iterdir() if path.is_file())
-    assert source_files == ["backend.js"]
+    assert source_files == ["backend.js", "Подключение.gs"]
 
 
 def test_appsscript_manifest_uses_v8_and_enables_advanced_sheets_service() -> None:
@@ -182,14 +185,80 @@ def test_do_get_supports_sheet_and_header_actions() -> None:
             header_row: '2'
           }
         }));
+        const ready = JSON.parse(doGet({ parameter: {} }));
 
-        console.log(JSON.stringify({ sheets, headers }));
+        console.log(JSON.stringify({ sheets, headers, ready }));
         """
     )
 
     assert result["sheets"]["sheet_names"] == ["Exports", "Archive"]
     assert result["headers"]["headers"] == ["id", "email", "created_at"]
     assert result["headers"]["target"] == {"sheet_name": "Archive", "header_row": 2}
+    assert result["ready"]["library_script_id"] == LIBRARY_SCRIPT_ID
+    assert result["ready"]["library_symbol"] == LIBRARY_SYMBOL
+
+
+def test_handle_request_supports_library_mode_for_get_and_post() -> None:
+    result = _run_backend_probe(
+        """
+        const librarySpreadsheet = {
+          getId: () => 'spreadsheet-id',
+          getSheets: () => ([
+            {
+              getName: () => 'Exports',
+              isSheetHidden: () => false,
+              getLastColumn: () => 1,
+              getRange: () => ({
+                getValues: () => [['id']]
+              })
+            }
+          ]),
+          getSheetByName: (name) => __defaultSpreadsheet.getSheetByName(name),
+          insertSheet: (name) => __defaultSpreadsheet.insertSheet(name)
+        };
+        global.SpreadsheetApp.getActiveSpreadsheet = () => librarySpreadsheet;
+
+        const getResponse = JSON.parse(handleRequest({
+          parameter: {
+            action: 'sheets',
+            token: 'secret-token'
+          }
+        }, 'GET', {
+          expectedToken: 'secret-token'
+        }));
+
+        const postResponse = JSON.parse(handleRequest({
+          postData: {
+            contents: JSON.stringify({
+              protocol_version: 'gas-sheet.v1',
+              job_name: 'job',
+              run_id: 'run-library',
+              chunk_index: 1,
+              total_chunks: 1,
+              total_rows: 1,
+              chunk_rows: 1,
+              chunk_bytes: 128,
+              auth_token: 'secret-token',
+              schema: {
+                mode: 'append_only_v1',
+                columns: ['id'],
+                checksum: __schemaChecksum__(['id'], [{ id: 1 }])
+              },
+              records: [{ id: 1 }]
+            })
+          }
+        }, 'POST', {
+          expectedToken: 'secret-token'
+        }));
+
+        console.log(JSON.stringify({ getResponse, postResponse }));
+        """
+    )
+
+    assert result["getResponse"]["ok"] is True
+    assert result["getResponse"]["sheet_names"] == ["Exports"]
+    assert result["postResponse"]["ok"] is True
+    assert result["postResponse"]["run_id"] == "run-library"
 
 
 def test_do_post_accepts_matching_auth_token_in_json_body() -> None:
@@ -261,6 +330,42 @@ def test_do_post_rejects_mismatched_auth_token() -> None:
     assert result["error_code"] == "UNAUTHORIZED"
 
 
+def test_handle_request_rejects_mismatched_library_auth_token_from_context() -> None:
+    result = _run_backend_probe(
+        """
+        const response = JSON.parse(handleRequest({
+          postData: {
+            contents: JSON.stringify({
+              protocol_version: 'gas-sheet.v1',
+              job_name: 'job',
+              run_id: 'run-library-auth',
+              chunk_index: 1,
+              total_chunks: 1,
+              total_rows: 1,
+              chunk_rows: 1,
+              chunk_bytes: 128,
+              auth_token: 'wrong-token',
+              schema: {
+                mode: 'append_only_v1',
+                columns: ['id'],
+                checksum: __schemaChecksum__(['id'], [{ id: 1 }])
+              },
+              records: [{ id: 1 }]
+            })
+          }
+        }, 'POST', {
+          expectedToken: 'secret-token'
+        }));
+
+        console.log(JSON.stringify(response));
+        """
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "UNAUTHORIZED"
+    assert result["api_version"] == "1.0"
+
+
 def test_do_post_rejects_missing_auth_token() -> None:
     result = _run_backend_probe(
         """
@@ -292,6 +397,61 @@ def test_do_post_rejects_missing_auth_token() -> None:
 
     assert result["ok"] is False
     assert result["error_code"] == "UNAUTHORIZED"
+
+
+def test_response_helper_adds_api_version_to_ack_payloads() -> None:
+    result = _run_backend_probe(
+        """
+        const successBody = JSON.parse(makeJsonResponse_(buildSuccessAck_({
+          runId: 'run-ack',
+          chunkIndex: 1,
+          chunkRows: 1
+        }, 1, {
+          schemaAction: 'unchanged',
+          addedColumns: []
+        })));
+        const failureBody = JSON.parse(makeJsonResponse_(buildFailureAck_(null, createWebhookError_(
+          'UNAUTHORIZED',
+          false,
+          'Invalid auth token',
+          { field: 'auth_token' }
+        ))));
+
+        console.log(JSON.stringify({ successBody, failureBody }));
+        """
+    )
+
+    assert result["successBody"]["api_version"] == "1.0"
+    assert result["failureBody"]["api_version"] == "1.0"
+
+
+def test_gas_library_shim_resources_are_packaged() -> None:
+    shim_path = ROOT / "resources" / "gas-shim" / "shim.gs"
+    build_spec = (ROOT / "build.spec").read_text(encoding="utf-8")
+
+    assert shim_path.is_file()
+    assert re.search(
+        r"\(\s*['\"]resources/gas-shim/shim\.gs['\"]\s*,\s*['\"]resources/gas-shim['\"]\s*\)",
+        build_spec,
+    )
+
+
+def test_gas_library_has_plain_connection_template_with_script_id() -> None:
+    template_path = SRC_DIR / "Подключение.gs"
+    shim_path = ROOT / "resources" / "gas-shim" / "shim.gs"
+    template_text = template_path.read_text(encoding="utf-8")
+    shim_text = shim_path.read_text(encoding="utf-8")
+
+    assert template_path.is_file()
+    assert LIBRARY_SCRIPT_ID in template_text
+    assert LIBRARY_SYMBOL in template_text
+    assert "function doGet(e) {" in template_text
+    assert "function doPost(e) {" in template_text
+    assert "handleRequest(e, 'GET'" in template_text
+    assert "handleRequest(e, 'POST'" in template_text
+    assert "SHEET_ID" not in template_text
+    assert "SHEET_ID" not in shim_text
+    assert LIBRARY_SCRIPT_ID in shim_text
 
 
 def test_backend_normalizes_target_and_dedupe_blocks() -> None:

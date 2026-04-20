@@ -70,6 +70,7 @@ class GasOptions(TypedDict, total=False):
     header_row: int
     dedupe_key_columns: list[str]
     auth_token: str
+    scheme_id: str
 
 
 # ---------------------------------------------------------------------------
@@ -238,6 +239,7 @@ class ConfigManager:
                         if str(column).strip()
                     ]
                     gas_options["auth_token"] = str(gas_options.get("auth_token", "") or "").strip()
+                    gas_options["scheme_id"] = str(gas_options.get("scheme_id", "") or "").strip()
                 for entry in job.get("history") or []:
                     if entry.get("trigger") == "auto":
                         entry["trigger"] = "scheduled"

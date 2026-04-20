@@ -24,6 +24,7 @@ def _normalize_gas_options(raw: object) -> dict[str, object]:
             if str(column).strip()
         ],
         "auth_token": str(source.get("auth_token", "") or "").strip(),
+        "scheme_id": str(source.get("scheme_id", "") or "").strip(),
     }
 
 
@@ -68,6 +69,7 @@ def new_export_job() -> ExportJob:
             "header_row": 1,
             "dedupe_key_columns": [],
             "auth_token": "",
+            "scheme_id": "",
         },
         schedule_enabled=False,
         schedule_mode=ScheduleMode.DAILY.value,
