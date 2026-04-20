@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import random
@@ -105,6 +106,37 @@ def test_plan_gas_chunks_keeps_single_chunk_under_limits():
     assert chunks[0].chunk_rows == 2
     assert chunks[0].columns == ["id", "name"]
     assert chunks[0].records == [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]
+
+
+def test_plan_gas_chunks_uses_backend_checksum_canonical_json():
+    chunks = plan_gas_chunks(
+        "Сотрудники",
+        _qr(columns=("Имя", "Значение"), rows=(("Алиса", "1"),)),
+        gas_options={"sheet_name": "Лист1"},
+        run_id="run-checksum",
+        export_date=FIXED_EXPORT_DATE,
+    )
+
+    expected_payload = json.dumps(
+        {
+            "protocol_version": "gas-sheet.v2",
+            "job_name": "Сотрудники",
+            "run_id": "run-checksum",
+            "chunk_index": 1,
+            "total_chunks": 1,
+            "total_rows": 1,
+            "chunk_rows": 1,
+            "sheet_name": "Лист1",
+            "export_date": FIXED_EXPORT_DATE,
+            "columns": ["Имя", "Значение"],
+            "records": [{"Имя": "Алиса", "Значение": "1"}],
+        },
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+    assert chunks[0].checksum == hashlib.sha256(expected_payload).hexdigest()
 
 
 def test_plan_gas_chunks_splits_by_row_limit():

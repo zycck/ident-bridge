@@ -106,6 +106,7 @@ def _compute_checksum(
     payload = json.dumps(
         _payload_without_checksum(job_name, sheet_name, export_date, chunk),
         ensure_ascii=False,
+        separators=(",", ":"),
         sort_keys=True,
         cls=_SqlJSONEncoder,
     ).encode("utf-8")
