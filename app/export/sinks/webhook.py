@@ -15,8 +15,6 @@ Design choices:
   Enum) so we don't pay ``default=str`` ``repr()`` cost on every cell.
 """
 
-from __future__ import annotations
-
 import datetime as _dt
 import decimal
 import enum

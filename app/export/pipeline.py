@@ -17,8 +17,6 @@ exceptions. The worker catches and translates to signals; unit tests
 catch and assert directly.
 """
 
-from __future__ import annotations
-
 import logging
 import time
 from dataclasses import dataclass, field

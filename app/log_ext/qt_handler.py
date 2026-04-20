@@ -1,7 +1,5 @@
 """Shim: ``app.log_ext.qt_handler`` → :mod:`app.core.app_logger`."""
 
-from __future__ import annotations
-
 from app.core.app_logger import *  # noqa: F401,F403
 from app.core import app_logger as _legacy
 

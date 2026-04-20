@@ -14,8 +14,6 @@ Pipeline steps (emitted via progress signal):
     3  Готово
 """
 
-from __future__ import annotations
-
 import json
 import logging
 import time

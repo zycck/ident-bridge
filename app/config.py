@@ -1,7 +1,5 @@
 """Central configuration + shared dataclasses + TypedDicts for iDentBridge."""
 
-from __future__ import annotations
-
 import base64
 import json
 import logging

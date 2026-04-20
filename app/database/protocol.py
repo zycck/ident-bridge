@@ -9,8 +9,6 @@ runtime_checkable lets tests assert conformance via ``isinstance`` so
 structural breakage is caught on import, not when a real DB connects.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from app.config import AppConfig, QueryResult

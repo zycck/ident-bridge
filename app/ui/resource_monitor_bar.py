@@ -11,8 +11,6 @@ very cheap text-based trend (``▁▂▃▄▅▆▇█``) so users can eyeball 
 CPU/RAM are trending up without installing matplotlib.
 """
 
-from __future__ import annotations
-
 from collections import deque
 from collections.abc import Iterable
 

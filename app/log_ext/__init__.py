@@ -5,8 +5,6 @@ Named ``log_ext`` to avoid any chance of shadowing the stdlib
 this package.
 """
 
-from __future__ import annotations
-
 from app.log_ext.qt_handler import QtLogHandler, get_handler, get_logger, setup
 from app.log_ext.sanitizer import SecretFilter
 

@@ -1,7 +1,5 @@
 """Chunk planning and payload construction for the Google Apps Script sink."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 import logging

@@ -1,7 +1,5 @@
 """Shared presentation-layer formatters."""
 
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 
 from app.core.formatters import format_duration_compact

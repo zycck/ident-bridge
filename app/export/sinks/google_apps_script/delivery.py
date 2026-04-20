@@ -1,7 +1,5 @@
 """Delivery transport and sink implementation for Google Apps Script."""
 
-from __future__ import annotations
-
 import logging
 import re
 import ssl

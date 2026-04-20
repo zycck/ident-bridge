@@ -6,8 +6,6 @@ Currently re-exports from :mod:`app.core` until the physical move in
 the audit plan's Stage 5 final wave.
 """
 
-from __future__ import annotations
-
 from app.platform import dpapi, startup, updater  # noqa: F401
 
 __all__ = ["dpapi", "startup", "updater"]

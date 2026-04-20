@@ -1,7 +1,5 @@
 """Compatibility package for the Google Apps Script sink."""
 
-from __future__ import annotations
-
 import time
 import urllib.error
 import urllib.parse

@@ -4,8 +4,6 @@ Public surface is intentionally small — everything else is implementation
 detail and callers should import from the submodules by full path.
 """
 
-from __future__ import annotations
-
 from app.export.pipeline import ExportPipeline, build_pipeline_for_job
 from app.export.protocol import ExportSink
 

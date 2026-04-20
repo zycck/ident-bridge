@@ -1,7 +1,5 @@
 """Google Sheets options panel for Google Apps Script export targets."""
 
-from __future__ import annotations
-
 import json
 import urllib.parse
 import urllib.request

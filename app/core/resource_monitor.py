@@ -14,8 +14,6 @@ non-Windows environments still work — :class:`ResourceMonitor` silently
 emits nothing and ``start()`` is a no-op.
 """
 
-from __future__ import annotations
-
 import logging
 import os
 from dataclasses import dataclass
