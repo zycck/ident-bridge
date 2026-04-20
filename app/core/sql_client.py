@@ -1,7 +1,7 @@
 import random
 import time
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, final
 
 try:
     import pyodbc
@@ -24,6 +24,7 @@ _BASE_DELAY = 2.0   # seconds; doubles each retry
 _JITTER = 0.10      # ±10 %
 
 
+@final
 class SqlClient:
     """pyodbc-based SQL Server client. NOT thread-safe — one instance per thread."""
 
@@ -38,6 +39,7 @@ class SqlClient:
             ) from _PYODBC_IMPORT_ERROR
 
     def connect(self) -> None:
+        """Open a live SQL Server connection with bounded retries."""
         self._require_pyodbc()
         instance = self._cfg.get("sql_instance") or ""
         database = self._cfg.get("sql_database") or ""
@@ -84,6 +86,7 @@ class SqlClient:
         ) from last_exc
 
     def disconnect(self) -> None:
+        """Close the current connection if one is open."""
         if self._conn is not None:
             try:
                 self._conn.close()
@@ -96,6 +99,7 @@ class SqlClient:
                 self._conn = None
 
     def is_alive(self) -> bool:
+        """Return ``True`` when the current connection responds to ``SELECT 1``."""
         if self._conn is None:
             return False
         try:
@@ -108,6 +112,7 @@ class SqlClient:
             raise
 
     def query(self, sql: str, params: tuple = (), *, max_rows: int | None = None) -> QueryResult:
+        """Execute one SQL statement and materialize the result rows."""
         if self._conn is None:
             raise RuntimeError("Not connected")
         started_ns = time.perf_counter_ns()
@@ -153,6 +158,7 @@ class SqlClient:
         )
 
     def test_connection(self) -> tuple[bool, str]:
+        """Connect, run a cheap probe query, and return a user-facing status."""
         try:
             self.connect()
             if not self.is_alive():

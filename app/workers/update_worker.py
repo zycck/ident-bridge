@@ -8,11 +8,14 @@ Usage:
     thread.start()
     worker.check()   # call directly after thread starts, or connect to a signal
 """
+from typing import final
+
 from PySide6.QtCore import QObject, Signal, Slot
 
 from app.core.updater import apply_downloaded_update, check_latest, download_update, is_newer
 
 
+@final
 class UpdateWorker(QObject):
     """QObject worker that checks GitHub releases for a newer version."""
 

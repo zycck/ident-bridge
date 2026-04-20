@@ -20,8 +20,10 @@ _log = logging.getLogger(__name__)
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
-@dataclass(slots=True)
+@dataclass(kw_only=True, slots=True)
 class GasChunkPlan:
+    """Precomputed metadata and row payload for one GAS delivery chunk."""
+
     run_id: str
     chunk_index: int
     total_chunks: int

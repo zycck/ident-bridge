@@ -21,6 +21,7 @@ import logging
 import time
 import traceback
 from datetime import UTC, datetime
+from typing import final
 
 from PySide6.QtCore import QObject, Signal, Slot
 
@@ -40,6 +41,7 @@ from app.export.sinks.webhook import (  # noqa: F401
 _log = logging.getLogger(__name__)
 
 
+@final
 class ExportWorker(QObject):
     """QObject worker that runs the SQL query → (optional) webhook pipeline."""
 

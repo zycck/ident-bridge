@@ -1,6 +1,6 @@
 """Shared T-SQL highlighting helpers used by the SQL editor."""
 
-from functools import lru_cache
+from functools import cache, lru_cache
 
 from PySide6.QtCore import QRegularExpression
 from PySide6.QtGui import QColor, QFont, QTextCharFormat
@@ -145,7 +145,7 @@ TSQL_FUNCTIONS = {
 }
 
 
-@lru_cache(maxsize=None)
+@cache
 def make_format(color: str, *, bold: bool = False, italic: bool = False) -> QTextCharFormat:
     fmt = QTextCharFormat()
     fmt.setForeground(QColor(color))

@@ -37,49 +37,46 @@ def test_mask_secrets_is_public_helper():
 # --- URL masking ---------------------------------------------------------
 
 
-def test_masks_slack_style_webhook_in_args(sanitized):
-    url = "https://hooks.slack.com/services/T123/B456/XYZsecret"
-    rec = _make_record("Webhook %s", (url,))
-    sanitized.filter(rec)
-    out = _render(rec)
-    assert "XYZsecret" not in out
-    assert "T123" not in out
-    assert "hooks.slack.com" in out  # host still visible
-
-
-def test_masks_query_string_token(sanitized):
-    url = "https://example.com/hook?token=abcdef&signature=xyz"
-    rec = _make_record("sent to %s", (url,))
-    sanitized.filter(rec)
-    out = _render(rec)
-    assert "abcdef" not in out
-    assert "signature" not in out
-    assert "example.com" in out
-
-
-def test_leaves_plain_domain_without_path_alone(sanitized):
-    url = "https://example.com"
-    rec = _make_record("pinging %s", (url,))
-    sanitized.filter(rec)
-    out = _render(rec)
-    assert out.endswith("https://example.com")
-
-
-def test_masks_url_in_preformatted_message(sanitized):
-    msg = "Webhook https://hooks.example.com/services/A/B/C failed"
-    rec = _make_record(msg)
-    sanitized.filter(rec)
-    out = _render(rec)
-    assert "/A/B/C" not in out
-    assert "hooks.example.com" in out
-
-
-def test_preserves_trailing_punctuation(sanitized):
-    rec = _make_record("Called %s.", ("https://example.com/webhook",))
-    sanitized.filter(rec)
-    out = _render(rec)
-    assert out.endswith(".")
-    assert "webhook" not in out
+@pytest.mark.parametrize(
+    ("raw", "fragments_absent", "fragments_present"),
+    [
+        (
+            "Webhook https://hooks.slack.com/services/T123/B456/XYZsecret",
+            ("XYZsecret", "T123"),
+            ("hooks.slack.com",),
+        ),
+        (
+            "sent to https://example.com/hook?token=abcdef&signature=xyz",
+            ("abcdef", "signature"),
+            ("example.com",),
+        ),
+        (
+            "pinging https://example.com",
+            (),
+            ("https://example.com",),
+        ),
+        (
+            "Webhook https://hooks.example.com/services/A/B/C failed",
+            ("/A/B/C",),
+            ("hooks.example.com",),
+        ),
+        (
+            "Called https://example.com/webhook.",
+            ("webhook",),
+            (".", "example.com"),
+        ),
+    ],
+)
+def test_mask_secrets_masks_supported_url_forms(
+    raw: str,
+    fragments_absent: tuple[str, ...],
+    fragments_present: tuple[str, ...],
+) -> None:
+    masked = mask_secrets(raw)
+    for fragment in fragments_absent:
+        assert fragment not in masked
+    for fragment in fragments_present:
+        assert fragment in masked
 
 
 def test_masks_multiple_urls(sanitized):

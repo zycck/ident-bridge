@@ -10,7 +10,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from typing import Any
+from typing import Any, final
 
 from app.config import GasOptions, QueryResult
 from app.core.constants import (
@@ -152,6 +152,7 @@ def _payload_dedupe_block(gas_options: GasOptions) -> dict[str, Any] | None:
     }
 
 
+@final
 class GoogleAppsScriptSink:
     name = "google_apps_script"
 

@@ -32,8 +32,10 @@ class SqlInstance:
     display: str
 
 
-@dataclass(slots=True)
+@dataclass(kw_only=True, slots=True)
 class QueryResult:
+    """Materialized SQL result set with row count and timing metadata."""
+
     columns: list[str]
     rows:    list[tuple]
     count:   int
@@ -47,8 +49,10 @@ class QueryResult:
         self.duration_ms = max(0, int(self.duration_us // 1000))
 
 
-@dataclass(slots=True)
+@dataclass(kw_only=True, slots=True)
 class SyncResult:
+    """Outcome of one export attempt reported back to the UI."""
+
     success:     bool
     rows_synced: int
     error:       str | None
@@ -62,6 +66,8 @@ class SyncResult:
 
 
 class GasOptions(TypedDict, total=False):
+    """Per-job delivery settings for the Google Apps Script sink."""
+
     sheet_name: str
     header_row: int
     dedupe_key_columns: list[str]
@@ -172,6 +178,8 @@ ENCRYPTED_KEYS: frozenset[str] = frozenset({"sql_user", "sql_password"})
 
 
 class ConfigManager:
+    """Thread-safe loader/saver for the persisted application config."""
+
     def __init__(self) -> None:
         self._lock = threading.RLock()
         # Batch mode: update() mutates in-memory only while depth > 0, and
@@ -186,6 +194,7 @@ class ConfigManager:
             self._cfg = self.load()
 
     def load(self) -> AppConfig:
+        """Load config from disk, decrypt secrets, and normalize legacy fields."""
         with self._lock:
             if not CONFIG_PATH.exists():
                 return self._cfg
@@ -254,6 +263,7 @@ class ConfigManager:
             return self._cfg
 
     def save(self, cfg: AppConfig) -> None:
+        """Persist config atomically after encrypting secret fields."""
         with self._lock:
             out: dict = dict(cfg)
             if "export_jobs" in out:
@@ -345,9 +355,11 @@ class ConfigManager:
                     self.save(self._cfg)
 
     def get(self, key: str) -> str | None:
+        """Return a plain string config value from the in-memory snapshot."""
         with self._lock:
             return self._cfg.get(key)  # type: ignore[return-value]
 
     def set(self, key: str, value: str) -> None:
+        """Set one plain string config value and persist it immediately."""
         with self._lock:
             self._cfg[key] = value  # type: ignore[literal-required]
