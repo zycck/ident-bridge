@@ -132,11 +132,11 @@ behaviour are not meaningful from WSL/Linux.
 6. **Verify:** the process exits cleanly
 
 ## 12. Google Apps Script chunked webhook
-This verifies the new Google Apps Script path with chunking, schema
-evolution, duplicate-safe retries, and sanitized failure handling.
+This verifies the current Google Apps Script path with direct writes,
+schema evolution, rerun recovery, and sanitized failure handling.
 
-1. Deploy the backend from `google script back end/` as a web app
-2. Configure the spreadsheet/sheet target as described in
+1. Publish the library from `google script back end/`
+2. Install the shim into the target spreadsheet project as described in
    `google script back end/README.md`
 3. Verify that the Apps Script project has the Advanced Sheets service
    enabled (`Sheets`, version `v4`)
@@ -156,10 +156,11 @@ evolution, duplicate-safe retries, and sanitized failure handling.
 13. **Verify:** the run fails cleanly, the app stays alive, and the
     debug console shows a sanitized technical dump without raw payload
     rows, URL tokens, or credentials
-14. Re-send the same chunk payload manually using the sample files or a
-    replay against the same `run_id/chunk_index/checksum`
-15. **Verify:** the backend returns duplicate-safe success and the sheet
-    does not receive duplicated rows
+14. Start a `replace_all` or `replace_by_date_source` export large enough
+    for multiple chunks, interrupt it in the middle, then run it again
+15. **Verify:** the rerun starts from chunk `1`, rewrites the target
+    slice on the first chunk, and leaves one consistent final dataset
+    without torn rows
 
 ---
 

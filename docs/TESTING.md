@@ -187,7 +187,7 @@ After the automated suite is green, manually validate the GAS path on a
 real deployed endpoint:
 
 - multi-chunk delivery for a result larger than `10000` rows
-- duplicate-safe replay for the same `run_id/chunk_index/checksum`
+- full rerun recovery for `replace_all` / `replace_by_date_source` after an interrupted run
 - additive schema extension when one new SQL column appears
 - clean failure when a previously existing column disappears or is renamed
 - debug panel sanitization: no raw payload rows, URL tokens, or `UID/PWD`

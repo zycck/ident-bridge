@@ -4,8 +4,10 @@ from datetime import datetime
 
 import pytest
 
+from app.export.run_store import ExportRunInfo
 from app.ui.export_editor_runtime import format_short_user_error
 from app.ui.export_job_tile_presenter import _build_schedule_text, build_export_job_tile_display
+from app.ui.theme import Theme
 
 
 def test_export_job_tile_presenter_handles_empty_job() -> None:
@@ -73,6 +75,46 @@ def test_export_job_tile_presenter_truncates_long_short_error_for_tile_only() ->
     )
 
     assert display.status_text == f"✗ {format_short_user_error(msg, max_length=40)}"
+
+
+def test_export_job_tile_presenter_prefers_unfinished_sqlite_run_status() -> None:
+    display = build_export_job_tile_display(
+        {
+            "history": [
+                {"ts": "2026-04-15 09:15:00", "ok": True, "rows": 99},
+            ],
+            "unfinished_runs": [
+                ExportRunInfo(
+                    run_id="run-1",
+                    job_id="job-1",
+                    job_name="Nightly",
+                    webhook_url="https://example.test",
+                    sheet_name="Exports",
+                    source_id="job-1",
+                    write_mode="replace_all",
+                    export_date="2026-04-21",
+                    total_chunks=5,
+                    total_rows=100,
+                    delivered_chunks=2,
+                    delivered_rows=40,
+                    status="running",
+                    trigger="manual",
+                    created_at="2026-04-21T09:00:00+00:00",
+                    updated_at="2026-04-21T09:05:00+00:00",
+                    started_at="2026-04-21T09:00:10+00:00",
+                    finished_at=None,
+                    last_error="",
+                    sql_duration_us=0,
+                    total_duration_us=0,
+                    supersedes_run_id=None,
+                )
+            ],
+        },
+        now=datetime(2026, 4, 16, 15, 30, 0),
+    )
+
+    assert display.status_text == "Оборвано · 2/5 чанков"
+    assert display.status_color == Theme.warning
 
 
 @pytest.mark.parametrize(

@@ -29,6 +29,7 @@ class _FakeTile(QWidget):
         super().__init__(parent)
         self._job = job
         self.updated: list[ExportJob] = []
+        self.runtime_updates: list[tuple[str, str, bool]] = []
 
     def job_id(self) -> str:
         return self._job["id"]
@@ -37,12 +38,16 @@ class _FakeTile(QWidget):
         self._job = job
         self.updated.append(job)
 
+    def set_runtime_state(self, *, kind: str, text: str, running: bool) -> None:
+        self.runtime_updates.append((kind, text, running))
+
 
 class _FakeEditor(QWidget):
     changed = Signal(object)
     history_changed = Signal()
     sync_completed = Signal(object)
     failure_alert = Signal(str, int)
+    runtime_state_changed = Signal(str, str, bool)
 
     def __init__(
         self,
@@ -57,8 +62,9 @@ class _FakeEditor(QWidget):
     def to_job(self) -> ExportJob:
         return dict(self._job)
 
-    def start_export(self) -> None:
+    def start_export(self) -> bool:
         self.start_calls += 1
+        return True
 
     def stop_scheduler(self) -> None:
         pass
@@ -180,21 +186,54 @@ def test_collection_controller_add_new_job_saves_and_opens_editor() -> None:
 
 
 def test_collection_controller_forwards_editor_actions(qtbot) -> None:
-    controller, _config, _tiles_page, _editor_page, _opens, syncs, history_changed, alerts = _build_controller(
+    controller, _config, tiles_page, _editor_page, _opens, syncs, history_changed, alerts = _build_controller(
         jobs=[_job("job-1", "One")],
     )
 
     controller.load_jobs()
     editor = controller.editors()["job-1"]
-    controller.run_job("job-1")
+    assert controller.run_job("job-1") is True
+    editor.runtime_state_changed.emit("running", "Отправка…", True)
     editor.sync_completed.emit({"rows_synced": 5})
     editor.history_changed.emit()
     editor.failure_alert.emit("One", 3)
 
     assert editor.start_calls == 1
+    assert tiles_page.tiles()[0].runtime_updates == [("running", "Отправка…", True)]
     assert syncs == [{"rows_synced": 5}]
     assert history_changed == [True]
     assert alerts == [("One", 3)]
+
+
+def test_collection_controller_does_not_persist_config_on_history_only_change(qtbot) -> None:
+    controller, config, *_rest = _build_controller(
+        jobs=[_job("job-1", "One")],
+    )
+
+    controller.load_jobs()
+    editor = controller.editors()["job-1"]
+    config.saved = None
+
+    editor.history_changed.emit()
+
+    assert config.saved is None
+
+
+def test_collection_controller_runtime_state_updates_tile(qtbot) -> None:
+    controller, _config, tiles_page, _editor_page, *_ = _build_controller(
+        jobs=[_job("job-1", "One")],
+    )
+
+    controller.load_jobs()
+    editor = controller.editors()["job-1"]
+
+    editor.runtime_state_changed.emit("running", "Подготовка…", True)
+    editor.runtime_state_changed.emit("error", "✗ Ошибка", False)
+
+    assert tiles_page.tiles()[0].runtime_updates == [
+        ("running", "Подготовка…", True),
+        ("error", "✗ Ошибка", False),
+    ]
 
 
 def test_collection_controller_blocks_duplicate_webhook_and_sheet_targets(qtbot) -> None:

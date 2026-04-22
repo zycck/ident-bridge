@@ -99,3 +99,21 @@ def test_sheet_options_worker_logs_fetch_error(caplog) -> None:
     ]
     assert "Не удалось обновить список листов Google Таблиц" in caplog.text
     assert "response_preview=<html>not json</html>" in caplog.text
+
+
+def test_google_sheets_panel_refresh_button_uses_busy_spinner(qtbot) -> None:
+    panel = ExportGoogleSheetsPanel()
+    qtbot.addWidget(panel)
+    panel.set_target_url("https://script.google.com/macros/s/abc/exec")
+
+    panel._set_loading(True)
+
+    assert panel._refresh_btn.is_busy() is True
+    assert panel._refresh_btn.text() == "Обновить"
+    assert panel._refresh_btn.isEnabled() is False
+
+    panel._set_loading(False)
+
+    assert panel._refresh_btn.is_busy() is False
+    assert panel._refresh_btn.text() == "Обновить"
+    assert panel._refresh_btn.isEnabled() is True

@@ -4,7 +4,15 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PANEL_PATH = ROOT / "app" / "ui" / "export_google_sheets_panel.py"
+PANEL_PATH = (
+    ROOT
+    / "app"
+    / "ui"
+    / "export_jobs"
+    / "editor"
+    / "google_sheets"
+    / "panel.py"
+)
 
 
 def test_google_sheets_panel_keeps_sheet_picker_as_overlay_popup() -> None:

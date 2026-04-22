@@ -33,8 +33,14 @@ def test_header_updates_status_and_run_button_state(qtbot) -> None:
     qtbot.addWidget(header)
 
     header.set_status("error", "✗ db down")
+    header.set_run_busy(True)
     header.set_run_enabled(False)
 
     assert header._status_summary.text() == "✗ db down"
     assert Theme.error in header._status_summary.styleSheet()
+    assert header._run_btn.is_busy() is True
     assert header._run_btn.isEnabled() is False
+
+    header.set_run_busy(False)
+
+    assert header._run_btn.is_busy() is False

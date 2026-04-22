@@ -17,21 +17,25 @@
     - повторный `getDataRange()` одного и того же листа;
     - полное `clearContents() + full rewrite`, кроме явного `replace_all` и редкой миграции схемы;
     - cleanup stale runs в `GET`;
-    - reread staging sheet сразу после записи chunk.
+    - любое backend-state хранение запуска по `run_id`;
+    - staging-листы и reread промежуточных данных.
 11. Единственные write modes:
     - `append`
     - `replace_all`
     - `replace_by_date_source`
-12. Single chunk всегда идёт без staging.
-13. Multi-chunk всегда идёт через отдельный staging sheet на запуск.
+12. Single chunk всегда пишет сразу в основной лист.
+13. Multi-chunk всегда пишет сразу в основной лист:
+    - `chunk_index == 1` очищает целевой срез только для `replace_all` и `replace_by_date_source`;
+    - следующие chunk только дописывают строки.
 14. Для строк приложения использовать только:
     - `__ДатаВыгрузки`
     - `__idb_source`
-15. `__idb_source` хранит стабильный `job_id`, а не общее имя приложения.
+15. `__idb_source` хранит стабильный `job_id/source_id`, а не UUID запуска.
 16. Перед завершением backend-задачи обязательно проверить:
     - в `src` нет `var`;
     - библиотечный контракт не сломан;
     - нет дублирующих helper-ов;
     - нет лишних full-sheet reads/writes;
     - `ping`, `sheets`, single chunk и multi-chunk проходят тесты;
-    - повтор chunk и повтор final chunk остаются идемпотентными.
+    - успешный ACK всегда возвращает `status: accepted`;
+    - backend не обещает server-side resumability.

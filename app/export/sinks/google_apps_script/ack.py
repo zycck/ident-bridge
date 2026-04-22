@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+_SUCCESS_ACK_STATUSES = frozenset({"accepted", "promoted"})
+
 
 @dataclass(slots=True)
 class GasAck:
@@ -17,14 +19,6 @@ class GasAck:
     rows_written: int = 0
     error_code: str = ""
     details: dict[str, Any] | None = None
-
-
-def _coerce_int(value: Any, *, field_name: str) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ValueError(f"Ack \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u044b\u0439 {field_name}") from exc
-
 
 def parse_gas_ack(raw_body: bytes) -> GasAck:
     try:
@@ -50,6 +44,8 @@ def parse_gas_ack(raw_body: bytes) -> GasAck:
     status = str(payload.get("status", "") or "").strip()
     if ok and not status:
         raise ValueError("Ack \u043d\u0435 \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0435 \u043f\u043e\u043b\u044f: status")
+    if ok and status not in _SUCCESS_ACK_STATUSES:
+        raise ValueError(f"Ack \u0441\u043e\u0434\u0435\u0440\u0436\u0438\u0442 \u043d\u0435\u043e\u0436\u0438\u0434\u0430\u043d\u043d\u044b\u0439 status: {status}")
 
     rows_received = int(payload.get("rows_received", payload.get("chunk_rows", 0)) or 0)
     rows_written = int(payload.get("rows_written", payload.get("chunk_rows", 0)) or 0)

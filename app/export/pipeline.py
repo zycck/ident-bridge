@@ -30,6 +30,7 @@ from app.core.constants import EXPORT_SOURCE_ID, GOOGLE_SCRIPT_HOSTS, MAX_WEBHOO
 from app.core.formatters import format_duration_compact
 from app.core.sql_client import SqlClient
 from app.export.protocol import ExportSink
+from app.export.run_store import ExportRunStore
 from app.export.sinks.google_apps_script import GoogleAppsScriptSink
 from app.export.sinks.webhook import WebhookSink
 
@@ -77,7 +78,7 @@ class ExportPipeline:
             progress(1, "Выполнение запроса...")
             result: QueryResult = self.db.query(sql)
 
-            progress(2, "Отправка данных...")
+            progress(2, "Подготовка данных...")
             if self.sink is not None:
                 self.sink.push(
                     job_name,
@@ -104,6 +105,8 @@ class ExportPipeline:
                 timestamp=datetime.now(UTC),
                 duration_us=total_duration_us,
                 sql_duration_us=result.duration_us,
+                run_id=getattr(self.sink, "last_run_id", None) if self.sink is not None else None,
+                journaled=bool(getattr(self.sink, "last_run_journaled", False)) if self.sink is not None else False,
             )
         finally:
             self.db.disconnect()
@@ -129,6 +132,8 @@ def build_pipeline_for_job(
         job.get("webhook_url") or "",
         gas_options=job.get("gas_options"),
         source_id=EXPORT_SOURCE_ID,
+        job_id=str(job.get("id") or "").strip() or None,
+        run_store=ExportRunStore(),
     )
 
     return ExportPipeline(db=db, sink=sink)
@@ -139,6 +144,8 @@ def resolve_export_sink(
     *,
     gas_options: dict[str, Any] | None = None,
     source_id: str | None = None,
+    job_id: str | None = None,
+    run_store: ExportRunStore | None = None,
 ) -> ExportSink | None:
     """Return the appropriate sink for a configured export URL."""
     url = webhook_url.strip()
@@ -148,7 +155,13 @@ def resolve_export_sink(
     parsed = urlsplit(url)
     host = (parsed.hostname or "").lower()
     if host in GOOGLE_SCRIPT_HOSTS:
-        return GoogleAppsScriptSink(url, gas_options=gas_options, source_id=source_id)
+        return GoogleAppsScriptSink(
+            url,
+            gas_options=gas_options,
+            source_id=source_id,
+            job_id=job_id,
+            run_store=run_store,
+        )
     return WebhookSink(url, max_rows=MAX_WEBHOOK_ROWS)
 
 

@@ -236,7 +236,3 @@ def apply_downloaded_update(
         sys.exit(0)
     exit_hook()
 
-
-def download_and_apply(download_url: str, expected_digest: str | None = None) -> None:
-    downloaded_path = download_update(download_url, expected_digest=expected_digest)
-    apply_downloaded_update(downloaded_path)

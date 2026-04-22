@@ -124,14 +124,15 @@ def test_start_emits_next_run_changed(scheduler, qtbot):
 def test_daily_mode_next_run_today_if_in_future(scheduler):
     """A daily HH:MM that is later today → next_run is today at HH:MM."""
     now = datetime.now().astimezone()
-    future = (now + timedelta(hours=1)).strftime("%H:%M")
+    future_dt = now + timedelta(hours=1)
+    future = future_dt.strftime("%H:%M")
     scheduler.configure("daily", future)
     scheduler.start()
     nr = scheduler.next_run()
     scheduler.stop()
 
     assert nr is not None
-    assert nr.date() == now.date()
+    assert nr.date() == future_dt.date()
 
 
 def test_daily_mode_next_run_tomorrow_if_past(scheduler):

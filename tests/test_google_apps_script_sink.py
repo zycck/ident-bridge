@@ -7,13 +7,17 @@ import io
 import json
 import random
 import urllib.error
+from datetime import date, datetime, time
+from decimal import Decimal
 
 import pytest
 
 from app.config import QueryResult
+from app.core.constants import EXPORT_SOURCE_ID
 from app.export.protocol import ExportSink
 from app.export.sinks.google_apps_script import (
     GasAck,
+    GasChunkPlan,
     GoogleAppsScriptDeliveryError,
     GoogleAppsScriptSink,
     build_chunk_records,
@@ -23,7 +27,6 @@ from app.export.sinks.google_apps_script import (
 )
 
 FIXED_EXPORT_DATE = "2026-04-20"
-REAL_PING_BACKEND = GoogleAppsScriptSink._ping_backend
 
 
 def _qr(columns=("id",), rows=((1,),), duration=1) -> QueryResult:
@@ -90,6 +93,35 @@ def test_build_chunk_records_maps_rows_to_objects():
     ]
 
 
+def test_build_chunk_records_normalizes_period_and_decimal_values_for_gas():
+    records = build_chunk_records(
+        ["Period", "sum_total", "zero_sum", "fractional_sum", "created_at", "export_day", "export_time"],
+        [
+            (
+                "2026-02",
+                Decimal("5000.0000000000"),
+                Decimal("0E+00"),
+                Decimal("12.3400"),
+                datetime(2026, 2, 25, 19, 54, 38),
+                date(2026, 2, 25),
+                time(19, 54, 38),
+            ),
+        ],
+    )
+
+    assert records == [
+        {
+            "Period": "02.2026",
+            "sum_total": 5000,
+            "zero_sum": 0,
+            "fractional_sum": 12.34,
+            "created_at": datetime(2026, 2, 25, 19, 54, 38),
+            "export_day": date(2026, 2, 25),
+            "export_time": time(19, 54, 38),
+        }
+    ]
+
+
 def test_plan_gas_chunks_keeps_single_chunk_under_limits():
     chunks = plan_gas_chunks(
         "Job",
@@ -108,13 +140,44 @@ def test_plan_gas_chunks_keeps_single_chunk_under_limits():
     assert chunks[0].records == [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]
 
 
+def test_plan_gas_chunks_does_not_measure_full_payload_for_every_row(monkeypatch):
+    result = _seeded_qr(seed=7001, row_count=250)
+    measure_calls = 0
+    real_measure = __import__(
+        "app.export.sinks.google_apps_script.chunking",
+        fromlist=["_measure_chunk_bytes"],
+    )._measure_chunk_bytes
+
+    def counted_measure(*args, **kwargs):
+        nonlocal measure_calls
+        measure_calls += 1
+        return real_measure(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.export.sinks.google_apps_script.chunking._measure_chunk_bytes",
+        counted_measure,
+    )
+
+    chunks = plan_gas_chunks(
+        "Linear planning",
+        result,
+        run_id="run-linear",
+        max_rows_per_chunk=10_000,
+        max_payload_bytes=10_000_000,
+        export_date=FIXED_EXPORT_DATE,
+    )
+
+    assert len(chunks) == 1
+    assert measure_calls <= 8
+
+
 def test_plan_gas_chunks_uses_backend_checksum_canonical_json():
     chunks = plan_gas_chunks(
         "Сотрудники",
         _qr(columns=("Имя", "Значение"), rows=(("Алиса", "1"),)),
         gas_options={"sheet_name": "Лист1"},
         run_id="run-checksum",
-        source_id="job-1",
+        source_id=EXPORT_SOURCE_ID,
         write_mode="replace_by_date_source",
         export_date=FIXED_EXPORT_DATE,
     )
@@ -130,7 +193,7 @@ def test_plan_gas_chunks_uses_backend_checksum_canonical_json():
             "chunk_rows": 1,
             "sheet_name": "Лист1",
             "export_date": FIXED_EXPORT_DATE,
-            "source_id": "job-1",
+            "source_id": EXPORT_SOURCE_ID,
             "write_mode": "replace_by_date_source",
             "columns": ["Имя", "Значение"],
             "records": [{"Имя": "Алиса", "Значение": "1"}],
@@ -195,7 +258,7 @@ def test_build_gas_chunk_payload_shape_is_stable():
         "Stable",
         _qr(columns=("id", "name"), rows=((1, "alice"),)),
         run_id="run-5",
-        source_id="job-1",
+        source_id=EXPORT_SOURCE_ID,
         write_mode="replace_by_date_source",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
@@ -207,7 +270,7 @@ def test_build_gas_chunk_payload_shape_is_stable():
             "Stable",
             chunk,
             gas_options={"sheet_name": "Exports"},
-            source_id="job-1",
+            source_id=EXPORT_SOURCE_ID,
             write_mode="replace_by_date_source",
             export_date=FIXED_EXPORT_DATE,
         ).decode("utf-8")
@@ -218,7 +281,7 @@ def test_build_gas_chunk_payload_shape_is_stable():
         "job_name": "Stable",
         "sheet_name": "Exports",
         "export_date": FIXED_EXPORT_DATE,
-        "source_id": "job-1",
+        "source_id": EXPORT_SOURCE_ID,
         "write_mode": "replace_by_date_source",
         "run_id": "run-5",
         "chunk_index": 1,
@@ -236,7 +299,6 @@ def test_build_gas_chunk_payload_uses_job_name_as_sheet_name_when_not_configured
         "Fallback sheet",
         _qr(rows=((1,),)),
         run_id="run-5b",
-        source_id="job-1",
         write_mode="append",
         max_rows_per_chunk=10_000,
         max_payload_bytes=5 * 1024 * 1024,
@@ -247,15 +309,99 @@ def test_build_gas_chunk_payload_uses_job_name_as_sheet_name_when_not_configured
         build_gas_chunk_payload(
             "Fallback sheet",
             chunk,
-            source_id="job-1",
             write_mode="append",
             export_date=FIXED_EXPORT_DATE,
         ).decode("utf-8")
     )
 
     assert payload["sheet_name"] == "Fallback sheet"
-    assert payload["source_id"] == "job-1"
+    assert payload["source_id"] == EXPORT_SOURCE_ID
     assert payload["write_mode"] == "append"
+
+
+def test_build_gas_chunk_payload_localizes_sql_values_for_gas_only():
+    chunk = GasChunkPlan(
+        run_id="run-localized",
+        chunk_index=1,
+        total_chunks=1,
+        total_rows=1,
+        chunk_rows=1,
+        chunk_bytes=0,
+        columns=["decimal_value", "period_value", "date_value", "datetime_value", "time_value"],
+        records=[
+            {
+                "decimal_value": 0,
+                "period_value": "02.2026",
+                "date_value": date(2026, 2, 3),
+                "datetime_value": datetime(2026, 2, 3, 4, 5, 6),
+                "time_value": time(7, 8, 9),
+            }
+        ],
+        checksum="",
+    )
+
+    payload = json.loads(
+        build_gas_chunk_payload(
+            "Localized",
+            chunk,
+            export_date=FIXED_EXPORT_DATE,
+        ).decode("utf-8")
+    )
+
+    assert payload["records"] == [
+        {
+            "decimal_value": 0,
+            "period_value": "02.2026",
+            "date_value": "2026-02-03",
+            "datetime_value": "2026-02-03T04:05:06",
+            "time_value": "07:08:09",
+        }
+    ]
+    assert payload["checksum"] == chunk.checksum
+    assert chunk.chunk_bytes == len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+
+
+def test_plan_gas_chunks_localizes_sql_values_in_size_and_checksum():
+    result = _qr(
+        columns=("decimal_value", "period_value", "date_value", "datetime_value", "time_value"),
+        rows=(
+            (
+                Decimal("12.3400"),
+                "2026-02",
+                date(2026, 2, 4),
+                datetime(2026, 2, 4, 5, 6, 7),
+                time(8, 9, 10),
+            ),
+        ),
+    )
+
+    chunks = plan_gas_chunks(
+        "Localized planning",
+        result,
+        run_id="run-localized-plan",
+        max_rows_per_chunk=10_000,
+        max_payload_bytes=5 * 1024 * 1024,
+        export_date=FIXED_EXPORT_DATE,
+    )
+
+    payload = json.loads(
+        build_gas_chunk_payload(
+            "Localized planning",
+            chunks[0],
+            export_date=FIXED_EXPORT_DATE,
+        ).decode("utf-8")
+    )
+
+    assert payload["records"] == [
+        {
+            "decimal_value": 12.34,
+            "period_value": "02.2026",
+            "date_value": "2026-02-04",
+            "datetime_value": "2026-02-04T05:06:07",
+            "time_value": "08:09:10",
+        }
+    ]
+    assert chunks[0].chunk_bytes == len(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
 
 
 @pytest.mark.parametrize("row_count", [9, 10, 99, 100])
@@ -380,6 +526,64 @@ def test_parse_gas_ack_accepts_success_and_ignores_extra_fields():
     assert ack.rows_written == 2
 
 
+def test_parse_gas_ack_accepts_legacy_promoted_success_ack():
+    ack = parse_gas_ack(
+        json.dumps(
+            {
+                "ok": True,
+                "status": "promoted",
+                "rows_received": 1,
+                "rows_written": 1,
+                "retryable": False,
+                "message": "Chunk promoted",
+            }
+        ).encode("utf-8")
+    )
+
+    assert ack.ok is True
+    assert ack.status == "promoted"
+    assert ack.rows_written == 1
+
+
+def test_push_accepts_legacy_promoted_success_ack(monkeypatch):
+    def _urlopen(req, **kwargs):
+        body = json.loads(req.data.decode("utf-8"))
+        row_count = len(body["records"])
+        return _FakeResp(
+            {
+                "ok": True,
+                "status": "promoted",
+                "run_id": body["run_id"],
+                "chunk_index": body["chunk_index"],
+                "rows_received": row_count,
+                "rows_written": row_count,
+                "retryable": False,
+                "message": "Chunk promoted",
+            }
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink("https://script.google.com/macros/s/abc/exec")
+    sink.push("Legacy promoted", _qr())
+
+
+def test_parse_gas_ack_rejects_legacy_staged_success_ack():
+    with pytest.raises(ValueError, match="status: staged"):
+        parse_gas_ack(
+            json.dumps(
+                {
+                    "ok": True,
+                    "status": "staged",
+                    "rows_received": 1,
+                    "rows_written": 1,
+                    "retryable": False,
+                    "message": "Chunk staged",
+                }
+            ).encode("utf-8")
+        )
+
+
 def test_parse_gas_ack_rejects_invalid_json():
     with pytest.raises(ValueError):
         parse_gas_ack(b"not-json")
@@ -419,7 +623,6 @@ def test_parse_gas_ack_accepts_minimal_failure_ack():
 @pytest.fixture(autouse=True)
 def _no_sleep(monkeypatch):
     monkeypatch.setattr("app.export.sinks.google_apps_script.time.sleep", lambda *_: None)
-    monkeypatch.setattr("app.export.sinks.google_apps_script.GoogleAppsScriptSink._ping_backend", lambda self: None)
 
 
 def test_push_reports_progress_for_each_chunk(monkeypatch):
@@ -453,7 +656,39 @@ def test_push_reports_progress_for_each_chunk(monkeypatch):
     sink.push("Progress", _qr(rows=((1,), (2,), (3,))), on_progress=progress.append)
 
     assert len(attempts) == 2
-    assert progress == ["Отправка данных... 1/2", "Отправка данных... 2/2"]
+    assert progress == [
+        "Подготовка данных...",
+        "Отправка данных... 1/2",
+        "Отправка данных... 2/2",
+    ]
+
+
+def test_push_skips_preflight_ping_before_first_post(monkeypatch):
+    methods: list[str] = []
+
+    def _urlopen(req, **kwargs):
+        methods.append(req.get_method())
+        body = json.loads(req.data.decode("utf-8"))
+        row_count = len(body["records"])
+        return _FakeResp(
+            {
+                "ok": True,
+                "status": "accepted",
+                "run_id": body["run_id"],
+                "chunk_index": body["chunk_index"],
+                "rows_received": row_count,
+                "rows_written": row_count,
+                "retryable": False,
+                "message": "ok",
+            }
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink("https://script.google.com/macros/s/abc/exec")
+    sink.push("No ping", _qr())
+
+    assert methods == ["POST"]
 
 
 def test_push_does_not_send_legacy_auth_token_field(monkeypatch):
@@ -485,7 +720,7 @@ def test_push_does_not_send_legacy_auth_token_field(monkeypatch):
     assert "X-iDentBridge-Token" not in seen["headers"]
 
 
-def test_push_treats_duplicate_ack_as_success(monkeypatch):
+def test_push_rejects_legacy_duplicate_success_ack(monkeypatch):
     def _urlopen(req, **kwargs):
         body = json.loads(req.data.decode("utf-8"))
         return _FakeResp(
@@ -502,7 +737,18 @@ def test_push_treats_duplicate_ack_as_success(monkeypatch):
         )
 
     monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
-    GoogleAppsScriptSink("https://script.google.com/macros/s/abc/exec").push("Dup", _qr())
+    sink = GoogleAppsScriptSink(
+        "https://script.google.com/macros/s/abc/exec",
+        retries=1,
+    )
+
+    with pytest.raises(GoogleAppsScriptDeliveryError) as exc_info:
+        sink.push("Dup", _qr())
+
+    exc = exc_info.value
+    assert exc.user_message == "Не удалось отправить данные в Google Таблицы"
+    assert exc.debug_context["cause_type"] == "GasAckError"
+    assert "status" in exc.debug_context["error"]
 
 
 def test_push_retries_on_retryable_ack(monkeypatch):
@@ -631,23 +877,8 @@ def test_push_raises_structured_error_on_partial_delivery(monkeypatch):
     assert "run_id" not in exc.debug_context
 
 
-def test_push_surfaces_early_auth_failure_as_actionable_message(monkeypatch):
-    monkeypatch.setattr(
-        "app.export.sinks.google_apps_script.GoogleAppsScriptSink._ping_backend",
-        REAL_PING_BACKEND,
-    )
-
+def test_push_surfaces_first_post_auth_failure_as_actionable_message(monkeypatch):
     def _urlopen(req, **kwargs):
-        if req.get_method() == "GET":
-            return _FakeResp(
-                {
-                    "ok": False,
-                    "error_code": "UNAUTHORIZED",
-                    "retryable": False,
-                    "message": "Invalid auth token",
-                    "details": {"field": "auth_token"},
-                }
-            )
         return _FakeResp(
             {
                 "ok": False,

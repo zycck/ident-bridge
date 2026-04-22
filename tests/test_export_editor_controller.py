@@ -1,6 +1,7 @@
 """Tests for extracted ExportEditorController."""
 
 from app.config import ExportJob, TriggerType
+from app.export.run_store import ExportRunInfo
 from app.core.scheduler import ScheduleMode
 from app.ui.export_editor_controller import ExportEditorController
 
@@ -76,6 +77,7 @@ class _FakeShell:
         self._gas_sheet_name = ""
         self._gas_write_mode = "replace_by_date_source"
         self._history: list[dict] = []
+        self._unfinished_runs: list[object] = []
         self.status_calls: list[tuple[str, str]] = []
         self.refresh_calls = 0
 
@@ -133,6 +135,9 @@ class _FakeShell:
     def set_history(self, history: list[dict]) -> None:
         self._history = list(history)
 
+    def set_unfinished_runs(self, runs: list[object]) -> None:
+        self._unfinished_runs = list(runs)
+
     def latest_history_entry(self) -> dict | None:
         if not self._history:
             return None
@@ -152,6 +157,7 @@ def _make_controller(**overrides) -> ExportEditorController:
         query_timer=overrides.get("query_timer", _FakeTimer()),
         syntax_timer=overrides.get("syntax_timer", _FakeTimer()),
         load_config=overrides.get("load_config", lambda: {"sql_instance": "srv"}),
+        load_unfinished=overrides.get("load_unfinished", lambda: []),
         emit_changed=overrides.get("emit_changed", lambda: None),
         emit_history_changed=overrides.get("emit_history_changed", lambda: None),
         run_manual_export=overrides.get("run_manual_export", lambda: None),
@@ -256,6 +262,57 @@ def test_export_editor_controller_wires_query_schedule_history_and_run_signals()
     assert history_calls == ["history"]
     assert manual_calls == ["manual"]
     assert scheduled_calls == ["scheduled"]
+
+
+def test_export_editor_controller_loads_unfinished_status_from_sqlite_journal() -> None:
+    shell = _FakeShell()
+    controller = _make_controller(
+        shell=shell,
+        load_history=lambda: [],
+        load_unfinished=lambda: [
+            ExportRunInfo(
+                run_id="run-1",
+                job_id="job-1",
+                job_name="Nightly export",
+                webhook_url="https://example.test/hook",
+                sheet_name="Exports",
+                source_id="job-1",
+                write_mode="replace_all",
+                export_date="2026-04-21",
+                total_chunks=3,
+                total_rows=9,
+                delivered_chunks=0,
+                delivered_rows=0,
+                status="planned",
+                trigger=TriggerType.MANUAL.value,
+                created_at="2026-04-21T09:00:00+00:00",
+                updated_at="2026-04-21T09:05:00+00:00",
+                started_at=None,
+                finished_at=None,
+                last_error="",
+                sql_duration_us=0,
+                total_duration_us=0,
+                supersedes_run_id=None,
+            )
+        ],
+    )
+
+    controller.load_job(
+        ExportJob(
+            id="job-1",
+            name="Nightly export",
+            sql_query="SELECT 1",
+            webhook_url="https://example.test/hook",
+            gas_options={"sheet_name": "Exports", "write_mode": "replace_all"},
+            schedule_enabled=False,
+            schedule_mode="daily",
+            schedule_value="",
+            history=[],
+        )
+    )
+
+    assert len(shell._unfinished_runs) == 1
+    assert shell.status_calls == [("warning", "Не запущено · 0/3 чанков")]
 
 
 def test_export_editor_controller_opens_test_dialog_and_records_completion() -> None:

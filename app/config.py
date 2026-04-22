@@ -4,7 +4,7 @@ import base64
 import json
 import logging
 import os
-import uuid
+import secrets
 import threading
 import tempfile
 from contextlib import contextmanager
@@ -57,6 +57,8 @@ class SyncResult:
     timestamp:   datetime
     duration_us: int = 0
     sql_duration_us: int = 0
+    run_id: str | None = None
+    journaled: bool = False
 
     def __post_init__(self) -> None:
         self.duration_us = max(0, int(self.duration_us))
@@ -70,12 +72,19 @@ class GasOptions(TypedDict, total=False):
     write_mode: str
 
 
+def generate_export_job_id() -> str:
+    """Return a short stable-safe identifier for one export job."""
+
+    return base64.b32encode(secrets.token_bytes(8)).decode("ascii").rstrip("=").lower()[:12]
+
+
 # ---------------------------------------------------------------------------
 # TypedDicts
 # ---------------------------------------------------------------------------
 
 class ExportHistoryEntry(TypedDict, total=False):
     """Single run record stored inside ExportJob.history."""
+    run_id:   str
     ts:      str   # "YYYY-MM-DD HH:MM"
     rows:    int
     trigger: str   # "manual" | "scheduled" | "test"
@@ -176,7 +185,7 @@ def _normalize_export_jobs(raw_jobs: object) -> list[dict]:
 
     for raw_job in raw_jobs:
         job = dict(raw_job) if isinstance(raw_job, Mapping) else {}
-        job["id"] = str(job.get("id") or uuid.uuid4())
+        job["id"] = str(job.get("id") or generate_export_job_id())
         job["name"] = str(job.get("name", "") or "")
         gas_options = job.get("gas_options")
         if isinstance(gas_options, Mapping):

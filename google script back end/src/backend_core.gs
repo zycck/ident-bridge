@@ -1,19 +1,21 @@
 const BACKEND_V2_CONFIG = Object.freeze({
   apiVersion: '2.0',
   protocolVersion: 'gas-sheet.v2',
-  runStatePrefix: 'gasv2:run:',
-  cleanupGateKey: 'gasv2:last_cleanup_at',
   technicalDateColumnName: '__\u0414\u0430\u0442\u0430\u0412\u044b\u0433\u0440\u0443\u0437\u043a\u0438',
   technicalSourceColumnName: '__idb_source',
   legacySourceMarker: 'iDentBridge:gas-sheet:v2',
   legacySourceIds: Object.freeze(['iDentBridge:gas-sheet:v2']),
-  stagingSheetPrefix: '__stage__',
   pingMessage: 'pong',
   defaultLockTimeoutMs: 2000,
   maxPayloadBytes: 5 * 1024 * 1024,
-  maxSheetNameLength: 100,
-  staleRunTtlMs: 12 * 60 * 60 * 1000,
-  maintenanceIntervalMs: 15 * 60 * 1000,
+  spreadsheetLocale: 'ru_RU',
+  columnFormats: Object.freeze({
+    period: 'MM.yyyy',
+    date: 'dd.MM.yyyy',
+    datetime: 'dd.MM.yyyy hh:mm:ss',
+    time: 'hh:mm:ss',
+    number: '0.###############',
+  }),
   writeModes: Object.freeze({
     append: 'append',
     replaceAll: 'replace_all',
@@ -76,52 +78,14 @@ function backendHandleGetRequest_(event) {
 function backendHandlePostRequest_(event) {
   return backendWithScriptLock_(() => {
     const request = backendParseV2Request_(event);
-    const scriptProperties = backendGetScriptProperties_();
-    const spreadsheet = backendGetSpreadsheet_(scriptProperties);
-
-    backendRunMaintenanceIfDue_(spreadsheet, scriptProperties);
-
-    if (request.totalChunks === 1) {
-      const mainContext = backendEnsureMainSheet_(spreadsheet, request);
-      backendApplyWriteMode_(spreadsheet, mainContext, request, backendBuildMainRows_(request));
-      return backendMakeJsonResponse_(backendBuildAck_(request, 'promoted', request.chunkRows, 'Chunk promoted'));
-    }
-
-    let state = backendLoadRunState_(scriptProperties, request.runId);
-    if (state?.completed) {
-      return backendMakeJsonResponse_(backendBuildAck_(request, 'promoted', 0, 'Run already promoted'));
-    }
-
-    if (!state) {
-      state = backendCreateRunState_(request, backendBuildStagingSheetName_(request.sheetName, request.runId));
-    } else {
-      backendValidateExistingRunState_(state, request);
-    }
-
-    if (backendHasReceivedChunk_(state, request.chunkIndex)) {
-      return backendMakeJsonResponse_(backendBuildAck_(request, 'duplicate', 0, 'Chunk already staged'));
-    }
-
-    const stagingSheet = backendEnsureStagingSheet_(spreadsheet, request, state.staging_sheet_name);
-    backendAppendStagingChunkRows_(stagingSheet, request);
-    backendMarkChunkReceived_(state, request.chunkIndex);
-    state.updated_at = backendNowIso_();
-    backendSaveRunState_(scriptProperties, state);
-
-    if (!backendAllChunksReceived_(state)) {
-      return backendMakeJsonResponse_(backendBuildAck_(request, 'staged', request.chunkRows, 'Chunk staged'));
-    }
-
+    const spreadsheet = backendGetSpreadsheet_(backendGetScriptProperties_());
     const mainContext = backendEnsureMainSheet_(spreadsheet, request);
-    const promotedRows = backendReadPromotedRows_(stagingSheet);
-    backendApplyWriteMode_(spreadsheet, mainContext, request, promotedRows);
-    backendDeleteStagingSheet_(spreadsheet, stagingSheet);
-
-    state.completed = true;
-    state.updated_at = backendNowIso_();
-    backendSaveRunState_(scriptProperties, state);
-
-    return backendMakeJsonResponse_(backendBuildAck_(request, 'promoted', request.chunkRows, 'Chunk promoted'));
+    const writeRequest = request.chunkIndex === 1
+      ? request
+      : { ...request, writeMode: BACKEND_V2_CONFIG.writeModes.append };
+    backendApplyWriteMode_(spreadsheet, mainContext, writeRequest, backendBuildMainRows_(request));
+    backendApplySheetLocaleAndFormats_(spreadsheet, mainContext, request);
+    return backendMakeJsonResponse_(backendBuildAck_(request, 'accepted', request.chunkRows, 'Chunk accepted'));
   });
 }
 
@@ -312,149 +276,8 @@ function backendBuildFailurePayload_(error) {
   });
 }
 
-function backendBuildStagingSheetName_(sheetName, runId) {
-  const safeSheetName = backendSanitizeSheetName_(sheetName);
-  const safeRunId = backendSanitizeSheetName_(runId);
-  const runSuffix = safeRunId.length > 12 ? safeRunId.slice(-12) : safeRunId;
-  const base = `${BACKEND_V2_CONFIG.stagingSheetPrefix}${safeSheetName}__${runSuffix}`;
-  if (base.length <= BACKEND_V2_CONFIG.maxSheetNameLength) {
-    return base;
-  }
-
-  const hash = backendSha256Hex_(`${sheetName}\n${runId}`).slice(0, 8);
-  const prefixLength = BACKEND_V2_CONFIG.maxSheetNameLength - hash.length - 2;
-  return `${base.slice(0, Math.max(prefixLength, 1))}__${hash}`;
-}
-
 function backendGetScriptProperties_() {
   return PropertiesService.getScriptProperties();
-}
-
-function backendRunStateKey_(runId) {
-  return `${BACKEND_V2_CONFIG.runStatePrefix}${backendTrimString_(runId)}`;
-}
-
-function backendLoadRunState_(scriptProperties, runId) {
-  const raw = scriptProperties.getProperty(backendRunStateKey_(runId));
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw);
-  } catch (_error) {
-    return null;
-  }
-}
-
-function backendSaveRunState_(scriptProperties, state) {
-  const runId = backendTrimString_(state?.run_id);
-  if (!runId) {
-    throw backendCreateError_('INVALID_RUN_STATE', false, 'Run state is missing run_id', {});
-  }
-  scriptProperties.setProperty(backendRunStateKey_(runId), JSON.stringify(state));
-}
-
-function backendDeleteRunState_(scriptProperties, runId) {
-  scriptProperties.deleteProperty(backendRunStateKey_(runId));
-}
-
-function backendCreateRunState_(request, stagingSheetName) {
-  return {
-    protocol_version: request.protocolVersion,
-    job_name: request.jobName,
-    run_id: request.runId,
-    sheet_name: request.sheetName,
-    export_date: request.exportDate,
-    source_id: request.sourceId,
-    write_mode: request.writeMode,
-    total_chunks: request.totalChunks,
-    total_rows: request.totalRows,
-    staging_sheet_name: stagingSheetName,
-    received_chunks: [],
-    completed: false,
-    updated_at: backendNowIso_(),
-  };
-}
-
-function backendValidateExistingRunState_(state, request) {
-  const matches = state
-    && state.protocol_version === request.protocolVersion
-    && state.job_name === request.jobName
-    && state.run_id === request.runId
-    && state.sheet_name === request.sheetName
-    && state.export_date === request.exportDate
-    && state.source_id === request.sourceId
-    && state.write_mode === request.writeMode
-    && state.total_chunks === request.totalChunks
-    && state.total_rows === request.totalRows;
-
-  if (!matches) {
-    throw backendCreateError_('INVALID_RUN_STATE', false, 'Run state does not match this request', {});
-  }
-}
-
-function backendHasReceivedChunk_(state, chunkIndex) {
-  return Array.isArray(state?.received_chunks) && state.received_chunks.includes(chunkIndex);
-}
-
-function backendMarkChunkReceived_(state, chunkIndex) {
-  if (!Array.isArray(state.received_chunks)) {
-    state.received_chunks = [];
-  }
-
-  if (!state.received_chunks.includes(chunkIndex)) {
-    state.received_chunks.push(chunkIndex);
-    state.received_chunks.sort((left, right) => left - right);
-  }
-}
-
-function backendAllChunksReceived_(state) {
-  return Array.isArray(state?.received_chunks) && state.received_chunks.length === state.total_chunks;
-}
-
-function backendRunMaintenanceIfDue_(spreadsheet, scriptProperties) {
-  const lastCleanupAt = backendParseIsoTimestampMs_(scriptProperties.getProperty(BACKEND_V2_CONFIG.cleanupGateKey));
-  if (lastCleanupAt !== null && (Date.now() - lastCleanupAt) < BACKEND_V2_CONFIG.maintenanceIntervalMs) {
-    return;
-  }
-
-  backendCollectStaleRuns_(spreadsheet, scriptProperties);
-  scriptProperties.setProperty(BACKEND_V2_CONFIG.cleanupGateKey, backendNowIso_());
-}
-
-function backendCollectStaleRuns_(spreadsheet, scriptProperties) {
-  const properties = scriptProperties.getProperties();
-  const now = Date.now();
-
-  for (const [key, rawState] of Object.entries(properties || {})) {
-    if (!key.startsWith(BACKEND_V2_CONFIG.runStatePrefix)) {
-      continue;
-    }
-
-    let state;
-    try {
-      state = JSON.parse(rawState);
-    } catch (_error) {
-      scriptProperties.deleteProperty(key);
-      continue;
-    }
-
-    const updatedAt = backendParseIsoTimestampMs_(state?.updated_at);
-    if (updatedAt !== null && (now - updatedAt) <= BACKEND_V2_CONFIG.staleRunTtlMs) {
-      continue;
-    }
-
-    const stagingSheetName = backendTrimString_(state?.staging_sheet_name);
-    if (stagingSheetName) {
-      const stagingSheet = spreadsheet.getSheetByName(stagingSheetName);
-      if (stagingSheet) {
-        backendDeleteStagingSheet_(spreadsheet, stagingSheet);
-      }
-    }
-
-    scriptProperties.deleteProperty(key);
-  }
 }
 
 function backendWithScriptLock_(callback) {
@@ -480,10 +303,6 @@ function backendTrimString_(value) {
 
 function backendCloneArray_(value) {
   return Array.isArray(value) ? value.slice(0) : [];
-}
-
-function backendNowIso_() {
-  return new Date().toISOString();
 }
 
 function backendNormalizeForStableStringify_(value) {
@@ -642,24 +461,9 @@ function backendComputeRequestChecksum_(request) {
   }));
 }
 
-function backendSanitizeSheetName_(value) {
-  const text = backendTrimString_(value).replace(/[\[\]\:\*\?\/\\]/g, '_');
-  return text || 'sheet';
-}
-
 function backendMeasureUtf8Bytes_(value) {
   if (typeof Utilities !== 'undefined' && Utilities && typeof Utilities.newBlob === 'function') {
     return Utilities.newBlob(String(value)).getBytes().length;
   }
   return unescape(encodeURIComponent(String(value))).length;
-}
-
-function backendParseIsoTimestampMs_(value) {
-  const text = backendTrimString_(value);
-  if (!text) {
-    return null;
-  }
-
-  const parsed = Date.parse(text);
-  return isNaN(parsed) ? null : parsed;
 }

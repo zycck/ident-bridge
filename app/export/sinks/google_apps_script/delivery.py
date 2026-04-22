@@ -1,6 +1,5 @@
 """Delivery transport and sink implementation for Google Apps Script."""
 
-import json
 import logging
 import os
 import re
@@ -14,6 +13,7 @@ import uuid
 from typing import Any, final
 
 from app.config import GasOptions, QueryResult, gas_write_mode_from_raw
+from app.export.run_store import ExportRunStore
 from app.core.constants import (
     EXPORT_SOURCE_ID,
     GOOGLE_SCRIPT_HOSTS,
@@ -85,16 +85,32 @@ def _build_actionable_ack_message(cause: "_ChunkDeliveryError") -> str:
         return "Доступ к обработчику запрещён. Проверьте публикацию проекта Apps Script и права доступа."
 
     if cause.error_code == "INVALID_REQUEST_METHOD":
-        return "РђРґСЂРµСЃ РѕР±СЂР°Р±РѕС‚РєРё РЅР°СЃС‚СЂРѕРµРЅ РЅРµРІРµСЂРЅРѕ. РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ СѓРєР°Р·Р°РЅ Р°РґСЂРµСЃ РІРµР±-РїСЂРёР»РѕР¶РµРЅРёСЏ Apps Script."
+        return (
+            "\u0410\u0434\u0440\u0435\u0441 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438 "
+            "\u043d\u0430\u0441\u0442\u0440\u043e\u0435\u043d \u043d\u0435\u0432\u0435\u0440\u043d\u043e. "
+            "\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435, \u0447\u0442\u043e "
+            "\u0443\u043a\u0430\u0437\u0430\u043d \u0430\u0434\u0440\u0435\u0441 \u0432\u0435\u0431-\u043f\u0440\u0438\u043b\u043e\u0436\u0435\u043d\u0438\u044f Apps Script."
+        )
 
     if cause.error_code == "MALFORMED_JSON":
         return (
-            "РђРґСЂРµСЃ РѕР±СЂР°Р±РѕС‚РєРё РѕС‚РІРµС‚РёР» РЅРµРєРѕСЂСЂРµРєС‚РЅРѕ. РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ РёСЃРїРѕР»СЊР·СѓРµС‚СЃСЏ "
-            "РѕРїСѓР±Р»РёРєРѕРІР°РЅРЅС‹Р№ Р°РґСЂРµСЃ РїСЂРѕРµРєС‚Р° Apps Script С‚Р°Р±Р»РёС†С‹."
+            "\u0410\u0434\u0440\u0435\u0441 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438 "
+            "\u043e\u0442\u0432\u0435\u0442\u0438\u043b \u043d\u0435\u043a\u043e\u0440\u0440\u0435\u043a\u0442\u043d\u043e. "
+            "\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435, \u0447\u0442\u043e "
+            "\u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0435\u0442\u0441\u044f "
+            "\u043e\u043f\u0443\u0431\u043b\u0438\u043a\u043e\u0432\u0430\u043d\u043d\u044b\u0439 "
+            "\u0430\u0434\u0440\u0435\u0441 \u043f\u0440\u043e\u0435\u043a\u0442\u0430 Apps Script \u0442\u0430\u0431\u043b\u0438\u0446\u044b."
         )
 
     if cause.error_code == "INVALID_ACTION":
-        return "РђРґСЂРµСЃ РѕР±СЂР°Р±РѕС‚РєРё РЅРµ РїРѕРґРґРµСЂР¶РёРІР°РµС‚ РѕР¶РёРґР°РµРјС‹Рµ РґРµР№СЃС‚РІРёСЏ. РџСЂРѕРІРµСЂСЊС‚Рµ, С‡С‚Рѕ СЂР°Р·РІРµСЂРЅСѓС‚Р° Р°РєС‚СѓР°Р»СЊРЅР°СЏ РІРµСЂСЃРёСЏ СЃРєСЂРёРїС‚Р°."
+        return (
+            "\u0410\u0434\u0440\u0435\u0441 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438 "
+            "\u043d\u0435 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u0435\u0442 "
+            "\u043e\u0436\u0438\u0434\u0430\u0435\u043c\u044b\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u044f. "
+            "\u041f\u0440\u043e\u0432\u0435\u0440\u044c\u0442\u0435, \u0447\u0442\u043e "
+            "\u0440\u0430\u0437\u0432\u0435\u0440\u043d\u0443\u0442\u0430 "
+            "\u0430\u043a\u0442\u0443\u0430\u043b\u044c\u043d\u0430\u044f \u0432\u0435\u0440\u0441\u0438\u044f \u0441\u043a\u0440\u0438\u043f\u0442\u0430."
+        )
 
     return ""
 
@@ -122,22 +138,6 @@ def _build_ack_failure_message(ack: GasAck) -> str:
     return str(ack.message or ack.error_code or "Ack failure").strip()
 
 
-def _build_gas_get_url(url: str, *, action: str) -> str:
-    parsed = urllib.parse.urlsplit(url)
-    query_items = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
-    filtered_query = [(key, value) for key, value in query_items if key != "action"]
-    filtered_query.append(("action", action))
-    return urllib.parse.urlunsplit(
-        (
-            parsed.scheme,
-            parsed.netloc,
-            parsed.path,
-            urllib.parse.urlencode(filtered_query),
-            parsed.fragment,
-        )
-    )
-
-
 @final
 class GoogleAppsScriptSink:
     name = "google_apps_script"
@@ -148,6 +148,8 @@ class GoogleAppsScriptSink:
         *,
         gas_options: GasOptions | None = None,
         source_id: str | None = None,
+        job_id: str | None = None,
+        run_store: ExportRunStore | None = None,
         max_rows_per_chunk: int = GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
         max_payload_bytes: int = GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
         retries: int = GOOGLE_SCRIPT_RETRIES,
@@ -158,16 +160,32 @@ class GoogleAppsScriptSink:
         self._url = str(os.environ.get("IDENTBRIDGE_GAS_DEV_URL", "") or "").strip() or url
         self._gas_options = gas_options
         self._source_id = str(source_id or "").strip() or EXPORT_SOURCE_ID
+        self._job_id = str(job_id or "").strip() or "job"
+        self._run_store = run_store or ExportRunStore()
         self._max_rows_per_chunk = max_rows_per_chunk
         self._max_payload_bytes = max_payload_bytes
         self._retries = max(1, retries)
         self._base_delay = base_delay
         self._timeout = timeout
         self._ssl = ssl_context or _SSL_CONTEXT
+        self._last_run_id: str | None = None
+        self._last_run_journaled = False
         self._validate_target_url()
+
+    @property
+    def last_run_id(self) -> str | None:
+        return self._last_run_id
+
+    @property
+    def last_run_journaled(self) -> bool:
+        return self._last_run_journaled
 
     def _write_mode(self) -> str:
         return gas_write_mode_from_raw((self._gas_options or {}).get("write_mode")).value
+
+    def _sheet_name(self, job_name: str) -> str:
+        configured = str((self._gas_options or {}).get("sheet_name", "") or "").strip()
+        return configured or job_name
 
     def _validate_target_url(self) -> None:
         parsed = urllib.parse.urlsplit(self._url)
@@ -179,7 +197,11 @@ class GoogleAppsScriptSink:
     def push(self, job_name: str, result: QueryResult, *, on_progress=None) -> None:
         run_id = str(uuid.uuid4())
         export_date = datetime.now().date().isoformat()
-        self._preflight_or_raise(run_id)
+        self._last_run_id = run_id
+        self._last_run_journaled = False
+
+        if on_progress is not None:
+            on_progress("Подготовка данных...")
 
         try:
             chunks = plan_gas_chunks(
@@ -195,7 +217,7 @@ class GoogleAppsScriptSink:
             )
         except ValueError as exc:
             raise GoogleAppsScriptDeliveryError(
-                "Не удалось подготовить данные к отправке",
+                "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u0438\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u043a \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0435",
                 run_id=run_id,
                 delivered_chunks=0,
                 delivered_rows=0,
@@ -203,106 +225,82 @@ class GoogleAppsScriptSink:
                 debug_context={"phase": "planning", "error": str(exc), "url": self._url},
             ) from exc
 
+        self._run_store.create_run(
+            run_id=run_id,
+            job_id=self._job_id,
+            job_name=job_name,
+            webhook_url=self._url,
+            sheet_name=self._sheet_name(job_name),
+            source_id=self._source_id,
+            write_mode=self._write_mode(),
+            export_date=export_date,
+            total_chunks=len(chunks),
+            total_rows=result.count,
+            trigger="manual",
+            sql_duration_us=result.duration_us,
+        )
+        self._run_store.supersede_unfinished_runs(job_id=self._job_id, new_run_id=run_id)
+        self._last_run_journaled = True
+
         delivered_chunks = 0
         delivered_rows = 0
-        for chunk in chunks:
-            payload = build_gas_chunk_payload(
-                job_name,
-                chunk,
-                gas_options=self._gas_options,
-                source_id=self._source_id,
-                write_mode=self._write_mode(),
-                export_date=export_date,
-            )
-            try:
-                ack = self._post_chunk(payload, chunk)
-            except Exception as exc:  # noqa: BLE001
-                raise self._delivery_error(
+        started_ns = time.perf_counter_ns()
+        try:
+            self._run_store.mark_running(run_id)
+            for chunk in chunks:
+                payload = build_gas_chunk_payload(
+                    job_name,
+                    chunk,
+                    gas_options=self._gas_options,
+                    source_id=self._source_id,
+                    write_mode=self._write_mode(),
+                    export_date=export_date,
+                )
+                try:
+                    ack = self._post_chunk(payload, chunk)
+                except Exception as exc:  # noqa: BLE001
+                    raise self._delivery_error(
+                        run_id=run_id,
+                        total_chunks=len(chunks),
+                        delivered_chunks=delivered_chunks,
+                        delivered_rows=delivered_rows,
+                        failed_chunk=chunk,
+                        cause=exc,
+                    ) from exc
+
+                delivered_chunks += 1
+                delivered_rows += ack.rows_written or ack.rows_received or chunk.chunk_rows
+                self._run_store.record_chunk_success(
                     run_id=run_id,
-                    total_chunks=len(chunks),
+                    chunk_index=chunk.chunk_index,
+                    chunk_rows=chunk.chunk_rows,
+                    chunk_bytes=chunk.chunk_bytes,
                     delivered_chunks=delivered_chunks,
                     delivered_rows=delivered_rows,
-                    failed_chunk=chunk,
-                    cause=exc,
-                ) from exc
-
-            delivered_chunks += 1
-            delivered_rows += ack.rows_written or ack.rows_received or chunk.chunk_rows
-            if on_progress is not None:
-                on_progress(f"Отправка данных... {chunk.chunk_index}/{len(chunks)}")
-
-    def _preflight_or_raise(self, run_id: str) -> None:
-        try:
-            self._ping_backend()
-        except Exception as exc:  # noqa: BLE001
-            user_message = "Не удалось проверить адрес обработки Google Таблиц"
-            if isinstance(exc, _ChunkDeliveryError):
-                actionable = _build_actionable_ack_message(exc)
-                if actionable:
-                    user_message = actionable
-            raise GoogleAppsScriptDeliveryError(
-                user_message,
+                )
+                if on_progress is not None:
+                    on_progress(f"\u041e\u0442\u043f\u0440\u0430\u0432\u043a\u0430 \u0434\u0430\u043d\u043d\u044b\u0445... {chunk.chunk_index}/{len(chunks)}")
+        except Exception as exc:
+            self._run_store.mark_failed(
                 run_id=run_id,
-                delivered_chunks=0,
-                delivered_rows=0,
-                failed_chunk_index=1,
-                debug_context={
-                    "phase": "ping",
-                    "url": self._url,
-                    "error": str(exc),
-                    "cause_type": getattr(exc, "cause_type", type(exc).__name__),
-                    "ack_message": getattr(exc, "ack_message", ""),
-                    "error_code": getattr(exc, "error_code", ""),
-                    "ack_details": getattr(exc, "ack_details", {}),
-                    "http_status": getattr(exc, "http_status", None),
-                    "http_body_preview": getattr(exc, "http_body_preview", ""),
-                },
-            ) from exc
-
-    def _ping_backend(self) -> None:
-        req = urllib.request.Request(
-            _build_gas_get_url(self._url, action="ping"),
-            headers={"Accept": "application/json", "User-Agent": USER_AGENT},
-            method="GET",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=self._timeout, context=self._ssl) as resp:
-                raw_body = resp.read()
-        except urllib.error.HTTPError as exc:
-            http_status = getattr(exc, "code", None)
-            body_preview = _preview_response_body(exc.read())
-            raise _ChunkDeliveryError(
-                _build_http_failure_message(http_status, body_preview),
-                cause_type=type(exc).__name__,
-                http_status=http_status,
-                http_body_preview=body_preview,
-            ) from exc
-
-        try:
-            payload = json.loads(raw_body.decode("utf-8"))
-        except Exception as exc:  # noqa: BLE001
-            raise _ChunkDeliveryError(
-                "Ping вернул некорректный JSON",
-                cause_type="PingError",
-                http_body_preview=_preview_response_body(raw_body),
-            ) from exc
-
-        if not isinstance(payload, dict):
-            raise _ChunkDeliveryError(
-                "Ping вернул неожиданный формат ответа",
-                cause_type="PingError",
-                http_body_preview=_preview_response_body(raw_body),
+                error_message=str(exc),
+                delivered_chunks=delivered_chunks,
+                delivered_rows=delivered_rows,
+                total_duration_us=max(
+                    result.duration_us,
+                    max(0, (time.perf_counter_ns() - started_ns) // 1_000) + result.duration_us,
+                ),
             )
+            raise
 
-        if bool(payload.get("ok")):
-            return
-
-        raise _ChunkDeliveryError(
-            str(payload.get("message", "") or payload.get("error_code", "") or "Ping rejected").strip(),
-            cause_type="GasAckError",
-            ack_message=str(payload.get("message", "") or "").strip(),
-            error_code=str(payload.get("error_code", "") or "").strip(),
-            ack_details=payload.get("details") if isinstance(payload.get("details"), dict) else None,
+        self._run_store.mark_completed(
+            run_id=run_id,
+            delivered_chunks=delivered_chunks,
+            delivered_rows=delivered_rows,
+            total_duration_us=max(
+                result.duration_us,
+                max(0, (time.perf_counter_ns() - started_ns) // 1_000) + result.duration_us,
+            ),
         )
 
     def _post_chunk(self, payload: bytes, chunk: GasChunkPlan) -> GasAck:
@@ -347,6 +345,11 @@ class GoogleAppsScriptSink:
                             ack_details=ack.details,
                         )
             except ValueError as exc:
+                if "неожиданный status" in str(exc):
+                    raise _ChunkDeliveryError(
+                        str(exc),
+                        cause_type="GasAckError",
+                    ) from exc
                 last_exc = _RetryableAckError(str(exc))
                 ack = None  # type: ignore[assignment]
             except Exception as exc:  # noqa: BLE001

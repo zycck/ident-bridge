@@ -23,7 +23,18 @@ def resolve_lucide_icons_dir(
     )
     if is_frozen and bundle_root is not None:
         return bundle_root / "resources" / "icons" / "lucide"
-    return base_file.resolve().parent.parent.parent / "resources" / "icons" / "lucide"
+
+    resolved_file = base_file.resolve()
+    for parent in resolved_file.parents:
+        if parent.name == "ui" and parent.parent.name == "app":
+            return parent.parent.parent / "resources" / "icons" / "lucide"
+
+    for parent in (resolved_file.parent, *resolved_file.parents):
+        candidate = parent / "resources" / "icons" / "lucide"
+        if candidate.exists():
+            return candidate
+
+    return resolved_file.parents[4] / "resources" / "icons" / "lucide"
 
 
 @lru_cache(maxsize=128)

@@ -95,6 +95,8 @@ class ExportWorker(QObject):
                     timestamp=datetime.now(UTC),
                     duration_us=max(0, (time.perf_counter_ns() - started_ns) // 1_000),
                     sql_duration_us=0,
+                    run_id=exc.run_id,
+                    journaled=True,
                 )
             )
         except Exception as exc:  # noqa: BLE001
@@ -109,6 +111,7 @@ class ExportWorker(QObject):
                     timestamp=datetime.now(UTC),
                     duration_us=max(0, (time.perf_counter_ns() - started_ns) // 1_000),
                     sql_duration_us=0,
+                    journaled=False,
                 )
             )
 

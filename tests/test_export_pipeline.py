@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
+from app.core.constants import EXPORT_SOURCE_ID
 from app.export.pipeline import (
     ExportPipeline,
     build_pipeline_for_job,
@@ -231,6 +232,7 @@ def test_factory_uses_provided_sql_client_class():
 
 def test_factory_passes_gas_options_to_google_apps_script_sink():
     job = _job(webhook="https://script.google.com/macros/s/abc/exec")
+    job["id"] = "123e4567-e89b-12d3-a456-426614174000"
     job["gas_options"] = {
         "sheet_name": "Exports",
         "write_mode": "replace_all",
@@ -239,7 +241,8 @@ def test_factory_passes_gas_options_to_google_apps_script_sink():
     pipeline = build_pipeline_for_job(AppConfig(), job, sql_client_cls=lambda cfg: object())
 
     assert isinstance(pipeline.sink, GoogleAppsScriptSink)
-    assert pipeline.sink._source_id == job["id"]  # type: ignore[attr-defined]
+    assert pipeline.sink._source_id == EXPORT_SOURCE_ID  # type: ignore[attr-defined]
+    assert pipeline.sink._job_id == job["id"]  # type: ignore[attr-defined]
     assert pipeline.sink._gas_options == {  # type: ignore[attr-defined]
         "sheet_name": "Exports",
         "write_mode": "replace_all",
