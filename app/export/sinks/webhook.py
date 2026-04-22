@@ -115,6 +115,7 @@ class WebhookSink:
         result: QueryResult,
         *,
         on_progress=None,
+        trigger: str = "manual",
     ) -> None:
         if self._max_rows is not None and result.count > self._max_rows:
             msg = (

@@ -194,7 +194,14 @@ class GoogleAppsScriptSink:
         if parsed.hostname not in GOOGLE_SCRIPT_HOSTS:
             raise ValueError("Google Apps Script sink поддерживает только URL Google Apps Script")
 
-    def push(self, job_name: str, result: QueryResult, *, on_progress=None) -> None:
+    def push(
+        self,
+        job_name: str,
+        result: QueryResult,
+        *,
+        on_progress=None,
+        trigger: str = "manual",
+    ) -> None:
         run_id = str(uuid.uuid4())
         export_date = datetime.now().date().isoformat()
         self._last_run_id = run_id
@@ -236,7 +243,7 @@ class GoogleAppsScriptSink:
             export_date=export_date,
             total_chunks=len(chunks),
             total_rows=result.count,
-            trigger="manual",
+            trigger=trigger,
             sql_duration_us=result.duration_us,
         )
         self._run_store.supersede_unfinished_runs(job_id=self._job_id, new_run_id=run_id)

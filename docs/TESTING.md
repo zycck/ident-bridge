@@ -5,11 +5,10 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree contains 287 `test_*` functions, and this
-workspace is a WSL/Linux negative-control environment. The full gate is
-expected to be validated on Windows 11 with Python 3.14.4 and the
-documented Qt stack; tray, registry, reboot, and background-run checks
-still need a real Windows desktop session.
+Audit note: the current tree currently collects **539 test items** on
+Windows 11 / Python 3.14.4. This workspace is still a negative-control
+environment for the full desktop gate; tray, registry, reboot, and
+background-run checks still need a real Windows desktop session.
 
 The short answer is: run the automated suite first (catches regressions
 in seconds), then walk through the manual checks below in order — they
@@ -42,12 +41,16 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **287 test functions / 299 collected test items** covering the scheduler engine,
-export worker pipeline, config persistence, threading helpers, tray
-behaviour, and Windows autostart.
+The fastest sanity check. **539 collected test items** covering the
+scheduler engine, export worker pipeline, config persistence, threading
+helpers, tray behaviour, Windows autostart, performance smoke helpers,
+and the current Google Apps Script delivery path.
 
-The current tree actually contains **287 tests**. Keep this number in
-sync with the tree, or the release checklist will drift again.
+Keep this number in sync with the tree by re-running:
+
+```bash
+python -m pytest tests --collect-only -q
+```
 
 ### One-time setup
 
@@ -65,7 +68,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-299 passed in X.XXs
+539 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -98,9 +101,9 @@ normal top-level close request, yielding a clean exit for automation.
 
 | Test file | What it covers | Tests |
 |---|---|---|
-| `tests/test_scheduler.py` | supported schedule modes, centralized value validation, jitter (±5 %), DST, timezone-aware next\_run, signal emission, stop/start lifecycle, invalid-mode validation | 38 |
+| `tests/test_scheduler.py` | supported schedule modes, centralized value validation, wall-clock anchoring without drift, timezone-aware next\_run, signal emission, stop/start lifecycle, invalid-mode validation | 38 |
 | `tests/test_export_worker.py` | 4-step pipeline (connect → query → webhook → disconnect), DB errors, webhook errors, retry, SyncResult, direct webhook payload serialization | 17 |
-| `tests/test_google_apps_script_sink.py` | chunk planning, JSON envelope, ack parsing, duplicate/retryable/non-retryable ack handling, partial delivery, UTF-8 byte boundaries | 15 |
+| `tests/test_google_apps_script_sink.py` | chunk planning, JSON envelope, ack parsing, retryable/non-retryable handling, journal trigger propagation, partial delivery, UTF-8 byte boundaries | 45 |
 | `tests/test_lucide_icon_loader.py` | extracted Lucide loader: dev/frozen icon-path resolution and helpful missing-icon diagnostics | 4 |
 | `tests/test_config.py` | DPAPI roundtrip, update/merge, migration of legacy fields, JSON corruption resilience, save/load roundtrip, atomic save, config-dir fallback | 19 |
 | `tests/test_threading.py` | `run_worker` factory, GC pin attribute, thread lifecycle, on\_error / on\_finished callbacks, pre-start `connect_signals`, late signal connection safety | 14 |
@@ -126,7 +129,8 @@ normal top-level close request, yielding a clean exit for automation.
 | `tests/test_dashboard_status_cards.py` | extracted dashboard status cards: connection state mapping, default labels, last-sync formatting | 3 |
 | `tests/test_export_editor_header.py` | extracted export editor header: title editing, status summary, action signals | 2 |
 | `tests/test_export_editor_runtime.py` | extracted export editor runtime: trigger bookkeeping, success/error status, alert thresholding | 3 |
-| `tests/test_export_execution_controller.py` | extracted export execution controller: manual/scheduled starts, progress, success/error routing, test-entry recording | 4 |
+| `tests/test_export_execution_controller.py` | extracted export execution controller: manual/scheduled starts, progress, success/error routing, trigger propagation, test-entry recording | 7 |
+| `tests/test_perf_smoke.py` | perf harness scenarios, cycle execution, deferred-delete cleanup so smoke retained-memory numbers stay honest | 3 |
 | `tests/test_export_history_panel.py` | extracted export history panel: render, delete, clear-confirm behavior | 3 |
 | `tests/test_export_jobs_delete_controller.py` | extracted export jobs deletion flow: running guard, confirm/cancel, cleanup/save/history emission, current-editor fallback | 4 |
 | `tests/test_export_jobs_store.py` | extracted export jobs store: raw normalization, config-preserving save, blank job creation | 3 |
@@ -694,8 +698,8 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 287 test functions, but the
-  release gate should still be confirmed in a clean Windows session
+- The repository tree currently reports 539 collected test items, but
+  the release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 
 ---

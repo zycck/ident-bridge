@@ -33,6 +33,7 @@ class ExportSink(Protocol):
         result: QueryResult,
         *,
         on_progress: Callable[[str], None] | None = None,
+        trigger: str = "manual",
     ) -> None:
         """Deliver ``result`` to the sink. Raise on failure."""
         ...

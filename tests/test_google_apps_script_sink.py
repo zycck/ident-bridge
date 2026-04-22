@@ -695,6 +695,59 @@ def test_push_reports_progress_for_each_chunk(monkeypatch):
     ]
 
 
+def test_push_records_trigger_in_run_store(monkeypatch):
+    class _RunStore:
+        def __init__(self) -> None:
+            self.create_run_calls = []
+
+        def create_run(self, **kwargs):
+            self.create_run_calls.append(kwargs)
+
+        def supersede_unfinished_runs(self, **kwargs):
+            return 0
+
+        def mark_running(self, run_id):
+            return None
+
+        def record_chunk_success(self, **kwargs):
+            return None
+
+        def mark_failed(self, **kwargs):
+            return None
+
+        def mark_completed(self, **kwargs):
+            return None
+
+    run_store = _RunStore()
+
+    def _urlopen(req, **kwargs):
+        body = json.loads(req.data.decode("utf-8"))
+        row_count = len(body["records"])
+        return _FakeResp(
+            {
+                "ok": True,
+                "status": "accepted",
+                "run_id": body["run_id"],
+                "chunk_index": body["chunk_index"],
+                "rows_received": row_count,
+                "rows_written": row_count,
+                "retryable": False,
+                "message": "ok",
+            }
+        )
+
+    monkeypatch.setattr("app.export.sinks.google_apps_script.urllib.request.urlopen", _urlopen)
+
+    sink = GoogleAppsScriptSink(
+        "https://script.google.com/macros/s/abc/exec",
+        run_store=run_store,
+    )
+    sink.push("Triggered", _qr(), trigger="scheduled")
+
+    assert run_store.create_run_calls
+    assert run_store.create_run_calls[0]["trigger"] == "scheduled"
+
+
 def test_push_skips_preflight_ping_before_first_post(monkeypatch):
     methods: list[str] = []
 

@@ -27,8 +27,10 @@ python tools/perf_smoke.py --scenario main-window --cycles 3
 python tools/perf_smoke.py --scenario sql-editor --cycles 10
 python tools/perf_smoke.py --scenario debug-window --cycles 10
 python tools/perf_smoke.py --scenario export-editor --cycles 5
+python tools/perf_smoke.py --scenario gas-chunking --cycles 5
 python tools/perf_smoke.py --scenario settings-widget --cycles 5
 python tools/perf_smoke.py --scenario test-run-dialog --cycles 10
+python tools/perf_smoke.py --scenario error-dialog --cycles 10
 ```
 
 ## Optional threshold gate
@@ -66,15 +68,19 @@ Latest expanded baseline on Windows 11 / Python 3.14.4:
 ```text
 scenario=all
 cycles=1
-positive_retained_kib=1714.9
+positive_retained_kib=1484.1
 ```
 
 Largest retained buckets in that run were dominated by first-load costs
 from Python/Qt imports plus UI page construction, especially
 `enum.py`, `app/ui/export_jobs_pages.py`, and `app/ui/main_window_navigation.py`.
 After moving `sqlglot` to lazy import, removing eager SQL validation
-on initial export-editor load, and reusing cached highlighter assets,
-the narrower `export-editor` scenario dropped from `1681.1 KiB` to
-`993.4 KiB` on the same Windows 11 / Python 3.14.4 machine.
+on initial export-editor load, reusing cached highlighter assets, and
+fixing `DeferredDelete` flushing inside the smoke harness itself, the
+narrower `export-editor` scenario now sits around `1014.5 KiB` for
+`--cycles 5` on the same Windows 11 / Python 3.14.4 machine. The
+important part is that the old false linear growth is gone; the
+remaining retained memory is dominated by one-time imports and editor
+construction, not a per-cycle leak.
 Treat these numbers as a living baseline, not a hard regression
 threshold yet.

@@ -60,6 +60,8 @@ class ExportPipeline:
         self,
         job: ExportJob,
         progress: ProgressCallback = _noop_progress,
+        *,
+        trigger: str = "manual",
     ) -> SyncResult:
         """Execute the pipeline end-to-end and return a :class:`SyncResult`."""
         job_name = job.get("name", "?")
@@ -84,6 +86,7 @@ class ExportPipeline:
                     job_name,
                     result,
                     on_progress=lambda text: progress(2, text),
+                    trigger=trigger,
                 )
             else:
                 self.logger.info(

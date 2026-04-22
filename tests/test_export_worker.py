@@ -1,4 +1,5 @@
 """Tests for app.workers.export_worker.ExportWorker."""
+from datetime import UTC, datetime
 import json
 import logging
 from unittest.mock import MagicMock
@@ -396,7 +397,7 @@ def test_gas_delivery_error_emits_user_message_and_sanitized_debug_logs(
         history=[],
     )
 
-    def _fail_push(self, job_name, result, *, on_progress=None):
+    def _fail_push(self, job_name, result, *, on_progress=None, trigger="manual"):
         raise GoogleAppsScriptDeliveryError(
             "Не удалось доставить данные: 0/1 чанков",
             run_id="run-1",
@@ -424,3 +425,28 @@ def test_gas_delivery_error_emits_user_message_and_sanitized_debug_logs(
     assert "token=abc" not in caplog.text
     assert "GAS debug_context:" in caplog.text
     assert "GAS traceback:" in caplog.text
+
+
+def test_worker_forwards_trigger_to_pipeline(base_cfg, simple_job, monkeypatch, qtbot):
+    seen: list[str] = []
+
+    class _Pipeline:
+        def run(self, job, progress, *, trigger="manual"):
+            seen.append(trigger)
+            return SyncResult(
+                success=True,
+                rows_synced=2,
+                error=None,
+                timestamp=datetime.now(UTC),
+            )
+
+    monkeypatch.setattr(
+        "app.workers.export_worker.build_pipeline_for_job",
+        lambda *args, **kwargs: _Pipeline(),
+    )
+
+    worker = ExportWorker(base_cfg, simple_job, trigger="scheduled")
+    c = _run_worker_sync(worker)
+
+    assert seen == ["scheduled"]
+    assert c.finished_emissions[0].success is True

@@ -50,10 +50,17 @@ class ExportWorker(QObject):
     # Emitted only on failure
     error: Signal = Signal(str)
 
-    def __init__(self, base_cfg: AppConfig, job: ExportJob) -> None:
+    def __init__(
+        self,
+        base_cfg: AppConfig,
+        job: ExportJob,
+        *,
+        trigger: str = "manual",
+    ) -> None:
         super().__init__()
         self._cfg = base_cfg
         self._job = job
+        self._trigger = str(trigger or "manual").strip() or "manual"
 
     @Slot()
     def run(self) -> None:
@@ -69,7 +76,11 @@ class ExportWorker(QObject):
         job_name = self._job.get("name", "?")
         started_ns = time.perf_counter_ns()
         try:
-            result = pipeline.run(self._job, progress=self.progress.emit)
+            result = pipeline.run(
+                self._job,
+                progress=self.progress.emit,
+                trigger=self._trigger,
+            )
             self.finished.emit(result)
         except GoogleAppsScriptDeliveryError as exc:
             self.error.emit(exc.user_message)

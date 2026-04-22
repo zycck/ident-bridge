@@ -48,13 +48,20 @@ class _FakeDb:
 @dataclass
 class _CountingSink:
     name: str = "counting"
-    pushes: list[tuple[str, QueryResult]] = None  # type: ignore
+    pushes: list[tuple[str, QueryResult, str]] = None  # type: ignore
 
     def __post_init__(self) -> None:
         self.pushes = []
 
-    def push(self, job_name: str, result: QueryResult, *, on_progress=None) -> None:
-        self.pushes.append((job_name, result))
+    def push(
+        self,
+        job_name: str,
+        result: QueryResult,
+        *,
+        on_progress=None,
+        trigger: str = "manual",
+    ) -> None:
+        self.pushes.append((job_name, result, trigger))
 
 
 @dataclass
@@ -65,7 +72,14 @@ class _ProgressSink:
     def __post_init__(self) -> None:
         self.callbacks = []
 
-    def push(self, job_name: str, result: QueryResult, *, on_progress=None) -> None:
+    def push(
+        self,
+        job_name: str,
+        result: QueryResult,
+        *,
+        on_progress=None,
+        trigger: str = "manual",
+    ) -> None:
         assert on_progress is not None
         on_progress("Отправка данных... 1/1")
         self.callbacks.append(job_name)
@@ -105,6 +119,7 @@ def test_pipeline_runs_connect_query_push():
     assert db.queries == ["SELECT 1"]
     assert len(sink.pushes) == 1
     assert sink.pushes[0][0] == "Test Job"
+    assert sink.pushes[0][2] == "manual"
     assert db.disconnect_calls == 1
 
 
@@ -130,6 +145,16 @@ def test_pipeline_forwards_step_two_updates_from_sink():
     p = ExportPipeline(db=db, sink=_ProgressSink())
     p.run(_job(), progress=lambda s, m: events.append((s, m)))
     assert (2, "Отправка данных... 1/1") in events
+
+
+def test_pipeline_forwards_trigger_to_sink():
+    db = _FakeDb(_qr())
+    sink = _CountingSink()
+    p = ExportPipeline(db=db, sink=sink)
+
+    p.run(_job(), trigger="scheduled")
+
+    assert sink.pushes[0][2] == "scheduled"
 
 
 # --- error paths ---------------------------------------------------------
@@ -165,7 +190,7 @@ def test_sink_failure_propagates_and_disconnects():
     class _BadSink:
         name = "bad"
 
-        def push(self, job_name, result, *, on_progress=None):
+        def push(self, job_name, result, *, on_progress=None, trigger="manual"):
             raise RuntimeError("network down")
 
     db = _FakeDb(_qr())

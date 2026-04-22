@@ -21,7 +21,7 @@ class ExportExecutionController(QObject):
         runtime: ExportEditorRuntimeState,
         load_config: Callable[[], dict[str, Any]],
         build_job: Callable[[], dict[str, Any]],
-        create_worker: Callable[[dict[str, Any], dict[str, Any]], Any],
+        create_worker: Callable[[dict[str, Any], dict[str, Any], str], Any],
         start_worker: Callable[[Any, Callable[[object], None], Callable[[str], None], Callable[[int, str], None]], None],
         set_run_enabled: Callable[[bool], None],
         set_run_busy: Callable[[bool], None],
@@ -94,7 +94,7 @@ class ExportExecutionController(QObject):
         self._set_status(status_kind, status_text)
         self._emit_runtime_state_changed(status_kind, status_text, True)
 
-        worker = self._create_worker(self._load_config(), self._build_job())
+        worker = self._create_worker(self._load_config(), self._build_job(), trigger)
         self._start_worker(worker, self.on_finished, self.on_error, self.on_progress)
         return True
 

@@ -65,7 +65,11 @@ class ExportJobEditor(QWidget):
             runtime=self._runtime,
             load_config=self._config.load,
             build_job=self._bridge.build_job,
-            create_worker=lambda cfg, current_job: ExportWorker(cfg, current_job),
+            create_worker=lambda cfg, current_job, trigger: ExportWorker(
+                cfg,
+                current_job,
+                trigger=trigger,
+            ),
             start_worker=self._bridge.start_worker,
             set_run_enabled=self._shell.set_run_enabled,
             set_run_busy=self._shell.set_run_busy,

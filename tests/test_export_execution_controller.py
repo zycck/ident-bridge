@@ -59,7 +59,7 @@ def _controller():
         runtime=ExportEditorRuntimeState(),
         load_config=lambda: {"sql_instance": "server\\SQLEXPRESS"},
         build_job=lambda: {"id": "job-1", "name": "Nightly"},
-        create_worker=lambda cfg, job: ("worker", cfg, job),
+        create_worker=lambda cfg, job, trigger: ("worker", cfg, job, trigger),
         start_worker=start_worker,
         set_run_enabled=lambda enabled: events.append(("run_enabled", enabled)),
         set_run_busy=lambda busy: events.append(("run_busy", busy)),
@@ -101,6 +101,7 @@ def test_start_scheduled_is_idempotent_while_running() -> None:
     assert controller.start_scheduled() is False
 
     assert len(started) == 1
+    assert started[0][0][3] == "scheduled"
 
 
 def test_progress_and_success_restore_ui_and_emit_sync() -> None:
@@ -183,7 +184,7 @@ def test_threaded_export_callbacks_run_on_gui_thread(qapp_session, qtbot) -> Non
         runtime=ExportEditorRuntimeState(),
         load_config=lambda: {"sql_instance": "server\\SQLEXPRESS"},
         build_job=lambda: {"id": "job-1", "name": "Nightly"},
-        create_worker=lambda cfg, job: ("worker", cfg, job),
+        create_worker=lambda cfg, job, trigger: ("worker", cfg, job, trigger),
         start_worker=lambda *args, **kwargs: None,
         set_run_enabled=lambda _enabled: finish_threads.append(QThread.currentThread() is gui_thread),
         set_run_busy=lambda _busy: finish_threads.append(QThread.currentThread() is gui_thread),
