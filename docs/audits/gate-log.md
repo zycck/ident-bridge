@@ -152,3 +152,12 @@
 - **N.4 EXE smoke:** SKIP — desktop smoke not rerun
 - **Scope:** remove test-only `sync_path()` autostart helper, drop dead updater helper `_pick_download_url()`, remove dead webhook retry re-exports, sync docs to new test count
 - **Commits:** `04695ae` + working-tree docs sync
+
+## Stage 17 - 2026-04-22
+
+- **N.1 pytest:** PASS - 541 passed in 5.75 s
+- **N.2 perf smoke:** PASS - `main-window` `positive_retained_kib=1390.4`
+- **N.3 build:** SKIP - bugfix/doc slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP - desktop smoke not rerun
+- **Scope:** restore export history counts in dashboard/editor/tiles, preserve config-history fallback when SQLite is empty, record generic export failures in history, route worker callbacks back to GUI thread, sync TESTING baseline to current count
+- **Commit:** `7d02607`
