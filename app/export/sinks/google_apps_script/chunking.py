@@ -10,6 +10,7 @@ from typing import Any
 
 from app.config import GasOptions, GasWriteMode, QueryResult, gas_write_mode_from_raw
 from app.core.constants import (
+    EXPORT_SOURCE_ID,
     GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
     GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
 )
@@ -82,7 +83,7 @@ def _normalize_write_mode(gas_options: GasOptions | None) -> str:
 
 
 def _normalize_source_id(source_id: str | None, job_name: str) -> str:
-    return str(source_id or "").strip() or str(job_name or "").strip() or "job"
+    return str(source_id or "").strip() or EXPORT_SOURCE_ID
 
 
 def _payload_without_checksum(

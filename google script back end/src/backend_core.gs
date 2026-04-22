@@ -6,6 +6,7 @@ const BACKEND_V2_CONFIG = Object.freeze({
   technicalDateColumnName: '__\u0414\u0430\u0442\u0430\u0412\u044b\u0433\u0440\u0443\u0437\u043a\u0438',
   technicalSourceColumnName: '__idb_source',
   legacySourceMarker: 'iDentBridge:gas-sheet:v2',
+  legacySourceIds: Object.freeze(['iDentBridge:gas-sheet:v2']),
   stagingSheetPrefix: '__stage__',
   pingMessage: 'pong',
   defaultLockTimeoutMs: 2000,

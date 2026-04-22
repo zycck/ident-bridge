@@ -26,7 +26,7 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
-from app.core.constants import GOOGLE_SCRIPT_HOSTS, MAX_WEBHOOK_ROWS
+from app.core.constants import EXPORT_SOURCE_ID, GOOGLE_SCRIPT_HOSTS, MAX_WEBHOOK_ROWS
 from app.core.formatters import format_duration_compact
 from app.core.sql_client import SqlClient
 from app.export.protocol import ExportSink
@@ -128,7 +128,7 @@ def build_pipeline_for_job(
     sink = resolve_export_sink(
         job.get("webhook_url") or "",
         gas_options=job.get("gas_options"),
-        source_id=str(job.get("id") or "").strip() or None,
+        source_id=EXPORT_SOURCE_ID,
     )
 
     return ExportPipeline(db=db, sink=sink)

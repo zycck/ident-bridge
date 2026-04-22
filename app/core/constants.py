@@ -33,6 +33,7 @@ GITHUB_API_URL = "https://api.github.com/repos/{repo}/releases/latest"
 
 # ── Identity / metadata ──────────────────────────────────────────────
 APP_NAME = "iDentBridge"
+EXPORT_SOURCE_ID = "identa-app"
 # Keep the current runtime artifact/config names explicit until a dedicated
 # migration wave moves users off the legacy iDentSync footprint.
 LEGACY_RUNTIME_NAME = "iDentSync"

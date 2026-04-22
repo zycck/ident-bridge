@@ -114,6 +114,13 @@ function backendIsTechnicalColumn_(value) {
     || value === BACKEND_V2_CONFIG.technicalSourceColumnName;
 }
 
+function backendIsLegacySourceId_(value) {
+  const normalized = backendTrimString_(value);
+  return normalized
+    ? BACKEND_V2_CONFIG.legacySourceIds.includes(normalized)
+    : false;
+}
+
 function backendSplitMainHeader_(header) {
   const userColumns = [];
   let dateIndex = -1;
@@ -202,7 +209,7 @@ function backendApplyLegacyMarkerMigration_(rows, header, request, currentSplit)
       continue;
     }
 
-    if (sourceValue === BACKEND_V2_CONFIG.legacySourceMarker) {
+    if (backendIsLegacySourceId_(sourceValue)) {
       row[sourceIndex] = request.sourceId;
       changed = true;
     }
@@ -419,7 +426,7 @@ function backendReadOwnedRowNumbers_(spreadsheet, mainContext, request) {
   for (let index = 0; index < rowCount; index += 1) {
     const dateValue = backendTrimString_(dateValues[index]?.[0]);
     const sourceValue = backendTrimString_(sourceValues[index]?.[0]);
-    const sameSource = sourceValue === request.sourceId || sourceValue === BACKEND_V2_CONFIG.legacySourceMarker;
+    const sameSource = sourceValue === request.sourceId || backendIsLegacySourceId_(sourceValue);
     if (dateValue === request.exportDate && sameSource) {
       rowNumbers.push(index + 2);
     }

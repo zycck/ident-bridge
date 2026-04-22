@@ -15,6 +15,7 @@ from typing import Any, final
 
 from app.config import GasOptions, QueryResult, gas_write_mode_from_raw
 from app.core.constants import (
+    EXPORT_SOURCE_ID,
     GOOGLE_SCRIPT_HOSTS,
     GOOGLE_SCRIPT_MAX_PAYLOAD_BYTES,
     GOOGLE_SCRIPT_MAX_ROWS_PER_CHUNK,
@@ -156,7 +157,7 @@ class GoogleAppsScriptSink:
     ) -> None:
         self._url = str(os.environ.get("IDENTBRIDGE_GAS_DEV_URL", "") or "").strip() or url
         self._gas_options = gas_options
-        self._source_id = str(source_id or "").strip() or None
+        self._source_id = str(source_id or "").strip() or EXPORT_SOURCE_ID
         self._max_rows_per_chunk = max_rows_per_chunk
         self._max_payload_bytes = max_payload_bytes
         self._retries = max(1, retries)
