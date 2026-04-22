@@ -1,19 +1,12 @@
-"""ExportJobsWidget — list-detail export job manager (tiles + editor pages)."""
+"""Export jobs list/detail container."""
 
 from typing import override
 
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import (
-    QMessageBox,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QMessageBox, QStackedWidget, QVBoxLayout, QWidget
 
-from app.config import (
-    ConfigManager,
-)
+from app.config import ConfigManager
 from app.export.run_store import ExportRunStore
 from app.ui.export_job_editor import ExportJobEditor  # re-exported for existing imports/tests
 from app.ui.export_jobs_collection_controller import ExportJobsCollectionController
@@ -22,16 +15,12 @@ from app.ui.export_jobs_navigation_controller import ExportJobsNavigationControl
 from app.ui.export_jobs_pages import ExportJobsEditorPage, ExportJobsTilesPage
 
 
-# ---------------------------------------------------------------------------
-# ExportJobsWidget
-# ---------------------------------------------------------------------------
-
 class ExportJobsWidget(QWidget):
     """Container for export jobs: list of tiles + detail editor pages."""
 
-    sync_completed  = Signal(object)  # SyncResult — bubbled up from any editor
-    history_changed = Signal()         # bubbled up from any editor
-    failure_alert   = Signal(str, int)  # (job_name, consecutive_count) — wire to tray in MainWindow
+    sync_completed = Signal(object)
+    history_changed = Signal()
+    failure_alert = Signal(str, int)
 
     def __init__(
         self,
@@ -68,16 +57,10 @@ class ExportJobsWidget(QWidget):
             save_jobs=self._jobs.save_jobs,
             show_tiles=self._show_tiles,
             emit_history_changed=self.history_changed.emit,
-            warn_running=lambda title, message: QMessageBox.warning(
-                self,
-                title,
-                message,
-            ),
+            warn_running=lambda title, message: QMessageBox.warning(self, title, message),
             confirm_delete=self._confirm_delete,
         )
         self._jobs.load_jobs()
-
-    # ------------------------------------------------------------------ UI
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -92,10 +75,8 @@ class ExportJobsWidget(QWidget):
         self._editor_page = ExportJobsEditorPage(self)
         self._editor_page.back_requested.connect(self._show_tiles)
         self._editor_page.delete_requested.connect(self._delete_current_editor)
-        self._stack.addWidget(self._tiles_page)   # index 0
-        self._stack.addWidget(self._editor_page)  # index 1
-
-    # ------------------------------------------------------------------ Jobs CRUD
+        self._stack.addWidget(self._tiles_page)
+        self._stack.addWidget(self._editor_page)
 
     def _add_new_job(self) -> None:
         self._jobs.add_new_job()
@@ -139,16 +120,15 @@ class ExportJobsWidget(QWidget):
         )
         return reply == QMessageBox.StandardButton.Yes
 
-    # ------------------------------------------------------------------ Public
-
     def stop_all_schedulers(self) -> None:
-        """Stop all per-job schedulers — call on app shutdown."""
         for editor in self._editors.values():
             editor.stop_scheduler()
 
+    def flush_pending_save(self) -> None:
+        self._jobs.flush_pending_save()
+
     @override
     def closeEvent(self, event: QCloseEvent) -> None:
-        """Safety net: stop schedulers + timers if the widget is closed
-        independently of the app's normal aboutToQuit cleanup hook."""
+        self._jobs.flush_pending_save()
         self._navigation.stop_all_editors()
         super().closeEvent(event)

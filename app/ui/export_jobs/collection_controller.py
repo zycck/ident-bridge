@@ -3,10 +3,11 @@
 from collections.abc import Callable
 from typing import Any
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtWidgets import QMessageBox, QFrame, QScrollArea, QVBoxLayout, QWidget
 
 from app.config import ConfigManager, ExportJob
+from app.core.constants import DEBOUNCE_SAVE_MS
 from app.export.run_store import ExportRunStore
 from app.ui.export_job_editor import ExportJobEditor
 from app.ui.export_job_tile import ExportJobTile
@@ -57,6 +58,10 @@ class ExportJobsCollectionController:
         self._tile_factory = tile_factory
         self._editor_factory = editor_factory
         self._editors: dict[str, Any] = {}
+        self._save_timer = QTimer(parent)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(DEBOUNCE_SAVE_MS)
+        self._save_timer.timeout.connect(self.save_jobs)
 
     def editors(self) -> dict[str, Any]:
         return self._editors
@@ -67,11 +72,17 @@ class ExportJobsCollectionController:
         self._tiles_page.refresh_empty()
         self._tiles_page.reflow_tiles()
 
+    def queue_save_jobs(self) -> None:
+        self._save_timer.start()
+
+    def flush_pending_save(self) -> None:
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self.save_jobs()
+
     def save_jobs(self) -> None:
+        self._save_timer.stop()
         jobs = [editor.to_job() for editor in self._editors.values()]
-        if self._run_store is not None:
-            for job in jobs:
-                job["history"] = self._run_store.list_job_history(job["id"])
         duplicate = find_duplicate_export_target(jobs)
         if duplicate is not None:
             first_job_id, second_job_id, webhook_url, sheet_name = duplicate
@@ -90,7 +101,7 @@ class ExportJobsCollectionController:
             return
 
         persist_export_jobs(self._config, jobs)
-        self.sync_tiles_from_editors()
+        self.sync_tiles_from_editors(refresh_journal=False)
 
     def add_new_job(self) -> None:
         job = new_export_job()
@@ -106,14 +117,14 @@ class ExportJobsCollectionController:
             return False
         return bool(editor.start_export())
 
-    def sync_tiles_from_editors(self) -> None:
+    def sync_tiles_from_editors(self, *, refresh_journal: bool = True) -> None:
         tiles_by_id = {
             tile.job_id(): tile
             for tile in self._tiles_page.tiles()
         }
         for editor in self._editors.values():
             job = editor.to_job()
-            if self._run_store is not None:
+            if refresh_journal and self._run_store is not None:
                 job["history"] = self._run_store.list_job_history(job["id"])
                 job["unfinished_runs"] = self._run_store.list_unfinished_runs(job_id=job["id"])
             tile = tiles_by_id.get(job.get("id"))
@@ -139,7 +150,7 @@ class ExportJobsCollectionController:
                 raise TypeError
         except TypeError:
             editor = self._editor_factory(job, self._config, self._parent)
-        editor.changed.connect(lambda _job: self.save_jobs())
+        editor.changed.connect(lambda _job: self.queue_save_jobs())
         editor.history_changed.connect(self._emit_history_changed)
         editor.sync_completed.connect(self._emit_sync_completed)
         editor.failure_alert.connect(self._emit_failure_alert)

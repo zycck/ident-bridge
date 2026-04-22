@@ -61,3 +61,31 @@ def test_update_flow_coordinator_passes_digest_to_download_worker(
     assert dashboard.in_progress == [True]
     assert isinstance(captured["worker"], UpdateDownloadWorker)
     assert captured["worker"]._expected_digest == f"sha256:{digest}"
+
+
+def test_update_flow_coordinator_quits_only_after_apply_finished(monkeypatch, qapp_session) -> None:
+    window = _FakeWindow()
+    dashboard = _FakeDashboard()
+    quit_calls: list[bool] = []
+
+    monkeypatch.setattr(
+        "app.ui.main_window.update_flow_coordinator.QApplication.quit",
+        lambda: quit_calls.append(True),
+    )
+
+    coordinator = UpdateFlowCoordinator(
+        window,
+        dashboard,
+        current_version="1.0.0",
+    )
+
+    coordinator._update_download_running = True
+    coordinator._update_apply_running = True
+    coordinator.on_update_applied()
+
+    assert quit_calls == []
+
+    coordinator.on_update_apply_finished()
+
+    assert quit_calls == [True]
+    assert dashboard.in_progress[-1] is False

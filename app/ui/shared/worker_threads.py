@@ -1,15 +1,97 @@
 """
 QThread + worker factory.
 
-Eliminates ~120 lines of boilerplate scattered across every widget that
-spawns a background worker. Handles the standard PySide6 GC-pin pattern
-(self.<attr> = worker) and identity-safe cleanup on thread.finished.
+Eliminates boilerplate around background Qt workers, keeps active threads
+alive independently from short-lived widgets, and provides bounded shutdown
+helpers for application exit.
 """
+
+import inspect
 import weakref
 from collections.abc import Callable
 from typing import Any
 
 from PySide6.QtCore import QObject, QThread, QTimer
+from PySide6.QtWidgets import QApplication
+
+_ALL_THREADS: set[QThread] = set()
+
+
+def _safe_callback(callback: Callable[..., Any] | None) -> Callable[..., Any] | None:
+    if callback is None:
+        return None
+
+    try:
+        if inspect.ismethod(callback):
+            ref = weakref.WeakMethod(callback)
+
+            def _wrapped(*args: Any) -> Any:
+                current = ref()
+                if current is None:
+                    return None
+                try:
+                    return current(*args)
+                except RuntimeError:
+                    return None
+
+            return _wrapped
+    except TypeError:
+        return callback
+
+    return callback
+
+
+def _owner_threads(owner: QObject) -> set[QThread]:
+    threads = owner.__dict__.get("_worker_threads")
+    if not isinstance(threads, set):
+        threads = set()
+        owner.__dict__["_worker_threads"] = threads
+    return threads
+
+
+def _register_thread(owner: QObject, thread: QThread) -> None:
+    _ALL_THREADS.add(thread)
+    _owner_threads(owner).add(thread)
+
+    owner_ref = weakref.ref(owner)
+
+    def _clear() -> None:
+        _ALL_THREADS.discard(thread)
+        current_owner = owner_ref()
+        if current_owner is None:
+            return
+        try:
+            _owner_threads(current_owner).discard(thread)
+        except RuntimeError:
+            return
+
+    thread.finished.connect(_clear)
+
+
+def _shutdown_threads(threads: list[QThread], *, wait_ms: int) -> None:
+    for thread in threads:
+        try:
+            if not thread.isRunning():
+                continue
+        except RuntimeError:
+            continue
+        thread.requestInterruption()
+        thread.quit()
+
+    for thread in threads:
+        try:
+            if thread.isRunning():
+                thread.wait(wait_ms)
+        except RuntimeError:
+            continue
+
+
+def shutdown_worker_threads(owner: QObject, *, wait_ms: int = 5_000) -> None:
+    _shutdown_threads(list(_owner_threads(owner)), wait_ms=wait_ms)
+
+
+def shutdown_all_worker_threads(*, wait_ms: int = 10_000) -> None:
+    _shutdown_threads(list(_ALL_THREADS), wait_ms=wait_ms)
 
 
 def run_worker(
@@ -25,45 +107,35 @@ def run_worker(
     """
     Move *worker* to a new QThread, wire cleanup, start, return the thread.
 
-    PySide6 needs an explicit Python reference to keep workers alive (Shiboken
-    ownership semantics). Pass `pin_attr` to assign the worker to
-    `parent.<pin_attr>`; the helper clears that attribute on `thread.finished`,
-    identity-safely so a re-entered slot does not nuke a fresh worker.
+    PySide6 needs an explicit Python reference to keep workers alive.
+    Pass `pin_attr` to assign the worker to `parent.<pin_attr>`; the helper
+    clears that attribute on `thread.finished`, identity-safely so a re-entered
+    slot does not nuke a fresh worker.
 
-    Workers with `finished` and/or `error` signals get those wired to
-    `thread.quit` automatically. Optional `on_finished` / `on_error` callbacks
-    let callers handle results without manual wiring.
-
-    For extra worker/thread signal wiring that must exist before a fast worker
-    starts, pass `connect_signals`. The callback receives `(worker, thread)`
-    after the standard cleanup wiring is in place but before the deferred
-    thread start happens.
-
-    The actual thread start is deferred to the next event-loop turn via
-    `QTimer.singleShot(0, ...)`. This still gives callers a best-effort window
-    to attach additional non-terminal signals after `run_worker()` returns, but
-    `connect_signals` is the preferred contract for critical fast-path wiring.
-
-    For workers whose entry-point method is not named `run`, pass a different
-    name via `entry`. If the method does not exist, the helper silently skips
-    the connection (caller may invoke it manually after `thread.start()`).
+    Threads are parented to the QApplication instance instead of the owner
+    widget. That prevents `QThread destroyed while thread still running` when
+    a short-lived dialog/widget closes while work is still in flight.
     """
-    thread = QThread(parent)
+    thread = QThread(QApplication.instance())
     worker.moveToThread(thread)
+    _register_thread(parent, thread)
 
     started_slot = getattr(worker, entry, None)
     if started_slot is not None:
         thread.started.connect(started_slot)
 
+    safe_finished = _safe_callback(on_finished)
+    safe_error = _safe_callback(on_error)
+
     if hasattr(worker, "finished"):
         worker.finished.connect(thread.quit)  # type: ignore[attr-defined]
-        if on_finished is not None:
-            worker.finished.connect(on_finished)  # type: ignore[attr-defined]
+        if safe_finished is not None:
+            worker.finished.connect(safe_finished)  # type: ignore[attr-defined]
 
     if hasattr(worker, "error"):
         worker.error.connect(thread.quit)  # type: ignore[attr-defined]
-        if on_error is not None:
-            worker.error.connect(on_error)  # type: ignore[attr-defined]
+        if safe_error is not None:
+            worker.error.connect(safe_error)  # type: ignore[attr-defined]
 
     thread.finished.connect(worker.deleteLater)
     thread.finished.connect(thread.deleteLater)
@@ -72,30 +144,30 @@ def run_worker(
         setattr(parent, pin_attr, worker)
         parent_ref = weakref.ref(parent)
 
-        def _clear() -> None:
-            p = parent_ref()
-            if p is None:
-                return  # parent was garbage-collected
-            # Bypass getattr/setattr (which can fail on dead Shiboken
-            # wrappers) and write directly into __dict__. Identity check
-            # via __dict__.get prevents nuking a fresh worker that was
-            # pinned to the same attribute after this one finished.
+        def _clear_pin() -> None:
+            current_parent = parent_ref()
+            if current_parent is None:
+                return
             try:
-                if p.__dict__.get(pin_attr) is worker:
-                    p.__dict__[pin_attr] = None
+                if current_parent.__dict__.get(pin_attr) is worker:
+                    current_parent.__dict__[pin_attr] = None
             except (RuntimeError, AttributeError, TypeError):
-                # Final fallback: try the regular setattr path
                 try:
-                    setattr(p, pin_attr, None)
+                    setattr(current_parent, pin_attr, None)
                 except Exception:
-                    pass
+                    return
 
-        thread.finished.connect(_clear)
+        thread.finished.connect(_clear_pin)
 
     if connect_signals is not None:
         connect_signals(worker, thread)
 
-    # Start on the next event-loop turn so callers can safely connect extra
-    # signals after `run_worker()` returns.
     QTimer.singleShot(0, thread.start)
     return thread
+
+
+__all__ = [
+    "run_worker",
+    "shutdown_all_worker_threads",
+    "shutdown_worker_threads",
+]

@@ -1,4 +1,5 @@
 """Update-flow orchestration extracted from MainWindow."""
+
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 
@@ -27,6 +28,7 @@ class UpdateFlowCoordinator(QObject):
         self._update_apply_worker: object | None = None
         self._update_download_running = False
         self._update_apply_running = False
+        self._quit_after_apply_finished = False
         self._pending_update_digest: str | None = None
 
     def run_silent_check(self) -> None:
@@ -87,8 +89,6 @@ class UpdateFlowCoordinator(QObject):
 
     @Slot()
     def on_update_download_finished(self) -> None:
-        # Successful update application exits the app; reaching here means we
-        # should restore the UI for non-fatal paths only.
         if self._update_download_running and not self._update_apply_running:
             self._update_download_running = False
             self._dashboard.set_update_in_progress(False)
@@ -97,12 +97,13 @@ class UpdateFlowCoordinator(QObject):
     def on_update_download_error(self, message: str) -> None:
         self._update_download_running = False
         self._update_apply_running = False
+        self._quit_after_apply_finished = False
         self._dashboard.set_update_in_progress(False)
         QMessageBox.warning(self._window, "Ошибка обновления", message)
 
     @Slot()
     def on_update_applied(self) -> None:
-        QApplication.quit()
+        self._quit_after_apply_finished = True
 
     @Slot()
     def on_update_apply_finished(self) -> None:
@@ -110,10 +111,14 @@ class UpdateFlowCoordinator(QObject):
             self._update_apply_running = False
             self._update_download_running = False
             self._dashboard.set_update_in_progress(False)
+        if self._quit_after_apply_finished:
+            self._quit_after_apply_finished = False
+            QApplication.quit()
 
     @Slot(str)
     def on_update_apply_error(self, message: str) -> None:
         self._update_apply_running = False
         self._update_download_running = False
+        self._quit_after_apply_finished = False
         self._dashboard.set_update_in_progress(False)
         QMessageBox.warning(self._window, "Ошибка обновления", message)

@@ -4,12 +4,12 @@ from collections.abc import Callable
 import os
 
 from PySide6.QtCore import QObject, Slot
-from PySide6.QtGui import QIcon
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import QApplication, QMainWindow, QMenu, QSystemTrayIcon
 
 from app.config import ConfigManager
 from app.core.app_logger import get_logger
+from app.ui.threading import shutdown_all_worker_threads
 from app.ui.widgets import style_menu_popup
 
 _log = get_logger(__name__)
@@ -102,9 +102,13 @@ class MainWindowLifecycleController(QObject):
 
     @Slot()
     def cleanup(self) -> None:
-        _log.info("Shutting down…")
+        _log.info("Shutting down...")
+        flush_pending_save = getattr(self._export_jobs, "flush_pending_save", None)
+        if callable(flush_pending_save):
+            flush_pending_save()
         self._export_jobs.stop_all_schedulers()
         self._dashboard.stop()
+        shutdown_all_worker_threads()
         self._close_debug_window()
 
     def handle_close_event(self, event: QCloseEvent) -> None:
