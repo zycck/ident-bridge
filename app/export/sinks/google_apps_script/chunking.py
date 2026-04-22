@@ -48,17 +48,16 @@ def build_chunk_records(
     columns: list[str],
     rows: list[tuple[Any, ...]] | tuple[tuple[Any, ...], ...],
 ) -> list[dict[str, Any]]:
-    records: list[dict[str, Any]] = []
-    for row in rows:
-        if len(row) != len(columns):
-            raise ValueError("Количество значений в строке не совпадает с числом колонок")
-        records.append(
-            {
-                column: _normalize_gas_record_value(column, value)
-                for column, value in zip(columns, row)
-            }
-        )
-    return records
+    return [_build_chunk_record(columns, row) for row in rows]
+
+
+def _build_chunk_record(columns: list[str], row: tuple[Any, ...]) -> dict[str, Any]:
+    if len(row) != len(columns):
+        raise ValueError("Количество значений в строке не совпадает с числом колонок")
+    return {
+        column: _normalize_gas_record_value(column, value)
+        for column, value in zip(columns, row)
+    }
 
 
 def _normalize_gas_record_value(column: str, value: Any) -> Any:
@@ -314,40 +313,20 @@ def _split_chunks(
     export_date_value = _resolve_export_date(export_date)
     columns = list(result.columns)
     total_rows = result.count
-    row_dicts = build_chunk_records(columns, result.rows)
-    row_bytes = [_encode_record_bytes(record) for record in row_dicts]
-
-    if not row_dicts:
-        chunk = _make_chunk(
-            run_id=run_id,
-            columns=columns,
-            records=[],
-            chunk_index=1,
-            total_chunks=1,
-            total_rows=0,
-        )
-        return [
-            _finalize_chunk(
-                job_name=job_name,
-                sheet_name=sheet_name,
-                export_date=export_date_value,
-                source_id=source_id_value,
-                write_mode=write_mode,
-                chunk=chunk,
-            )
-        ]
-
-    chunks_records: list[list[dict[str, Any]]] = []
+    chunks: list[GasChunkPlan] = []
     current: list[dict[str, Any]] = []
     current_encoded_bytes = 0
+    chunk_index = 1
 
-    for record, encoded_record in zip(row_dicts, row_bytes, strict=False):
+    for row in result.rows:
+        record = _build_chunk_record(columns, row)
+        encoded_record = _encode_record_bytes(record)
         candidate_count = len(current) + 1
         candidate = _make_chunk(
             run_id=run_id,
             columns=columns,
             records=[],
-            chunk_index=len(chunks_records) + 1,
+            chunk_index=chunk_index,
             total_chunks=total_chunks_hint,
             total_rows=total_rows,
             chunk_rows=candidate_count,
@@ -373,14 +352,31 @@ def _split_chunks(
         if not current:
             raise ValueError("Одна строка превышает допустимый размер чанка")
 
-        chunks_records.append(current)
+        chunks.append(
+            _finalize_chunk(
+                job_name=job_name,
+                sheet_name=sheet_name,
+                export_date=export_date_value,
+                source_id=source_id_value,
+                write_mode=write_mode,
+                chunk=_make_chunk(
+                    run_id=run_id,
+                    columns=columns,
+                    records=current,
+                    chunk_index=chunk_index,
+                    total_chunks=total_chunks_hint,
+                    total_rows=total_rows,
+                ),
+            )
+        )
+        chunk_index += 1
         current = [record]
         current_encoded_bytes = len(encoded_record)
         single = _make_chunk(
             run_id=run_id,
             columns=columns,
             records=[],
-            chunk_index=len(chunks_records) + 1,
+            chunk_index=chunk_index,
             total_chunks=total_chunks_hint,
             total_rows=total_rows,
             chunk_rows=1,
@@ -400,21 +396,34 @@ def _split_chunks(
         if len(current) > max_rows_per_chunk or single_bytes > max_payload_bytes:
             raise ValueError("Одна строка превышает допустимый размер чанка")
 
-    if current or not chunks_records:
-        chunks_records.append(current)
-
-    total_chunks = len(chunks_records)
-    chunks: list[GasChunkPlan] = []
-    for index, records in enumerate(chunks_records, start=1):
+    if current:
+        chunks.append(
+            _finalize_chunk(
+                job_name=job_name,
+                sheet_name=sheet_name,
+                export_date=export_date_value,
+                source_id=source_id_value,
+                write_mode=write_mode,
+                chunk=_make_chunk(
+                    run_id=run_id,
+                    columns=columns,
+                    records=current,
+                    chunk_index=chunk_index,
+                    total_chunks=total_chunks_hint,
+                    total_rows=total_rows,
+                ),
+            )
+        )
+    elif not chunks:
         chunk = _make_chunk(
             run_id=run_id,
             columns=columns,
-            records=records,
-            chunk_index=index,
-            total_chunks=total_chunks,
-            total_rows=total_rows,
+            records=[],
+            chunk_index=1,
+            total_chunks=1,
+            total_rows=0,
         )
-        chunks.append(
+        return [
             _finalize_chunk(
                 job_name=job_name,
                 sheet_name=sheet_name,
@@ -423,7 +432,21 @@ def _split_chunks(
                 write_mode=write_mode,
                 chunk=chunk,
             )
-        )
+        ]
+
+    total_chunks = len(chunks)
+    for index, chunk in enumerate(chunks, start=1):
+        if chunk.chunk_index != index or chunk.total_chunks != total_chunks:
+            chunk.chunk_index = index
+            chunk.total_chunks = total_chunks
+            _finalize_chunk(
+                job_name=job_name,
+                sheet_name=sheet_name,
+                export_date=export_date_value,
+                source_id=source_id_value,
+                write_mode=write_mode,
+                chunk=chunk,
+            )
     return chunks
 
 
@@ -444,7 +467,7 @@ def plan_gas_chunks(
     if write_mode is not None:
         normalized_gas_options["write_mode"] = gas_write_mode_from_raw(write_mode).value
 
-    hint = 1
+    hint = max(1, math.ceil(result.count / max_rows_per_chunk))
     while True:
         chunks = _split_chunks(
             job_name=job_name,

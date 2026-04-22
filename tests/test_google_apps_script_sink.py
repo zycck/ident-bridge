@@ -222,6 +222,38 @@ def test_plan_gas_chunks_splits_by_row_limit():
     assert all(chunk.total_chunks == 2 for chunk in chunks)
 
 
+def test_plan_gas_chunks_uses_single_split_pass_for_pure_row_limit(monkeypatch):
+    chunking_module = __import__(
+        "app.export.sinks.google_apps_script.chunking",
+        fromlist=["_split_chunks"],
+    )
+    real_split = chunking_module._split_chunks
+    split_calls = 0
+
+    def counted_split(*args, **kwargs):
+        nonlocal split_calls
+        split_calls += 1
+        return real_split(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "app.export.sinks.google_apps_script.chunking._split_chunks",
+        counted_split,
+    )
+
+    rows = [(idx,) for idx in range(10_001)]
+    chunks = plan_gas_chunks(
+        "Rows",
+        _qr(rows=rows),
+        run_id="run-row-pass",
+        max_rows_per_chunk=10_000,
+        max_payload_bytes=50 * 1024 * 1024,
+        export_date=FIXED_EXPORT_DATE,
+    )
+
+    assert len(chunks) == 2
+    assert split_calls == 1
+
+
 def test_plan_gas_chunks_splits_by_payload_bytes():
     rows = [("ж" * 300,), ("ж" * 300,), ("ж" * 300,)]
     chunks = plan_gas_chunks(
