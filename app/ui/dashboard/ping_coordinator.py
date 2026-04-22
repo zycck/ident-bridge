@@ -5,10 +5,14 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from app.config import AppConfig, ConfigManager
 from app.core.app_logger import get_logger
-from app.core.sql_client import SqlClient
+from app.database import create_database_client
 from app.ui.threading import run_worker
 
 _log = get_logger(__name__)
+
+
+def _create_mssql_client(cfg: AppConfig):
+    return create_database_client("mssql", cfg)
 
 
 class _PingWorker(QObject):
@@ -45,7 +49,7 @@ class _PingWorker(QObject):
                 sql_password=self._password,
                 sql_trust_cert=self._trust_cert,
             )
-            client = SqlClient(cfg)
+            client = _create_mssql_client(cfg)
             try:
                 client.connect()
                 alive = client.is_alive()

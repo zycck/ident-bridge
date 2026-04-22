@@ -158,7 +158,10 @@ def test_query_worker_limits_rows_for_dialog(monkeypatch) -> None:
         def disconnect(self) -> None:
             pass
 
-    monkeypatch.setattr("app.ui.test_run_dialog_controller.SqlClient", _FakeClient)
+    monkeypatch.setattr(
+        "app.ui.dialogs.test_run.controller.create_database_client",
+        lambda kind, cfg: _FakeClient(cfg),
+    )
     worker = _QueryWorker({}, "SELECT 1")
     worker.result.connect(results.append)
 

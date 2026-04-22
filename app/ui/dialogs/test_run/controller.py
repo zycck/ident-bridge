@@ -8,7 +8,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 from app.config import AppConfig, QueryResult
 from app.core.app_logger import get_logger
 from app.core.constants import TEST_DIALOG_MAX_ROWS
-from app.core.sql_client import SqlClient
+from app.database import create_database_client
 from app.ui.formatters import format_duration_compact
 from app.ui.threading import run_worker
 
@@ -20,6 +20,7 @@ _log = get_logger(__name__)
 type RunWorkerFn = Callable[..., object]
 type EmitTestCompletedFn = Callable[[bool, int, str, int], None]
 type QueryWorkerFactory = Callable[[AppConfig, str], object]
+type QueryClientFactory = Callable[[AppConfig], object]
 
 
 class _QueryWorker(QObject):
@@ -27,14 +28,23 @@ class _QueryWorker(QObject):
     error = Signal(str)
     finished = Signal()
 
-    def __init__(self, cfg: AppConfig, sql: str) -> None:
+    def __init__(
+        self,
+        cfg: AppConfig,
+        sql: str,
+        *,
+        client_factory: QueryClientFactory | None = None,
+    ) -> None:
         super().__init__()
         self._cfg = cfg
         self._sql = sql
+        self._client_factory = client_factory or (
+            lambda app_cfg: create_database_client("mssql", app_cfg)
+        )
 
     @Slot()
     def run(self) -> None:
-        client = SqlClient(self._cfg)
+        client = self._client_factory(self._cfg)
         try:
             client.connect()
             query_result = client.query(self._sql, max_rows=TEST_DIALOG_MAX_ROWS)

@@ -3,7 +3,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 from app.config import AppConfig, SqlInstance
 from app.core.app_logger import get_logger
 from app.core.instance_scanner import list_databases, scan_all
-from app.core.sql_client import SqlClient
+from app.database import create_database_client
 
 _log = get_logger(__name__)
 
@@ -13,6 +13,10 @@ _PLACEHOLDER_INSTANCE_TEXTS = frozenset({
     "Ошибка сканирования",
     "Загрузка…",
 })
+
+
+def _create_mssql_client(cfg: AppConfig):
+    return create_database_client("mssql", cfg)
 
 
 def instance_from_text(text: str) -> SqlInstance | None:
@@ -73,7 +77,7 @@ class TestConnectionWorker(QObject):
     @Slot()
     def run(self) -> None:
         _log.debug("Testing SQL connection to %s", self._cfg.get("sql_instance"))
-        client = SqlClient(self._cfg)
+        client = _create_mssql_client(self._cfg)
         ok, msg = client.test_connection()
         if ok:
             _log.info("SQL connection test passed")
