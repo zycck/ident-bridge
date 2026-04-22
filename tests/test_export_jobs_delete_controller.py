@@ -129,6 +129,7 @@ def test_delete_job_aborts_when_editor_is_running() -> None:
     removed = controller.delete_job(
         job_id="job-1",
         editors=editors,
+        jobs_by_id={"job-1": {"id": "job-1", "name": "Orders"}},
         current_editor_id=None,
     )
 
@@ -168,6 +169,7 @@ def test_delete_job_cancel_keeps_all_state_intact() -> None:
     removed = controller.delete_job(
         job_id="job-1",
         editors=editors,
+        jobs_by_id={"job-1": {"id": "job-1", "name": "Orders"}},
         current_editor_id=None,
     )
 
@@ -198,6 +200,7 @@ def test_delete_job_confirm_removes_editor_tile_and_saves() -> None:
     removed = controller.delete_job(
         job_id="job-1",
         editors=editors,
+        jobs_by_id={"job-1": {"id": "job-1", "name": "Orders"}},
         current_editor_id=None,
     )
 
@@ -250,6 +253,7 @@ def test_delete_job_disconnects_editor_signals_after_changed_emits() -> None:
     removed = controller.delete_job(
         job_id="job-1",
         editors=editors,
+        jobs_by_id={"job-1": {"id": "job-1", "name": "Orders"}},
         current_editor_id=None,
     )
 
@@ -287,8 +291,37 @@ def test_delete_job_current_editor_returns_to_tiles() -> None:
     removed = controller.delete_job(
         job_id="job-1",
         editors=editors,
+        jobs_by_id={"job-1": {"id": "job-1", "name": "Orders"}},
         current_editor_id="job-1",
     )
 
     assert removed is True
     assert show_tiles_calls == [True]
+
+
+def test_delete_job_without_editor_uses_job_snapshot_name() -> None:
+    (
+        controller,
+        tiles_page,
+        editor_page,
+        _warnings,
+        confirmations,
+        saves,
+        show_tiles_calls,
+        history_changed,
+    ) = _build_controller()
+
+    removed = controller.delete_job(
+        job_id="job-1",
+        editors={},
+        jobs_by_id={"job-1": {"id": "job-1", "name": "Snapshot Orders"}},
+        current_editor_id=None,
+    )
+
+    assert removed is True
+    assert confirmations == ["Snapshot Orders"]
+    assert tiles_page.removed_ids == ["job-1"]
+    assert editor_page.removed_ids == []
+    assert saves == [True]
+    assert show_tiles_calls == []
+    assert history_changed == [True]

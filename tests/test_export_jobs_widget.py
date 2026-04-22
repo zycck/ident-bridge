@@ -36,12 +36,13 @@ def test_export_jobs_widget_routes_between_tiles_and_editor(qtbot) -> None:
     widget.show()
 
     assert len(widget._tiles_page.tiles()) == 2
-    assert widget._editor_page.editor_count() == 2
+    assert widget._editor_page.editor_count() == 0
 
     widget._show_editor("job-1")
 
     assert widget._stack.currentIndex() == 1
     assert widget._navigation.current_editor_id == "job-1"
+    assert widget._editor_page.editor_count() == 1
 
     widget._show_tiles()
 

@@ -57,6 +57,7 @@ class ExportJobsCollectionController:
         )
         self._tile_factory = tile_factory
         self._editor_factory = editor_factory
+        self._jobs_by_id: dict[str, ExportJob] = {}
         self._editors: dict[str, Any] = {}
         self._save_timer = QTimer(parent)
         self._save_timer.setSingleShot(True)
@@ -66,9 +67,12 @@ class ExportJobsCollectionController:
     def editors(self) -> dict[str, Any]:
         return self._editors
 
+    def jobs_by_id(self) -> dict[str, ExportJob]:
+        return self._jobs_by_id
+
     def load_jobs(self) -> None:
         for job in load_export_jobs(self._config, self._run_store):
-            self._register_job(job)
+            self._register_job(job, eager=bool(job.get("schedule_enabled")))
         self._tiles_page.refresh_empty()
         self._tiles_page.reflow_tiles()
 
@@ -82,7 +86,12 @@ class ExportJobsCollectionController:
 
     def save_jobs(self) -> None:
         self._save_timer.stop()
-        jobs = [editor.to_job() for editor in self._editors.values()]
+        jobs: list[ExportJob] = []
+        for job_id in self._jobs_by_id:
+            editor = self._editors.get(job_id)
+            job = editor.to_job() if editor is not None else dict(self._jobs_by_id[job_id])
+            self._jobs_by_id[job_id] = dict(job)
+            jobs.append(job)
         duplicate = find_duplicate_export_target(jobs)
         if duplicate is not None:
             first_job_id, second_job_id, webhook_url, sheet_name = duplicate
@@ -106,13 +115,14 @@ class ExportJobsCollectionController:
     def add_new_job(self) -> None:
         job = new_export_job()
         self._register_job(job)
+        self.ensure_editor(job["id"])
         self.save_jobs()
         self._tiles_page.refresh_empty()
         self._tiles_page.reflow_tiles()
         self._open_editor(job["id"])
 
     def run_job(self, job_id: str) -> bool:
-        editor = self._editors.get(job_id)
+        editor = self.ensure_editor(job_id)
         if editor is None:
             return False
         return bool(editor.start_export())
@@ -122,18 +132,33 @@ class ExportJobsCollectionController:
             tile.job_id(): tile
             for tile in self._tiles_page.tiles()
         }
-        for editor in self._editors.values():
+        for job_id, editor in self._editors.items():
             job = editor.to_job()
             if refresh_journal and self._run_store is not None:
                 job["history"] = self._run_store.list_job_history(job["id"])
                 job["unfinished_runs"] = self._run_store.list_unfinished_runs(job_id=job["id"])
-            tile = tiles_by_id.get(job.get("id"))
+            self._jobs_by_id[job_id] = dict(job)
+        for job_id, job in self._jobs_by_id.items():
+            tile = tiles_by_id.get(job_id)
             if tile is not None:
                 tile.update_from_job(job)
 
-    def _register_job(self, job: ExportJob) -> None:
+    def ensure_editor(self, job_id: str):
+        editor = self._editors.get(job_id)
+        if editor is not None:
+            return editor
+        job = self._jobs_by_id.get(job_id)
+        if job is None:
+            return None
+        editor = self._create_editor(job)
+        self._editors[job_id] = editor
+        return editor
+
+    def _register_job(self, job: ExportJob, *, eager: bool = False) -> None:
+        self._jobs_by_id[job["id"]] = dict(job)
         self._add_tile(job)
-        self._editors[job["id"]] = self._create_editor(job)
+        if eager:
+            self.ensure_editor(job["id"])
 
     def _add_tile(self, job: ExportJob) -> None:
         tile = self._tile_factory(job, self._parent)

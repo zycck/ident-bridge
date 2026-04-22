@@ -49,6 +49,7 @@ class ExportJobsWidget(QWidget):
             stack=self._stack,
             editor_page=self._editor_page,
             editors=self._editors,
+            ensure_editor=self._jobs.ensure_editor,
             sync_tiles_from_editors=self._jobs.sync_tiles_from_editors,
         )
         self._delete_controller = ExportJobsDeleteController(
@@ -108,6 +109,7 @@ class ExportJobsWidget(QWidget):
         self._delete_controller.delete_job(
             job_id=job_id,
             editors=self._editors,
+            jobs_by_id=self._jobs.jobs_by_id(),
             current_editor_id=self._navigation.current_editor_id,
         )
 

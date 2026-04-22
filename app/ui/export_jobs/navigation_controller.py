@@ -10,11 +10,13 @@ class ExportJobsNavigationController:
         stack,
         editor_page,
         editors: dict,
+        ensure_editor,
         sync_tiles_from_editors,
     ) -> None:
         self._stack = stack
         self._editor_page = editor_page
         self._editors = editors
+        self._ensure_editor = ensure_editor
         self._sync_tiles_from_editors = sync_tiles_from_editors
         self._current_editor_id: str | None = None
 
@@ -23,7 +25,7 @@ class ExportJobsNavigationController:
         return self._current_editor_id
 
     def show_editor(self, job_id: str) -> bool:
-        if self._editors.get(job_id) is None:
+        if self._editors.get(job_id) is None and self._ensure_editor(job_id) is None:
             return False
         if not self._editor_page.show_editor(job_id):
             return False

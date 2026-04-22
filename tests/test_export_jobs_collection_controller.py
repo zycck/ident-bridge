@@ -140,7 +140,7 @@ def _build_controller(*, jobs: list[ExportJob], warn_duplicate_target=None):
     return controller, config, tiles_page, editor_page, opens, syncs, history_changed, alerts
 
 
-def test_collection_controller_loads_jobs_into_tiles_and_editors(qtbot) -> None:
+def test_collection_controller_loads_jobs_into_tiles_and_lazy_editors(qtbot) -> None:
     controller, _config, tiles_page, editor_page, *_ = _build_controller(
         jobs=[_job("job-1", "One"), _job("job-2", "Two")],
     )
@@ -148,11 +148,26 @@ def test_collection_controller_loads_jobs_into_tiles_and_editors(qtbot) -> None:
 
     controller.load_jobs()
 
-    assert sorted(controller.editors()) == ["job-1", "job-2"]
+    assert sorted(controller.jobs_by_id()) == ["job-1", "job-2"]
+    assert controller.editors() == {}
     assert [tile.job_id() for tile in tiles_page.tiles()] == ["job-1", "job-2"]
-    assert editor_page.added_ids == ["job-1", "job-2"]
+    assert editor_page.added_ids == []
     assert tiles_page.refresh_calls == 1
     assert tiles_page.reflow_calls == 1
+
+
+def test_collection_controller_eagerly_creates_scheduled_job_editors(qtbot) -> None:
+    scheduled = _job("job-1", "One")
+    scheduled["schedule_enabled"] = True
+    controller, _config, _tiles_page, editor_page, *_ = _build_controller(
+        jobs=[scheduled, _job("job-2", "Two")],
+    )
+    qtbot.addWidget(controller._parent)
+
+    controller.load_jobs()
+
+    assert sorted(controller.editors()) == ["job-1"]
+    assert editor_page.added_ids == ["job-1"]
 
 
 def test_collection_controller_save_syncs_tiles_and_persists_config() -> None:
@@ -161,7 +176,7 @@ def test_collection_controller_save_syncs_tiles_and_persists_config() -> None:
     )
 
     controller.load_jobs()
-    editor = controller.editors()["job-1"]
+    editor = controller.ensure_editor("job-1")
     editor._job = _job("job-1", "Renamed")
 
     controller.save_jobs()
@@ -191,15 +206,15 @@ def test_collection_controller_forwards_editor_actions(qtbot) -> None:
     )
 
     controller.load_jobs()
-    editor = controller.editors()["job-1"]
+    editor = controller.ensure_editor("job-1")
     assert controller.run_job("job-1") is True
-    editor.runtime_state_changed.emit("running", "Отправка…", True)
+    editor.runtime_state_changed.emit("running", "\u041e\u0442\u043f\u0440\u0430\u0432\u043a\u0430\u2026", True)
     editor.sync_completed.emit({"rows_synced": 5})
     editor.history_changed.emit()
     editor.failure_alert.emit("One", 3)
 
     assert editor.start_calls == 1
-    assert tiles_page.tiles()[0].runtime_updates == [("running", "Отправка…", True)]
+    assert tiles_page.tiles()[0].runtime_updates == [("running", "\u041e\u0442\u043f\u0440\u0430\u0432\u043a\u0430\u2026", True)]
     assert syncs == [{"rows_synced": 5}]
     assert history_changed == [True]
     assert alerts == [("One", 3)]
@@ -211,7 +226,7 @@ def test_collection_controller_does_not_persist_config_on_history_only_change(qt
     )
 
     controller.load_jobs()
-    editor = controller.editors()["job-1"]
+    editor = controller.ensure_editor("job-1")
     config.saved = None
 
     editor.history_changed.emit()
@@ -225,14 +240,14 @@ def test_collection_controller_runtime_state_updates_tile(qtbot) -> None:
     )
 
     controller.load_jobs()
-    editor = controller.editors()["job-1"]
+    editor = controller.ensure_editor("job-1")
 
-    editor.runtime_state_changed.emit("running", "Подготовка…", True)
-    editor.runtime_state_changed.emit("error", "✗ Ошибка", False)
+    editor.runtime_state_changed.emit("running", "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430\u2026", True)
+    editor.runtime_state_changed.emit("error", "\u2717 \u041e\u0448\u0438\u0431\u043a\u0430", False)
 
     assert tiles_page.tiles()[0].runtime_updates == [
-        ("running", "Подготовка…", True),
-        ("error", "✗ Ошибка", False),
+        ("running", "\u041f\u043e\u0434\u0433\u043e\u0442\u043e\u0432\u043a\u0430\u2026", True),
+        ("error", "\u2717 \u041e\u0448\u0438\u0431\u043a\u0430", False),
     ]
 
 
@@ -271,4 +286,18 @@ def test_collection_controller_blocks_duplicate_webhook_and_sheet_targets(qtbot)
 
     assert config.saved is None
     assert warnings
-    assert "адрес обработки" in warnings[0][1]
+    assert "\u0430\u0434\u0440\u0435\u0441 \u043e\u0431\u0440\u0430\u0431\u043e\u0442\u043a\u0438" in warnings[0][1]
+
+
+def test_collection_controller_run_job_creates_editor_on_demand(qtbot) -> None:
+    controller, _config, _tiles_page, editor_page, *_ = _build_controller(
+        jobs=[_job("job-1", "One")],
+    )
+    qtbot.addWidget(controller._parent)
+
+    controller.load_jobs()
+
+    assert controller.editors() == {}
+    assert controller.run_job("job-1") is True
+    assert sorted(controller.editors()) == ["job-1"]
+    assert editor_page.added_ids == ["job-1"]

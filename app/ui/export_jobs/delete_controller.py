@@ -33,19 +33,23 @@ class ExportJobsDeleteController:
         *,
         job_id: str,
         editors: dict,
+        jobs_by_id: dict,
         current_editor_id: str | None,
     ) -> bool:
         editor = editors.get(job_id)
         if editor is not None and getattr(editor, "_running", False):
             self._warn_running(
-                "Выгрузка выполняется",
-                "Дождитесь завершения выгрузки перед удалением.",
+                "\u0412\u044b\u0433\u0440\u0443\u0437\u043a\u0430 \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0435\u0442\u0441\u044f",
+                "\u0414\u043e\u0436\u0434\u0438\u0442\u0435\u0441\u044c \u0437\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u0438\u044f \u0432\u044b\u0433\u0440\u0443\u0437\u043a\u0438 \u043f\u0435\u0440\u0435\u0434 \u0443\u0434\u0430\u043b\u0435\u043d\u0438\u0435\u043c.",
             )
             return False
 
-        name = "без названия"
+        fallback_name = "\u0431\u0435\u0437 \u043d\u0430\u0437\u0432\u0430\u043d\u0438\u044f"
+        name = fallback_name
         if editor is not None:
-            name = editor.to_job().get("name") or "без названия"
+            name = editor.to_job().get("name") or fallback_name
+        elif job_id in jobs_by_id:
+            name = jobs_by_id[job_id].get("name") or fallback_name
         if not self._confirm_delete(name):
             return False
 
@@ -66,6 +70,8 @@ class ExportJobsDeleteController:
                     _safe_signal_disconnect(signal)
             editor.deleteLater()
             del editors[job_id]
+
+        jobs_by_id.pop(job_id, None)
 
         tile = self._tiles_page.remove_tile(job_id)
         if tile is not None:

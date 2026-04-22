@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
+import tempfile
+from pathlib import Path
 
 from app.export.run_store import ExportRunStore
 
@@ -236,3 +238,25 @@ def test_export_run_store_uses_wal_mode_for_concurrent_ui_reads(tmp_config) -> N
         journal_mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
 
     assert str(journal_mode).lower() == "wal"
+
+
+def test_export_run_store_closes_connections_so_temp_dir_can_be_removed() -> None:
+    with tempfile.TemporaryDirectory(prefix="ident-run-store-") as tmp:
+        db_path = Path(tmp) / "runtime.sqlite3"
+        store = ExportRunStore(db_path=db_path)
+        store.record_history_entry(
+            job_id="job-1",
+            job_name="job-1",
+            entry={
+                "run_id": "entry-job-1",
+                "ts": "2026-04-21 09:00:00",
+                "ok": True,
+                "rows": 1,
+                "err": "",
+                "trigger": "test",
+                "duration_us": 1_000,
+            },
+        )
+        assert store.list_recent_history(limit=1)
+
+    assert not db_path.exists()

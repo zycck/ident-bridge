@@ -41,6 +41,7 @@ def test_navigation_controller_routes_between_tiles_and_editor() -> None:
         stack=stack,
         editor_page=editor_page,
         editors={"job-1": _FakeEditor()},
+        ensure_editor=lambda job_id: _FakeEditor() if job_id == "job-1" else None,
         sync_tiles_from_editors=lambda: sync_calls.append("sync"),
     )
 
@@ -62,6 +63,7 @@ def test_navigation_controller_ignores_missing_or_hidden_editor() -> None:
         stack=stack,
         editor_page=editor_page,
         editors={"job-1": _FakeEditor()},
+        ensure_editor=lambda _job_id: None,
         sync_tiles_from_editors=lambda: None,
     )
 
@@ -78,6 +80,7 @@ def test_navigation_controller_stops_all_editors_for_shutdown() -> None:
         stack=_FakeStack(),
         editor_page=_FakeEditorPage(),
         editors={"job-1": first, "job-2": second},
+        ensure_editor=lambda _job_id: None,
         sync_tiles_from_editors=lambda: None,
     )
 
@@ -87,3 +90,28 @@ def test_navigation_controller_stops_all_editors_for_shutdown() -> None:
     assert first.stop_timers_calls == 1
     assert second.stop_scheduler_calls == 1
     assert second.stop_timers_calls == 1
+
+
+def test_navigation_controller_ensures_editor_on_demand() -> None:
+    stack = _FakeStack()
+    editor_page = _FakeEditorPage()
+    editors: dict[str, _FakeEditor] = {}
+
+    def _ensure(job_id: str):
+        if job_id != "job-1":
+            return None
+        editor = _FakeEditor()
+        editors[job_id] = editor
+        return editor
+
+    controller = ExportJobsNavigationController(
+        stack=stack,
+        editor_page=editor_page,
+        editors=editors,
+        ensure_editor=_ensure,
+        sync_tiles_from_editors=lambda: None,
+    )
+
+    assert controller.show_editor("job-1") is True
+    assert "job-1" in editors
+    assert stack.indices == [1]
