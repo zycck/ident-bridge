@@ -1,3 +1,5 @@
-from app.ui._shim import alias
+import sys
 
-alias(globals(), "app.ui.export_jobs.editor.sql")
+from app.ui.export_jobs.editor import sql as _module
+
+sys.modules[__name__] = _module

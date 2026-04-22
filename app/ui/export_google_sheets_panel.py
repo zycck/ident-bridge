@@ -1,3 +1,5 @@
-from app.ui._shim import alias
+import sys
 
-alias(globals(), "app.ui.export_jobs.editor.google_sheets.panel")
+from app.ui.export_jobs.editor.google_sheets import panel as _module
+
+sys.modules[__name__] = _module

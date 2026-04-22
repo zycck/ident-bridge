@@ -188,3 +188,12 @@
 - **N.4 EXE smoke:** PASS - packaged process stayed alive for 8 s without startup crash
 - **Scope:** remove last direct `app.core.sql_client` runtime import outside database factory (`export_worker` test hook cleanup), keep worker path on pipeline/database factory only, verify packaged build still boots
 - **Commit:** current refactor-v3 slice
+
+## Stage 21 - 2026-04-22
+
+- **N.1 pytest:** PASS - 547 passed in 5.99 s
+- **N.2 perf smoke:** SKIP - packaging fix only, no perf-sensitive runtime path changed
+- **N.3 build:** PASS - `build/dist/iDentSync.exe` rebuilt successfully after UI wrapper import fix
+- **N.4 EXE smoke:** PASS - packaged process stayed alive for 8 s; previous `ModuleNotFoundError: app.ui.export_jobs.editor.google_sheets` no longer reproduced
+- **Scope:** replace dynamic `app.ui._shim` alias wrappers with static import aliases so PyInstaller sees nested UI modules; add regression that legacy alias wrappers stay removed
+- **Commit:** current refactor-v3 slice

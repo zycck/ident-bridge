@@ -1,3 +1,5 @@
-from app.ui._shim import alias
+import sys
 
-alias(globals(), "app.ui.main_window.update_flow_coordinator")
+from app.ui.main_window import update_flow_coordinator as _module
+
+sys.modules[__name__] = _module

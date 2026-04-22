@@ -1,3 +1,5 @@
-from app.ui._shim import alias
+import sys
 
-alias(globals(), "app.ui.dialogs.test_run.dialog")
+from app.ui.dialogs.test_run import dialog as _module
+
+sys.modules[__name__] = _module

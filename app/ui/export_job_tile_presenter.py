@@ -1,3 +1,5 @@
-from app.ui._shim import alias
+import sys
 
-alias(globals(), "app.ui.export_jobs.tiles.presenter")
+from app.ui.export_jobs.tiles import presenter as _module
+
+sys.modules[__name__] = _module

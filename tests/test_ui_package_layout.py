@@ -36,6 +36,27 @@ def test_canonical_ui_feature_packages_exist() -> None:
     assert not missing, f"Missing canonical UI paths: {missing}"
 
 
+def test_legacy_ui_alias_wrappers_are_not_used() -> None:
+    shim_path = UI_ROOT / "_shim.py"
+    assert not shim_path.exists()
+
+    wrapper_paths = [
+        UI_ROOT / "export_google_sheets_panel.py",
+        UI_ROOT / "export_history_panel.py",
+        UI_ROOT / "export_job_tile_presenter.py",
+        UI_ROOT / "export_sql.py",
+        UI_ROOT / "gas_setup_wizard.py",
+        UI_ROOT / "test_run_dialog.py",
+        UI_ROOT / "test_run_dialog_controller.py",
+        UI_ROOT / "update_flow_coordinator.py",
+    ]
+
+    for path in wrapper_paths:
+        source = path.read_text(encoding="utf-8")
+        assert "app.ui._shim" not in source
+        assert "alias(globals()," not in source
+
+
 def test_old_and_new_ui_import_paths_resolve_same_symbols() -> None:
     pairs = [
         ("app.ui.theme", "Theme", "app.ui.shared.theme", "Theme"),

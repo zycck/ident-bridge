@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree currently collects **546 test items** on
+Audit note: the current tree currently collects **547 test items** on
 Windows 11 / Python 3.14.4. This workspace is still a negative-control
 environment for the full desktop gate; tray, registry, reboot, and
 background-run checks still need a real Windows desktop session.
@@ -41,7 +41,7 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **546 collected test items** covering the
+The fastest sanity check. **547 collected test items** covering the
 scheduler engine, export worker pipeline, config persistence, threading
 helpers, tray behaviour, Windows autostart, performance smoke helpers,
 and the current Google Apps Script delivery path.
@@ -68,7 +68,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-546 passed in X.XXs
+547 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -567,7 +567,7 @@ each item off manually:
 
 ```
 Core startup
-  [ ] python -m pytest tests/ → 152/152 PASS (zero failures, zero errors)
+  [ ] python -m pytest tests/ → 547/547 PASS (zero failures, zero errors)
   [ ] Headless smoke construct → "MainWindow constructs OK"
 
 Tray
@@ -685,7 +685,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 546 collected test items, but
+- The repository tree currently reports 547 collected test items, but
   the release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 
