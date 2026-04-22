@@ -218,7 +218,7 @@ qss = main._load_theme()
 app.setStyleSheet(qss)
 from app.config import ConfigManager
 from app.ui.main_window import MainWindow
-window = MainWindow(ConfigManager(), '0.1.0-test')
+window = MainWindow(ConfigManager(), '0.2.0-test')
 print('MainWindow constructs OK')
 "
 ```

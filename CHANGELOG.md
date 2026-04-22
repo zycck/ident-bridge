@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - TBD
+
 ### Added
 - Chunked Google Apps Script webhook delivery with per-chunk retries
 - Automatic Google Apps Script sink selection for supported webhook hosts

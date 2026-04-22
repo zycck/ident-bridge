@@ -17,12 +17,16 @@ Start: `0.0.1`
   - `APP_NAME = "iDentBridge"`
   - `CONFIG_DIR_NAME = "iDentSync"`
   - `EXE_NAME = "iDentSync"`
-  - `APP_VERSION = "0.0.1"`
+  - `APP_VERSION = "0.2.0"`
   - `USER_AGENT = f"{APP_NAME}/{APP_VERSION}"`
 - `main.py` imports `APP_VERSION` from `app/core/constants.py`
 - `build.spec` imports `EXE_NAME` from `app/core/constants.py`
 - GitHub tag format: `v0.0.1`, `v0.1.0`, `v1.0.0`
 - GitHub Release attachment: the packaged artifact name comes from `EXE_NAME` in `app/core/constants.py` (`iDentSync.exe` today)
+- Перед release/push после заметной волны изменений обязательно синхронно обновлять:
+  - `APP_VERSION` в `app/core/constants.py`
+  - `USER_AGENT`
+  - верхнюю релизную запись в `CHANGELOG.md`
 
 ## Commit convention
 

@@ -1,8 +1,14 @@
 """Tests for extracted MainWindow chrome controller."""
 
-from PySide6.QtCore import QObject, QEvent, Signal
+from PySide6.QtCore import QObject, QEvent, QPoint, QRect, Qt, Signal
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QWidget
 
-from app.ui.main_window_chrome import MainWindowChromeController
+from app.ui.main_window_chrome import (
+    MainWindowChromeController,
+    WindowResizeController,
+    build_resize_handle_layouts,
+)
 
 
 class _FakeTitleBar(QObject):
@@ -93,3 +99,59 @@ def test_chrome_controller_handles_only_window_state_change_events() -> None:
     window.maximized = True
     controller.handle_change_event(QEvent(QEvent.Type.WindowStateChange))
     assert title_bar.updated == [True]
+
+
+def test_build_resize_handle_layouts_covers_all_window_edges() -> None:
+    layouts = build_resize_handle_layouts(QRect(0, 0, 900, 600), border=6)
+
+    assert len(layouts) == 8
+    assert layouts[0][1] == QRect(0, 0, 6, 6)
+    assert layouts[1][1] == QRect(6, 0, 888, 6)
+    assert layouts[3][1] == QRect(0, 6, 6, 588)
+    assert layouts[-1][1] == QRect(894, 594, 6, 6)
+
+
+class _FakeWindowHandle:
+    def __init__(self) -> None:
+        self.calls: list[Qt.Edge | Qt.Edges] = []
+
+    def startSystemResize(self, edges: Qt.Edge | Qt.Edges) -> bool:  # noqa: N802
+        self.calls.append(edges)
+        return True
+
+
+class _ResizeWindow(QWidget):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fake_window_handle = _FakeWindowHandle()
+
+    def windowHandle(self):  # type: ignore[override]
+        return self.fake_window_handle
+
+
+def test_resize_controller_creates_handles_and_starts_system_resize(qtbot) -> None:
+    window = _ResizeWindow()
+    window.resize(500, 320)
+    qtbot.addWidget(window)
+    controller = WindowResizeController(window=window)
+
+    controller.wire()
+    window.show()
+    qtbot.wait(10)
+
+    handles = controller.handles()
+    assert len(handles) == 8
+    right_handle = next(handle for handle in handles if handle.edges == Qt.Edge.RightEdge)
+
+    event = QMouseEvent(
+        QEvent.Type.MouseButtonPress,
+        QPoint(1, max(1, right_handle.height() // 2)),
+        QPoint(1, max(1, right_handle.height() // 2)),
+        QPoint(1, max(1, right_handle.height() // 2)),
+        Qt.MouseButton.LeftButton,
+        Qt.MouseButton.LeftButton,
+        Qt.KeyboardModifier.NoModifier,
+    )
+    right_handle.mousePressEvent(event)
+
+    assert window.fake_window_handle.calls == [Qt.Edge.RightEdge]

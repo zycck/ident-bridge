@@ -9,6 +9,12 @@ session. The current WSL/Linux workspace is only a negative-control
 environment and cannot substitute for tray, registry, reboot, or other
 Windows-specific validation.
 
+## Release hygiene
+- Перед release и после заметной волны коммитов обновите версию приложения:
+  - `APP_VERSION` в `app/core/constants.py`
+  - верхнюю релизную секцию в `CHANGELOG.md`
+- Не оставляйте runtime-версию на старом значении вроде `0.1.0`, если пользовательские изменения уже ушли дальше.
+
 ## Prerequisites
 - Windows 10 or 11
 - Python 3.14.4 with PySide6 installed
