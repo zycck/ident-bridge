@@ -1,6 +1,6 @@
 """Tests for tray close-to-tray + Windows autostart registry."""
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -93,34 +93,6 @@ def test_unregister_returns_tuple(mock_winreg):
     assert isinstance(result[0], bool)
 
 
-def test_sync_path_no_op_when_same(mock_winreg):
-    """If the registered path matches the current exe path, sync_path is a no-op."""
-    startup.register()
-    original_value = mock_winreg.get("iDentBridge")
-    startup.sync_path()
-    # Value stays the same
-    assert mock_winreg.get("iDentBridge") == original_value
-
-
-def test_sync_path_updates_when_changed(mock_winreg):
-    """If the stored path differs from get_exe_path(), sync_path rewrites it."""
-    # Pre-populate with a clearly different old path
-    mock_winreg["iDentBridge"] = r'"C:\Old\Path\iDentBridge.exe"'
-    startup.sync_path()
-    # After sync the value should match get_exe_path()
-    new_value = mock_winreg.get("iDentBridge")
-    assert new_value == startup.get_exe_path()
-
-
-def test_sync_path_no_crash_when_not_registered(mock_winreg):
-    """sync_path with empty store should silently return without error."""
-    # store is empty — sync_path catches the exception internally
-    try:
-        startup.sync_path()
-    except Exception as e:
-        pytest.fail(f"sync_path raised when not registered: {e}")
-
-
 def test_windows_autostart_is_safe_when_winreg_missing(monkeypatch):
     """The module should remain import-safe and no-op off Windows."""
     monkeypatch.setattr(startup, "winreg", None, raising=False)
@@ -128,10 +100,6 @@ def test_windows_autostart_is_safe_when_winreg_missing(monkeypatch):
     assert startup.is_registered() is False
     assert startup.register() == (False, "Windows autostart is unavailable on this platform")
     assert startup.unregister() == (False, "Windows autostart is unavailable on this platform")
-
-    # sync_path should simply return without raising
-    startup.sync_path()
-
 
 # ── MainWindow tray close-to-tray ─────────────────────────────────────
 

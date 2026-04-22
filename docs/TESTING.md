@@ -5,7 +5,7 @@ iDentBridge step by step. Use it before any release or after major
 changes. It answers the question: *"Как убедиться, что приложение
 отработает на сто процентов?"*
 
-Audit note: the current tree currently collects **539 test items** on
+Audit note: the current tree currently collects **536 test items** on
 Windows 11 / Python 3.14.4. This workspace is still a negative-control
 environment for the full desktop gate; tray, registry, reboot, and
 background-run checks still need a real Windows desktop session.
@@ -41,7 +41,7 @@ App identity constants live in `app/core/constants.py`.
 
 ## 1. Automated test suite
 
-The fastest sanity check. **539 collected test items** covering the
+The fastest sanity check. **536 collected test items** covering the
 scheduler engine, export worker pipeline, config persistence, threading
 helpers, tray behaviour, Windows autostart, performance smoke helpers,
 and the current Google Apps Script delivery path.
@@ -68,7 +68,7 @@ python -m pytest tests/ -v
 Expected output:
 
 ```
-539 passed in X.XXs
+536 passed in X.XXs
 ```
 
 If anything fails, the test name + assertion message tells you exactly
@@ -107,7 +107,7 @@ normal top-level close request, yielding a clean exit for automation.
 | `tests/test_lucide_icon_loader.py` | extracted Lucide loader: dev/frozen icon-path resolution and helpful missing-icon diagnostics | 4 |
 | `tests/test_config.py` | DPAPI roundtrip, update/merge, migration of legacy fields, JSON corruption resilience, save/load roundtrip, atomic save, config-dir fallback | 19 |
 | `tests/test_threading.py` | `run_worker` factory, GC pin attribute, thread lifecycle, on\_error / on\_finished callbacks, pre-start `connect_signals`, late signal connection safety | 14 |
-| `tests/test_tray_autostart.py` | tray close-to-tray behaviour, `register`/`unregister`/`sync_path`, registry read/write (mocked), main window construction, import-safe non-Windows autostart | 21 |
+| `tests/test_tray_autostart.py` | tray close-to-tray behaviour, `register`/`unregister`, registry read/write (mocked), main window construction, import-safe non-Windows autostart | 18 |
 | `tests/test_connection.py` | ODBC connection-string escaping and trusted-connection fallback | 3 |
 | `tests/test_instance_scanner.py` | registry/network instance discovery fallbacks, deduplication, database listing without hard pyodbc dependency | 6 |
 | `tests/test_odbc_utils.py` | driver detection priority and missing-pyodbc diagnostics | 3 |
@@ -434,19 +434,6 @@ HKCU\Software\Microsoft\Windows\CurrentVersion\Run
    ERROR: The system was unable to find the specified registry key or value.
    ```
 
-### Path sync
-
-If you move the iDentBridge folder after registering autostart, the
-stored registry path becomes stale. The app calls `startup.sync_path()`
-on every launch to detect and fix this. To test manually:
-
-1. Register autostart (toggle ON)
-2. Move (or rename) the project folder
-3. Relaunch `python main.py` from the new location
-4. **Verify:** `reg query` shows the updated path
-
----
-
 ## 8. Failure handling + tray notifications
 
 Verifies that 3 consecutive export failures produce a tray balloon
@@ -698,7 +685,7 @@ unacceptable.
 
 - This workspace is Linux/WSL, so the Windows-only manual checks are
   intentionally not expected to pass here.
-- The repository tree currently reports 539 collected test items, but
+- The repository tree currently reports 536 collected test items, but
   the release gate should still be confirmed in a clean Windows session
   before any shipping decision.
 

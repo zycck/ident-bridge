@@ -1,4 +1,3 @@
-import os
 import sys
 from pathlib import Path
 
@@ -144,22 +143,3 @@ def unregister() -> tuple[bool, str]:
     except Exception as exc:
         _log.warning("Autostart unregister VERIFY error: %s", exc)
         return True, ""  # benefit of the doubt
-
-
-def sync_path() -> None:
-    if winreg is None:
-        return
-
-    try:
-        reg = _require_winreg()
-        assert reg is not None
-
-        with reg.OpenKey(reg.HKEY_CURRENT_USER, REG_PATH, 0, reg.KEY_READ) as key:
-            current_value, _ = reg.QueryValueEx(key, APP_NAME)
-    except Exception:
-        return
-
-    expected = get_exe_path()
-
-    if os.path.normcase(current_value.strip('"')) != os.path.normcase(expected.strip('"')):
-        register()
