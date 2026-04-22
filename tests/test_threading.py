@@ -21,7 +21,7 @@ Safe patterns used here:
   ``thread.isRunning()`` is safe; we quit it manually afterwards.
 """
 import pytest
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QThread, QTimer, Signal, Slot
 
 from app.ui.threading import run_worker
 
@@ -76,6 +76,15 @@ class _NoSignalsWorker(QObject):
     @Slot()
     def run(self) -> None:
         self.run_called = True
+
+
+class _DelayedWorker(QObject):
+    finished = Signal()
+    error = Signal(str)
+
+    @Slot()
+    def run(self) -> None:
+        QTimer.singleShot(25, self.finished.emit)
 
 
 # ── Tests ─────────────────────────────────────────────────────────────
@@ -257,6 +266,19 @@ def test_run_worker_multiple_workers_independent(qapp_session, qtbot):
     qtbot.waitUntil(lambda: len(done) == 2, timeout=3000)
     assert "w1" in done
     assert "w2" in done
+
+
+def test_run_worker_keeps_worker_alive_after_owner_deleted(qapp_session, qtbot):
+    parent = QObject()
+    worker = _DelayedWorker()
+    done = []
+    worker.finished.connect(lambda: done.append(True))
+    run_worker(parent, worker, pin_attr="_worker")
+
+    parent.deleteLater()
+    qtbot.wait(50)
+    qtbot.waitUntil(lambda: bool(done), timeout=2000)
+    assert done == [True]
 
 
 def test_run_worker_no_pin_attr_no_attribute_set(qapp_session, qtbot):

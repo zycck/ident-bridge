@@ -163,3 +163,16 @@ def test_scan_error_restores_combo_and_status(qtbot) -> None:
     assert instance_combo.isEnabled() is True
     assert instance_combo.currentText() == "Ошибка сканирования"
     assert conn_status.text() == "Сканирование: timeout"
+
+
+def test_stop_workers_delegates_to_thread_shutdown(qtbot, monkeypatch) -> None:
+    controller, *_ = _build_controller(qtbot)
+    calls: list[object] = []
+    monkeypatch.setattr(
+        "app.ui.settings.sql.controller.shutdown_worker_threads",
+        lambda owner: calls.append(owner),
+    )
+
+    controller.stop_workers()
+
+    assert calls == [controller]

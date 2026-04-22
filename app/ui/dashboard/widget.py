@@ -34,10 +34,6 @@ class DashboardWidget(QWidget):
         self._build_ui()
         self._ping_timer.start()
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
-
     def _build_ui(self) -> None:
         self._shell = DashboardShell(self._config, run_store=self._run_store, parent=self)
         self._shell.update_requested.connect(self.update_requested)
@@ -51,12 +47,9 @@ class DashboardWidget(QWidget):
         root.addWidget(self._shell)
         self.refresh_activity()
 
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
     def stop(self) -> None:
         """Stop the periodic ping timer. Called on app shutdown."""
+        self._activity_panel.stop()
         self._ping_timer.stop()
         self._ping.stop()
 
@@ -79,4 +72,4 @@ class DashboardWidget(QWidget):
 
     def refresh_activity(self) -> None:
         """Re-aggregate history from all export jobs and rebuild the list."""
-        self._activity_panel.refresh_activity()
+        self._activity_panel.schedule_refresh()

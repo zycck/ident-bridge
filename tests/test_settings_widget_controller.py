@@ -17,7 +17,7 @@ class _FakeFormController:
     def save(self) -> None:
         self.save_calls += 1
 
-    def handle_database_changed(self, idx: int) -> None:
+    def handle_database_changed(self, idx: int, *, autosave: bool = True) -> None:
         self.db_indices.append(idx)
 
     def auto_save(self) -> bool:
@@ -87,12 +87,36 @@ def test_settings_widget_controller_wires_form_actions_and_autosave(qtbot) -> No
     shell.sql_panel().login_edit().editingFinished.emit()
     shell.sql_panel().password_edit().editingFinished.emit()
     shell.app_panel().auto_update_check().setChecked(True)
+    controller.flush_pending_save()
 
     assert form.load_calls == 2
     assert form.save_calls == 1
     assert form.db_indices == [1]
-    assert form.auto_save_calls >= 3
+    assert form.auto_save_calls == 1
     assert infos == [("Сохранено", "Настройки сохранены.")]
+
+
+def test_settings_widget_controller_coalesces_multiple_autosaves(qtbot) -> None:
+    shell = SettingsShell("3.14.4")
+    qtbot.addWidget(shell)
+    shell.sql_panel().database_combo().addItems(["placeholder", "db"])
+
+    form = _FakeFormController()
+    controller = SettingsWidgetController(
+        shell=shell,
+        form_controller=form,
+        sql_controller=_FakeSqlController(),
+        app_controller=_FakeAppController(),
+    )
+
+    controller.wire()
+    shell.sql_panel().login_edit().editingFinished.emit()
+    shell.sql_panel().password_edit().editingFinished.emit()
+    shell.app_panel().auto_update_check().setChecked(True)
+
+    assert form.auto_save_calls == 0
+    assert controller.flush_pending_save() is True
+    assert form.auto_save_calls == 1
 
 
 def test_settings_widget_controller_wires_sql_actions(qtbot) -> None:

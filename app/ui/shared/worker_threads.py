@@ -118,6 +118,7 @@ def run_worker(
     """
     thread = QThread(QApplication.instance())
     worker.moveToThread(thread)
+    thread.__dict__["_worker_ref"] = worker
     _register_thread(parent, thread)
 
     started_slot = getattr(worker, entry, None)
@@ -139,6 +140,7 @@ def run_worker(
 
     thread.finished.connect(worker.deleteLater)
     thread.finished.connect(thread.deleteLater)
+    thread.finished.connect(lambda: thread.__dict__.pop("_worker_ref", None))
 
     if pin_attr is not None:
         setattr(parent, pin_attr, worker)

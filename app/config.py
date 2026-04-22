@@ -221,15 +221,28 @@ class ConfigManager:
         # autosaves many fields at once.
         self._batch_depth: int = 0
         self._batch_dirty: bool = False
+        self._cfg_signature: tuple[int, int] | None = None
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         self._cfg: AppConfig = {}
         if CONFIG_PATH.exists():
             self._cfg = self.load()
 
+    @staticmethod
+    def _path_signature(path: Path) -> tuple[int, int] | None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
     def load(self) -> AppConfig:
         """Load config from disk, decrypt secrets, and normalize legacy fields."""
         with self._lock:
             if not CONFIG_PATH.exists():
+                self._cfg_signature = None
+                return self._cfg
+            signature = self._path_signature(CONFIG_PATH)
+            if self._cfg_signature == signature:
                 return self._cfg
             try:
                 with CONFIG_PATH.open("r", encoding="utf-8") as fh:
@@ -284,6 +297,7 @@ class ConfigManager:
             self._cfg = AppConfig(
                 **{k: v for k, v in data.items() if k in _APP_CONFIG_KEYS}
             )  # type: ignore[typeddict-item]
+            self._cfg_signature = signature
             return self._cfg
 
     def save(self, cfg: AppConfig) -> None:
@@ -333,6 +347,7 @@ class ConfigManager:
             except OSError:
                 # Permission bits are advisory outside POSIX filesystems.
                 pass
+            self._cfg_signature = self._path_signature(CONFIG_PATH)
 
     def update(self, **changes: object) -> None:
         """Merge ``changes`` into the config.
@@ -348,7 +363,7 @@ class ConfigManager:
                 self._cfg.update(changes)  # type: ignore[typeddict-item]
                 self._batch_dirty = True
                 return
-            cfg = self.load()
+            cfg = AppConfig(**self.load())
             cfg.update(changes)  # type: ignore[typeddict-item]
             self.save(cfg)
 

@@ -19,7 +19,7 @@ from app.ui.settings_workers import (
     TestConnectionWorker,
     instance_from_text,
 )
-from app.ui.threading import run_worker
+from app.ui.threading import run_worker, shutdown_worker_threads
 from app.ui.widgets import set_status
 
 _log = get_logger(__name__)
@@ -70,6 +70,9 @@ class SettingsSqlController(QObject):
             db_combo=self._db_combo,
             conn_status=self._conn_status,
         )
+
+    def stop_workers(self) -> None:
+        shutdown_worker_threads(self)
 
     def scan_instances(self, _checked: bool = False) -> bool:
         if not self._flow.begin_scan():

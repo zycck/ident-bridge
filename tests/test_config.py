@@ -414,6 +414,20 @@ def test_invalid_json_falls_back_to_last_known(tmp_config, tmp_path):
     assert cfg.get("sql_instance") == "known"
 
 
+def test_load_reloads_when_config_file_changes_on_disk(tmp_config, tmp_path):
+    tmp_config.save(AppConfig(sql_instance="known"))
+    assert tmp_config.load().get("sql_instance") == "known"
+
+    config_file = tmp_path / "config.json"
+    config_file.write_text(
+        json.dumps({"sql_instance": "updated"}),
+        encoding="utf-8",
+    )
+
+    cfg = tmp_config.load()
+    assert cfg.get("sql_instance") == "updated"
+
+
 # ── TypedDict generics ────────────────────────────────────────────────
 
 def test_export_job_history_is_list(tmp_config):

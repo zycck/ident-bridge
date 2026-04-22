@@ -1,25 +1,23 @@
+from typing import override
+
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QWidget
 
 from app.config import ConfigManager
 
 from app.core.updater import GITHUB_REPO
-from app.ui.settings_app_controller import SettingsAppController
 from app.ui.settings_actions import (
     SettingsUpdateCoordinator,
     is_startup_enabled,
 )
+from app.ui.settings_app_controller import SettingsAppController
 from app.ui.settings_form_controller import SettingsFormController
 from app.ui.settings_sql_controller import SettingsSqlController
 from app.ui.settings_sql_flow import SettingsSqlFlowState
 from app.ui.settings_widget_controller import SettingsWidgetController
 
 
-# ---------------------------------------------------------------------------
-# SettingsWidget
-# ---------------------------------------------------------------------------
-
 class SettingsWidget(QWidget):
-
     def __init__(
         self,
         config: ConfigManager,
@@ -72,10 +70,6 @@ class SettingsWidget(QWidget):
         self._controller.wire()
         self._controller.load_initial_state()
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
-
     def _build_ui(self) -> None:
         from app.ui.settings_shell import SettingsShell
 
@@ -100,3 +94,12 @@ class SettingsWidget(QWidget):
         self._app_panel = self._shell.app_panel()
         self._startup_check = self._app_panel.startup_check()
         self._auto_update_check = self._app_panel.auto_update_check()
+
+    def flush_pending_save(self) -> bool:
+        return self._controller.flush_pending_save()
+
+    @override
+    def closeEvent(self, event: QCloseEvent) -> None:
+        self._sql_controller.stop_workers()
+        self.flush_pending_save()
+        super().closeEvent(event)

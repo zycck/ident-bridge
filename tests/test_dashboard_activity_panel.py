@@ -118,3 +118,19 @@ def test_activity_panel_clear_all_history_confirm_clears_entries(
     assert panel.clear_all_history() is True
     assert panel.activity_count_text() == "0"
     assert tmp_config.load()["export_jobs"][0]["history"] == []
+
+
+def test_activity_panel_schedule_refresh_coalesces_calls(qtbot, tmp_config) -> None:
+    _save_jobs(
+        tmp_config,
+        [{"name": "A", "history": [{"ts": "2026-04-16 11:00:00", "ok": True, "rows": 2}]}],
+    )
+    panel = DashboardActivityPanel(tmp_config)
+    qtbot.addWidget(panel)
+
+    panel.schedule_refresh()
+    panel.schedule_refresh()
+
+    qtbot.wait(180)
+
+    assert panel.activity_count_text() == "1"

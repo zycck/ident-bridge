@@ -2,9 +2,10 @@
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, QTimer, Slot
 from PySide6.QtWidgets import QMessageBox
 
+from app.core.constants import DEBOUNCE_SAVE_MS
 from app.ui.settings_shell import SettingsShell
 
 
@@ -26,6 +27,10 @@ class SettingsWidgetController(QObject):
         self._sql = sql_controller
         self._app = app_controller
         self._info = info_fn
+        self._autosave_timer = QTimer(self)
+        self._autosave_timer.setSingleShot(True)
+        self._autosave_timer.setInterval(DEBOUNCE_SAVE_MS)
+        self._autosave_timer.timeout.connect(self._auto_save)
 
     def wire(self) -> None:
         self._shell.reset_requested.connect(self.reset)
@@ -37,13 +42,13 @@ class SettingsWidgetController(QObject):
         sql_panel.refresh_databases_requested.connect(self._refresh_databases)
         sql_panel.test_connection_requested.connect(self._test_connection)
         sql_panel.database_combo().currentIndexChanged.connect(self._on_db_changed)
-        sql_panel.login_edit().editingFinished.connect(self._auto_save)
-        sql_panel.password_edit().editingFinished.connect(self._auto_save)
+        sql_panel.login_edit().editingFinished.connect(self.queue_auto_save)
+        sql_panel.password_edit().editingFinished.connect(self.queue_auto_save)
         if sql_panel.instance_combo().lineEdit() is not None:
-            sql_panel.instance_combo().lineEdit().editingFinished.connect(self._auto_save)
+            sql_panel.instance_combo().lineEdit().editingFinished.connect(self.queue_auto_save)
 
         app_panel = self._shell.app_panel()
-        app_panel.auto_update_check().toggled.connect(self._auto_save)
+        app_panel.auto_update_check().toggled.connect(self.queue_auto_save)
         app_panel.startup_toggled.connect(self._on_startup_toggled)
         app_panel.check_update_requested.connect(self._check_update)
 
@@ -52,16 +57,29 @@ class SettingsWidgetController(QObject):
 
     @Slot()
     def reset(self) -> None:
+        self._autosave_timer.stop()
         self._form.load_fields()
 
     @Slot()
     def save(self) -> None:
+        self.flush_pending_save()
         self._form.save()
         self._info(self.parent(), "Сохранено", "Настройки сохранены.")
 
+    @Slot()
+    def queue_auto_save(self) -> None:
+        self._autosave_timer.start()
+
+    def flush_pending_save(self) -> bool:
+        if not self._autosave_timer.isActive():
+            return False
+        self._autosave_timer.stop()
+        return self._auto_save()
+
     @Slot(int)
     def _on_db_changed(self, idx: int) -> None:
-        self._form.handle_database_changed(idx)
+        self._form.handle_database_changed(idx, autosave=False)
+        self.queue_auto_save()
 
     def _auto_save(self) -> bool:
         return self._form.auto_save()

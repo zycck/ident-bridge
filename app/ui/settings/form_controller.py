@@ -89,10 +89,11 @@ class SettingsFormController(QObject):
         cfg.update(self._current_payload())
         self._config.save(cfg)
 
-    def handle_database_changed(self, idx: int) -> None:
+    def handle_database_changed(self, idx: int, *, autosave: bool = True) -> None:
         text = self._db_combo.itemText(idx)
         self._flow.remember_database_selection(text)
-        self.auto_save()
+        if autosave:
+            self.auto_save()
 
     def auto_save(self) -> bool:
         if self._flow.should_skip_autosave():
