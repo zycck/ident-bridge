@@ -72,3 +72,74 @@
 - **Scope:** strip 138× `# -*- coding: utf-8 -*-` (E2) + `collections.abc.Callable` in threading.py (E5)
 - **Deferred:** `from __future__ import annotations` mass add (E1), `NotRequired[...]` rewrite (E4), `@override` markers (E7)
 
+## Stage 8 — 2026-04-22
+
+- **N.1 pytest:** PASS — 524 passed in 4.27 s
+- **N.2 perf smoke:** PASS — `gas-chunking` `positive_retained_kib=0.7`
+- **N.3 build:** SKIP — code-only safety slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** worker shutdown hardening + export autosave coalescing
+- **Commit:** `05a61af`
+
+## Stage 9 — 2026-04-22
+
+- **N.1 pytest:** PASS — 529 passed
+- **N.2 perf smoke:** PASS — `gas-chunking` `positive_retained_kib=0.7`; `settings-widget` stable over repeated cycles
+- **N.3 build:** SKIP — code-only safety slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** debounce settings I/O + config cache + worker lifetime hardening
+- **Commit:** `6a1200d`
+
+## Stage 10 — 2026-04-22
+
+- **N.1 pytest:** PASS — 529 passed
+- **N.2 perf smoke:** PASS — `gas-chunking` `positive_retained_kib=0.7`
+- **N.3 build:** SKIP — code-only safety slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** async dashboard activity refresh off GUI thread
+- **Commit:** `8c78ecf`
+
+## Stage 11 — 2026-04-22
+
+- **N.1 pytest:** PASS — 534 passed
+- **N.2 perf smoke:** PASS — `main-window` scenario no longer hangs on temp-dir cleanup
+- **N.3 build:** SKIP — code-only safety slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** explicit SQLite connection close + lazy export editor creation
+- **Commit:** `668c238`
+
+## Stage 12 — 2026-04-22
+
+- **N.1 pytest:** PASS — 535 passed
+- **N.2 perf smoke:** PASS — `export-editor` false linear leak removed; `positive_retained_kib` stabilized around `1006 KiB` over repeated cycles
+- **N.3 build:** SKIP — code-only safety slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** flush `DeferredDelete` in perf harness so retained-memory readings are honest
+- **Commit:** `1f99fd2`
+
+## Stage 13 — 2026-04-22
+
+- **N.1 pytest:** PASS — 535 passed
+- **N.2 perf smoke:** PASS — `main-window` scenario green after scheduler fix
+- **N.3 build:** SKIP — code-only safety slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** scheduler without wall-clock drift; no random jitter; scheduled start while running stays idempotent
+- **Commit:** `c4bd960`
+
+## Stage 14 — 2026-04-22
+
+- **N.1 pytest:** PASS — 536 passed
+- **N.2 perf smoke:** PASS — `gas-chunking` `positive_retained_kib=0.9`
+- **N.3 build:** SKIP — code-only safety slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** one-pass GAS chunk planner; peak synthetic planner memory down from `7718.2 KiB` to `3951.0 KiB`
+- **Commit:** `9546261`
+
+## Stage 15 — 2026-04-22
+
+- **N.1 pytest:** PASS — 539 passed in 5.15 s
+- **N.2 perf smoke:** PASS — `gas-chunking` `positive_retained_kib=0.9`
+- **N.3 build:** SKIP — docs + correctness slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP — desktop smoke not rerun
+- **Scope:** preserve `manual/scheduled` trigger in GAS SQLite journal + refresh TESTING/PERFORMANCE docs to current gate numbers
+- **Commit:** `ba65eed`
