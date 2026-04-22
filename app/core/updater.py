@@ -64,13 +64,6 @@ def _pick_download_asset(release_data: dict) -> tuple[str, str | None] | None:
     return None
 
 
-def _pick_download_url(release_data: dict) -> str | None:
-    asset = _pick_download_asset(release_data)
-    if asset is None:
-        return None
-    return asset[0]
-
-
 def _parse_version(version: str) -> tuple[int, ...]:
     try:
         tag = version.lstrip("v")

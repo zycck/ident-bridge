@@ -129,7 +129,7 @@ def test_download_update_warns_when_digest_missing(monkeypatch, tmp_path):
     assert warnings
 
 
-def test_pick_download_url_prefers_expected_exe_name():
+def test_pick_download_asset_prefers_expected_exe_name():
     release = {
         "assets": [
             {"name": "notes.txt", "browser_download_url": "https://example.com/notes.txt"},
@@ -146,7 +146,10 @@ def test_pick_download_url_prefers_expected_exe_name():
         ]
     }
 
-    assert updater._pick_download_url(release) == "https://example.com/iDentSync.exe"
+    assert updater._pick_download_asset(release) == (
+        "https://example.com/iDentSync.exe",
+        None,
+    )
 
 
 def test_check_latest_returns_digest_for_matching_asset(monkeypatch):

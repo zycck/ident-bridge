@@ -28,13 +28,7 @@ from app.core.log_sanitizer import mask_secrets
 from app.core.sql_client import SqlClient  # noqa: F401 - kept for test monkeypatch compat
 from app.export.pipeline import build_pipeline_for_job
 from app.export.sinks.google_apps_script import GoogleAppsScriptDeliveryError
-# Backwards-compatible re-exports. Callers (incl. tests) historically
-# imported these names from this module.
-from app.export.sinks.webhook import (  # noqa: F401
-    DEFAULT_RETRY_ATTEMPTS as WEBHOOK_RETRY_ATTEMPTS,
-    DEFAULT_RETRY_BASE_DELAY as WEBHOOK_RETRY_BASE_DELAY,
-    build_webhook_payload,
-)
+from app.export.sinks.webhook import build_webhook_payload
 
 _log = logging.getLogger(__name__)
 
@@ -130,6 +124,4 @@ class ExportWorker(QObject):
 __all__ = [
     "ExportWorker",
     "build_webhook_payload",
-    "WEBHOOK_RETRY_ATTEMPTS",
-    "WEBHOOK_RETRY_BASE_DELAY",
 ]
