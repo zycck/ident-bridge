@@ -1,5 +1,9 @@
 """Tests for tracemalloc performance smoke harness."""
 
+import weakref
+
+from PySide6.QtWidgets import QWidget
+
 from tools import perf_smoke
 
 
@@ -29,3 +33,13 @@ def test_perf_smoke_run_cycles_executes_selected_scenarios(monkeypatch) -> None:
     calls.clear()
     perf_smoke._run_cycles(app=object(), scenario="all", cycles=1)
     assert calls == [("alpha", 0), ("beta", 0)]
+
+
+def test_perf_smoke_dispose_widget_flushes_deferred_delete(qapp_session) -> None:
+    widget = QWidget()
+    ref = weakref.ref(widget)
+
+    perf_smoke._dispose_widget(widget, qapp_session)
+    widget = None
+
+    assert ref() is None

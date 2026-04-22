@@ -21,6 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QWidget
 
 import app.config as config_module
@@ -40,6 +41,11 @@ from main import _load_app_icon, _load_fonts, _load_theme
 def _process_events(app: QApplication, rounds: int = 6) -> None:
     for _ in range(rounds):
         app.processEvents()
+
+
+def _flush_deferred_deletes(app: QApplication) -> None:
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    _process_events(app, rounds=2)
 
 
 def _prepare_app() -> QApplication:
@@ -62,6 +68,7 @@ def _rebind_temp_config_dir(temp_root: Path) -> None:
 def _dispose_widget(widget: QWidget, app: QApplication) -> None:
     widget.hide()
     widget.deleteLater()
+    _flush_deferred_deletes(app)
     _process_events(app)
 
 
@@ -183,6 +190,7 @@ def _run_cycles(app: QApplication, scenario: str, cycles: int) -> None:
         for name in names:
             SCENARIOS[name](app, iteration)
         gc.collect()
+        _flush_deferred_deletes(app)
         _process_events(app)
 
 
