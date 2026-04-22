@@ -161,3 +161,12 @@
 - **N.4 EXE smoke:** SKIP - desktop smoke not rerun
 - **Scope:** restore export history counts in dashboard/editor/tiles, preserve config-history fallback when SQLite is empty, record generic export failures in history, route worker callbacks back to GUI thread, sync TESTING baseline to current count
 - **Commit:** `7d02607`
+
+## Stage 18 - 2026-04-22
+
+- **N.1 pytest:** PASS - 544 passed in 5.49 s
+- **N.2 perf smoke:** PASS - `gas-chunking` `positive_retained_kib=0.9`
+- **N.3 build:** SKIP - code-only seam slice, packaged build not rerun
+- **N.4 EXE smoke:** SKIP - desktop smoke not rerun
+- **Scope:** switch export pipeline default DB construction to `app.database.create_database_client`, keep `sql_client_cls` only as test override, add regression for factory-backed default path, sync TESTING baseline
+- **Commit:** current refactor-v3 slice

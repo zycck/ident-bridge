@@ -255,6 +255,26 @@ def test_factory_uses_provided_sql_client_class():
     assert isinstance(p.db, _Spy)
 
 
+def test_factory_uses_database_factory_by_default(monkeypatch):
+    seen: list[tuple[str, AppConfig]] = []
+
+    class _Spy:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+    def _factory(kind: str, cfg: AppConfig):
+        seen.append((kind, cfg))
+        return _Spy(cfg)
+
+    cfg = AppConfig(sql_instance="abc")
+    monkeypatch.setattr("app.export.pipeline.create_database_client", _factory)
+
+    pipeline = build_pipeline_for_job(cfg, _job())
+
+    assert seen == [("mssql", cfg)]
+    assert isinstance(pipeline.db, _Spy)
+
+
 def test_factory_passes_gas_options_to_google_apps_script_sink():
     job = _job(webhook="https://script.google.com/macros/s/abc/exec")
     job["id"] = "123e4567-e89b-12d3-a456-426614174000"

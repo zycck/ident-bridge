@@ -22,13 +22,12 @@ import time
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any
 from urllib.parse import urlsplit
 
 from app.config import AppConfig, ExportJob, QueryResult, SyncResult
 from app.core.constants import EXPORT_SOURCE_ID, GOOGLE_SCRIPT_HOSTS, MAX_WEBHOOK_ROWS
+from app.database import DatabaseClient, create_database_client
 from app.core.formatters import format_duration_compact
-from app.core.sql_client import SqlClient
 from app.export.protocol import ExportSink
 from app.export.run_store import ExportRunStore
 from app.export.sinks.google_apps_script import GoogleAppsScriptSink
@@ -38,6 +37,7 @@ _log = logging.getLogger(__name__)
 
 # ProgressCallback: step_number (0–3), human-readable message.
 type ProgressCallback = Callable[[int, str], None]
+type DatabaseClientFactory = Callable[[AppConfig], DatabaseClient]
 
 
 def _noop_progress(step: int, message: str) -> None:
@@ -52,7 +52,7 @@ class ExportPipeline:
     client inside is single-use.
     """
 
-    db: Any                       # DatabaseClient-like (SqlClient today)
+    db: DatabaseClient
     sink: ExportSink | None
     logger: logging.Logger = field(default_factory=lambda: _log)
 
@@ -119,7 +119,7 @@ def build_pipeline_for_job(
     cfg: AppConfig,
     job: ExportJob,
     *,
-    sql_client_cls: type = SqlClient,
+    sql_client_cls: DatabaseClientFactory | None = None,
 ) -> ExportPipeline:
     """Factory: assemble the default pipeline for a job.
 
@@ -127,10 +127,11 @@ def build_pipeline_for_job(
     Extend this function (or replace the factory call-site) when a new
     sink type lands.
 
-    ``sql_client_cls`` is accepted as a keyword for tests and future
-    DatabaseClient-factory wiring (see audit plan I.4).
+    ``sql_client_cls`` stays as a test hook / override; normal runtime
+    construction now goes through :func:`app.database.create_database_client`.
     """
-    db = sql_client_cls(cfg)
+    db_factory = sql_client_cls or (lambda app_cfg: create_database_client("mssql", app_cfg))
+    db = db_factory(cfg)
     sink = resolve_export_sink(
         job.get("webhook_url") or "",
         gas_options=job.get("gas_options"),
@@ -170,6 +171,7 @@ def resolve_export_sink(
 
 __all__ = [
     "ExportPipeline",
+    "DatabaseClientFactory",
     "ProgressCallback",
     "build_pipeline_for_job",
     "resolve_export_sink",
