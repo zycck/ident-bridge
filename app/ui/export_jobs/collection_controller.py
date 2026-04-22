@@ -176,7 +176,9 @@ class ExportJobsCollectionController:
         except TypeError:
             editor = self._editor_factory(job, self._config, self._parent)
         editor.changed.connect(lambda _job: self.queue_save_jobs())
-        editor.history_changed.connect(self._emit_history_changed)
+        editor.history_changed.connect(
+            lambda current_job_id=job["id"]: self._handle_editor_history_changed(current_job_id)
+        )
         editor.sync_completed.connect(self._emit_sync_completed)
         editor.failure_alert.connect(self._emit_failure_alert)
         runtime_signal = getattr(editor, "runtime_state_changed", None)
@@ -208,6 +210,10 @@ class ExportJobsCollectionController:
 
         self._editor_page.add_editor(job.get("id", ""), scroll)
         return editor
+
+    def _handle_editor_history_changed(self, _job_id: str) -> None:
+        self.sync_tiles_from_editors(refresh_journal=True)
+        self._emit_history_changed()
 
     def _sync_tile_runtime_state(self, job_id: str, *, kind: str, text: str, running: bool) -> None:
         for tile in self._tiles_page.tiles():

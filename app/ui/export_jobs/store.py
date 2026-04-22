@@ -44,6 +44,13 @@ def find_duplicate_export_target(jobs: Iterable[ExportJob]) -> tuple[str, str, s
 def job_from_raw(raw: Mapping[str, object], *, run_store: ExportRunStore | None = None) -> ExportJob:
     """Normalize a raw config payload into the widget's job shape."""
     job_id = str(raw.get("id") or generate_export_job_id())
+    history = (
+        run_store.list_job_history(job_id)
+        if run_store is not None
+        else list(raw.get("history") or [])
+    )
+    if run_store is not None and not history:
+        history = list(raw.get("history") or [])
     job = ExportJob(
         id=job_id,
         name=str(raw.get("name", "") or ""),
@@ -53,11 +60,7 @@ def job_from_raw(raw: Mapping[str, object], *, run_store: ExportRunStore | None 
         schedule_enabled=bool(raw.get("schedule_enabled", False)),
         schedule_mode=schedule_mode_from_raw(raw.get("schedule_mode", ScheduleMode.DAILY)).value,
         schedule_value=str(raw.get("schedule_value", "") or ""),
-        history=(
-            run_store.list_job_history(job_id)
-            if run_store is not None
-            else list(raw.get("history") or [])
-        ),  # type: ignore[typeddict-item]
+        history=history,  # type: ignore[typeddict-item]
     )
     if run_store is not None:
         job["unfinished_runs"] = run_store.list_unfinished_runs(job_id=job_id)  # type: ignore[typeddict-item]

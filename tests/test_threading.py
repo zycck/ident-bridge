@@ -169,6 +169,22 @@ def test_run_worker_on_finished_callback(qapp_session, qtbot):
     assert len(captured) == 1
 
 
+def test_run_worker_callbacks_arrive_on_gui_thread(qapp_session, qtbot):
+    parent = QObject()
+    worker = _DefaultWorker()
+    gui_thread = qapp_session.thread()
+    callback_threads: list[bool] = []
+
+    run_worker(
+        parent,
+        worker,
+        on_finished=lambda *args: callback_threads.append(QThread.currentThread() is gui_thread),
+    )
+
+    qtbot.waitUntil(lambda: bool(callback_threads), timeout=2000)
+    assert callback_threads == [True]
+
+
 def test_run_worker_on_error_callback(qapp_session, qtbot):
     parent = QObject()
     worker = _ErrorWorker()

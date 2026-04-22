@@ -66,6 +66,7 @@ def _controller():
         set_progress_text=lambda text: events.append(("progress", text)),
         set_status=lambda kind, text: events.append(("status", kind, text)),
         set_history=lambda history: events.append(("history_set", len(history))),
+        emit_history_changed=lambda: events.append(("history_changed",)),
         emit_runtime_state_changed=lambda kind, text, running: events.append(("runtime", kind, text, running)),
         load_history=lambda: history_snapshot,
         set_unfinished=lambda runs: events.append(("unfinished_set", [run.run_id for run in runs])),
@@ -161,6 +162,19 @@ def test_finished_run_refreshes_history_and_unfinished_snapshots() -> None:
 
     assert ("history_set", 1) in events
     assert ("unfinished_set", ["run-open"]) in events
+    assert ("history_changed",) in events
+
+
+def test_error_refreshes_history_and_unfinished_snapshots() -> None:
+    controller, events, started = _controller()
+    controller.start_manual()
+
+    _, _, on_error, _ = started[0]
+    on_error("РћС€РёР±РєР° РѕС‚РїСЂР°РІРєРё РґР°РЅРЅС‹С….")
+
+    assert ("history_set", 1) in events
+    assert ("unfinished_set", ["run-open"]) in events
+    assert ("history_changed",) in events
 
 
 class _ThreadedSignalWorker(QObject):

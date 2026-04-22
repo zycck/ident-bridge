@@ -29,6 +29,7 @@ class ExportExecutionController(QObject):
         set_status: Callable[[str, str], None],
         set_history: Callable[[list[ExportHistoryEntry]], None] | None = None,
         set_unfinished: Callable[[list[object]], None] | None = None,
+        emit_history_changed: Callable[[], None] | None = None,
         emit_runtime_state_changed: Callable[[str, str, bool], None],
         load_history: Callable[[], list[ExportHistoryEntry]] | None = None,
         load_unfinished: Callable[[], list[object]] | None = None,
@@ -52,6 +53,7 @@ class ExportExecutionController(QObject):
         self._set_status = set_status
         self._set_history = set_history or (lambda _history: None)
         self._set_unfinished = set_unfinished or (lambda _runs: None)
+        self._emit_history_changed = emit_history_changed or (lambda: None)
         self._emit_runtime_state_changed = emit_runtime_state_changed
         self._load_history = load_history or (lambda: [])
         self._load_unfinished = load_unfinished or (lambda: [])
@@ -115,6 +117,7 @@ class ExportExecutionController(QObject):
         if not result.success:
             self._set_history(self._load_history())
             self._set_unfinished(self._load_unfinished())
+            self._emit_history_changed()
             return
 
         status_kind, status_text, entry = self._runtime.on_success(result)
@@ -124,6 +127,7 @@ class ExportExecutionController(QObject):
         self._emit_runtime_state_changed(status_kind, status_text, False)
         self._set_history(self._load_history())
         self._set_unfinished(self._load_unfinished())
+        self._emit_history_changed()
         self._emit_sync_completed(result)
 
     @Slot(str)
@@ -145,6 +149,9 @@ class ExportExecutionController(QObject):
         self._set_status(update.status_kind, update.status_text)
         self._emit_runtime_state_changed(update.status_kind, update.status_text, False)
         self._record_error_entry(update.entry)
+        self._set_history(self._load_history())
+        self._set_unfinished(self._load_unfinished())
+        self._emit_history_changed()
         if update.alert_count is not None:
             name = self._build_job().get("name") or "Без названия"
             self._emit_failure_alert(name, update.alert_count)
@@ -166,3 +173,4 @@ class ExportExecutionController(QObject):
         )
         self._record_history_entry(entry)
         self._set_history(self._load_history())
+        self._emit_history_changed()

@@ -156,6 +156,20 @@ def test_load_export_jobs_reads_history_and_unfinished_runs_from_sqlite_store() 
     assert jobs[0]["unfinished_runs"][0].run_id == "run-1"
 
 
+class _EmptyRunStore:
+    def list_job_history(self, job_id: str):
+        return []
+
+    def list_unfinished_runs(self, *, job_id: str | None = None):
+        return []
+
+
+def test_load_export_jobs_falls_back_to_config_history_when_sqlite_empty() -> None:
+    jobs = load_export_jobs(_DummyConfig(), run_store=_EmptyRunStore())
+
+    assert jobs[0]["history"] == [{"ts": "2026-01-01 00:00:00"}]
+
+
 def test_find_duplicate_export_target_detects_same_webhook_and_sheet() -> None:
     duplicate = find_duplicate_export_target(
         [

@@ -46,7 +46,7 @@ class _ActivityLoadWorker(QObject):
     def run(self) -> None:
         try:
             entries = self._run_store.list_recent_history(limit=100)
-            jobs = load_export_jobs(self._config) if not entries else []
+            jobs = load_export_jobs(self._config, self._run_store) if not entries else []
         except Exception as exc:  # pragma: no cover - defensive UI path
             self.error.emit(str(exc))
             return
@@ -177,7 +177,7 @@ class DashboardActivityPanel(QFrame):
         if entries:
             total = len(entries)
         else:
-            jobs = load_export_jobs(self._config)
+            jobs = load_export_jobs(self._config, self._run_store)
             total, cleared_jobs = clear_job_histories(jobs)
         if total == 0:
             return False

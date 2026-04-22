@@ -17,6 +17,31 @@ from PySide6.QtWidgets import QApplication
 _ALL_THREADS: set[QThread] = set()
 
 
+class _CallbackDispatcher(QObject):
+    def __init__(
+        self,
+        *,
+        on_finished: Callable[..., Any] | None,
+        on_error: Callable[..., Any] | None,
+        parent: QObject | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self._on_finished = on_finished
+        self._on_error = on_error
+
+    def on_finished(self, *args: Any) -> None:
+        callback = self._on_finished
+        if callback is None:
+            return
+        callback(*args)
+
+    def on_error(self, *args: Any) -> None:
+        callback = self._on_error
+        if callback is None:
+            return
+        callback(*args)
+
+
 def _safe_callback(callback: Callable[..., Any] | None) -> Callable[..., Any] | None:
     if callback is None:
         return None
@@ -127,20 +152,27 @@ def run_worker(
 
     safe_finished = _safe_callback(on_finished)
     safe_error = _safe_callback(on_error)
+    callback_dispatcher = _CallbackDispatcher(
+        on_finished=safe_finished,
+        on_error=safe_error,
+        parent=QApplication.instance(),
+    )
+    thread.__dict__["_callback_dispatcher"] = callback_dispatcher
 
     if hasattr(worker, "finished"):
         worker.finished.connect(thread.quit)  # type: ignore[attr-defined]
         if safe_finished is not None:
-            worker.finished.connect(safe_finished)  # type: ignore[attr-defined]
+            worker.finished.connect(callback_dispatcher.on_finished)  # type: ignore[attr-defined]
 
     if hasattr(worker, "error"):
         worker.error.connect(thread.quit)  # type: ignore[attr-defined]
         if safe_error is not None:
-            worker.error.connect(safe_error)  # type: ignore[attr-defined]
+            worker.error.connect(callback_dispatcher.on_error)  # type: ignore[attr-defined]
 
     thread.finished.connect(worker.deleteLater)
     thread.finished.connect(thread.deleteLater)
     thread.finished.connect(lambda: thread.__dict__.pop("_worker_ref", None))
+    thread.finished.connect(lambda: thread.__dict__.pop("_callback_dispatcher", None))
 
     if pin_attr is not None:
         setattr(parent, pin_attr, worker)

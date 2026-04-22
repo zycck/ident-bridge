@@ -125,6 +125,7 @@ def _build_controller(*, jobs: list[ExportJob], warn_duplicate_target=None):
     editor_page = _FakeEditorPage()
     controller = ExportJobsCollectionController(
         config=config,
+        run_store=None,
         parent=QWidget(),
         tiles_page=tiles_page,
         editor_page=editor_page,
@@ -134,6 +135,39 @@ def _build_controller(*, jobs: list[ExportJob], warn_duplicate_target=None):
         emit_history_changed=lambda: history_changed.append(True),
         emit_failure_alert=lambda name, count: alerts.append((name, count)),
         warn_duplicate_target=warn_duplicate_target,
+        tile_factory=_FakeTile,
+        editor_factory=_FakeEditor,
+    )
+    return controller, config, tiles_page, editor_page, opens, syncs, history_changed, alerts
+
+
+class _FakeRunStore:
+    def list_job_history(self, job_id: str):
+        return [{"ts": f"{job_id}-sqlite", "ok": True, "rows": 4}]
+
+    def list_unfinished_runs(self, *, job_id: str | None = None):
+        return []
+
+
+def _build_controller_with_run_store(*, jobs: list[ExportJob], run_store):
+    opens: list[str] = []
+    syncs: list[object] = []
+    history_changed: list[bool] = []
+    alerts: list[tuple[str, int]] = []
+    config = _DummyConfig(jobs)
+    tiles_page = _FakeTilesPage()
+    editor_page = _FakeEditorPage()
+    controller = ExportJobsCollectionController(
+        config=config,
+        run_store=run_store,
+        parent=QWidget(),
+        tiles_page=tiles_page,
+        editor_page=editor_page,
+        open_editor=lambda job_id: opens.append(job_id),
+        delete_job=lambda job_id: opens.append(f"delete:{job_id}"),
+        emit_sync_completed=lambda result: syncs.append(result),
+        emit_history_changed=lambda: history_changed.append(True),
+        emit_failure_alert=lambda name, count: alerts.append((name, count)),
         tile_factory=_FakeTile,
         editor_factory=_FakeEditor,
     )
@@ -301,3 +335,19 @@ def test_collection_controller_run_job_creates_editor_on_demand(qtbot) -> None:
     assert controller.run_job("job-1") is True
     assert sorted(controller.editors()) == ["job-1"]
     assert editor_page.added_ids == ["job-1"]
+
+
+def test_collection_controller_history_change_refreshes_tiles_from_sqlite(qtbot) -> None:
+    controller, _config, tiles_page, _editor_page, _opens, _syncs, history_changed, _alerts = _build_controller_with_run_store(
+        jobs=[_job("job-1", "One")],
+        run_store=_FakeRunStore(),
+    )
+    qtbot.addWidget(controller._parent)
+
+    controller.load_jobs()
+    editor = controller.ensure_editor("job-1")
+
+    editor.history_changed.emit()
+
+    assert history_changed == [True]
+    assert tiles_page.tiles()[0].updated[-1]["history"] == [{"ts": "job-1-sqlite", "ok": True, "rows": 4}]
