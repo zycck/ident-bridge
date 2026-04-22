@@ -94,6 +94,15 @@ def test_start_manual_is_idempotent_while_running() -> None:
     ]
 
 
+def test_start_scheduled_is_idempotent_while_running() -> None:
+    controller, _events, started = _controller()
+
+    assert controller.start_scheduled() is True
+    assert controller.start_scheduled() is False
+
+    assert len(started) == 1
+
+
 def test_progress_and_success_restore_ui_and_emit_sync() -> None:
     controller, events, started = _controller()
     controller.start_manual()

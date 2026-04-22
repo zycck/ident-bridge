@@ -73,16 +73,18 @@ class ExportExecutionController(QObject):
         return self._runtime.consecutive_failures
 
     def start_manual(self) -> bool:
-        self._runtime.mark_manual_trigger()
-        return self._start()
+        return self._start(trigger="manual")
 
     def start_scheduled(self) -> bool:
-        self._runtime.mark_scheduled_trigger()
-        return self._start()
+        return self._start(trigger="scheduled")
 
-    def _start(self) -> bool:
+    def _start(self, *, trigger: str) -> bool:
         if self._running:
             return False
+        if trigger == "scheduled":
+            self._runtime.mark_scheduled_trigger()
+        else:
+            self._runtime.mark_manual_trigger()
         self._running = True
         self._run_started_ns = time.perf_counter_ns()
         status_kind, status_text = self._runtime.begin_run()

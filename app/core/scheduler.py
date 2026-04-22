@@ -1,6 +1,5 @@
 import logging
 import os
-import random
 import re
 from datetime import datetime, timedelta
 from enum import StrEnum, UNIQUE, verify
@@ -81,7 +80,7 @@ class SyncScheduler(QObject):
     trigger = Signal()
     next_run_changed = Signal(object)  # datetime | None
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, now_func=_local_now) -> None:
         super().__init__(parent)
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
@@ -89,6 +88,7 @@ class SyncScheduler(QObject):
         self._mode: ScheduleMode | None = None
         self._value: str | None = None
         self._next_run: datetime | None = None
+        self._now = now_func
 
     def configure(self, mode: ScheduleMode | str, value: str) -> None:
         """Store a validated recurrence mode/value pair for later start()."""
@@ -147,44 +147,70 @@ class SyncScheduler(QObject):
         if self._mode is None or self._value is None:
             return  # configure() не был вызван до start()
 
-        now = _local_now()
-
-        match self._mode:
-            case ScheduleMode.SECONDLY:
-                n = int(self._value)
-                if n < 1:
-                    return
-                base_delay = float(n)
-            case ScheduleMode.MINUTELY:
-                n = int(self._value)
-                if n < 1:
-                    return
-                base_delay = n * 60.0
-            case ScheduleMode.HOURLY:
-                n = int(self._value)
-                if n < 1:
-                    return
-                base_delay = n * 3600.0
-            case ScheduleMode.DAILY:
-                hour_text, minute_text = self._value.split(":")
-                candidate = now.replace(
-                    hour=int(hour_text),
-                    minute=int(minute_text),
-                    second=0,
-                    microsecond=0,
-                )
-                if candidate <= now:
-                    candidate += timedelta(days=1)
-                base_delay = (candidate - now).total_seconds()
-
-        jitter = random.uniform(-base_delay * 0.05, base_delay * 0.05)
-        delay = max(1.0, base_delay + jitter)
-
-        self._next_run = now + timedelta(seconds=delay)
+        now = self._now()
+        self._next_run = self._calculate_next_run(now)
         self.next_run_changed.emit(self._next_run)
+        delay = max(1.0, (self._next_run - now).total_seconds())
 
         self._timer.start(int(delay * 1000))
 
     def _fire(self) -> None:
+        scheduled_for = self._next_run
         self.trigger.emit()
+        if scheduled_for is not None:
+            self._next_run = scheduled_for
         self._schedule_next()
+
+    def _calculate_next_run(self, now: datetime) -> datetime:
+        if self._mode is None or self._value is None:
+            raise RuntimeError("Scheduler is not configured")
+
+        match self._mode:
+            case ScheduleMode.DAILY:
+                return self._next_daily_run(now)
+            case ScheduleMode.HOURLY | ScheduleMode.MINUTELY | ScheduleMode.SECONDLY:
+                return self._next_interval_run(now)
+        raise RuntimeError(f"Unsupported schedule mode: {self._mode!r}")
+
+    def _next_daily_run(self, now: datetime) -> datetime:
+        hour_text, minute_text = self._value.split(":")
+        if self._next_run is not None:
+            candidate = self._next_run + timedelta(days=1)
+        else:
+            candidate = now.replace(
+                hour=int(hour_text),
+                minute=int(minute_text),
+                second=0,
+                microsecond=0,
+            )
+            if candidate <= now:
+                candidate += timedelta(days=1)
+
+        while candidate <= now:
+            candidate += timedelta(days=1)
+        return candidate
+
+    def _next_interval_run(self, now: datetime) -> datetime:
+        step = self._interval_step()
+        candidate = (self._next_run + step) if self._next_run is not None else (now + step)
+        while candidate <= now:
+            candidate += step
+        return candidate
+
+    def _interval_step(self) -> timedelta:
+        if self._mode is None or self._value is None:
+            raise RuntimeError("Scheduler is not configured")
+
+        amount = int(self._value)
+        if amount < 1:
+            raise RuntimeError(f"Invalid interval value: {self._value!r}")
+
+        match self._mode:
+            case ScheduleMode.SECONDLY:
+                return timedelta(seconds=amount)
+            case ScheduleMode.MINUTELY:
+                return timedelta(minutes=amount)
+            case ScheduleMode.HOURLY:
+                return timedelta(hours=amount)
+            case _:
+                raise RuntimeError(f"Mode {self._mode!r} is not interval-based")
