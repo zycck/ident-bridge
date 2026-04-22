@@ -1,6 +1,6 @@
 """Dashboard activity/history card with refresh and clear actions."""
 
-from PySide6.QtCore import Qt, QTimer, Slot
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -20,9 +20,37 @@ from app.ui.dashboard_activity import (
     refresh_dashboard_activity_entries,
 )
 from app.ui.export_jobs_store import load_export_jobs
+from app.ui.shared.worker_threads import run_worker, shutdown_worker_threads
 from app.ui.theme import Theme
 
 _REFRESH_DEBOUNCE_MS = 120
+
+
+class _ActivityLoadWorker(QObject):
+    finished = Signal(int, object, object)
+    error = Signal(str)
+
+    def __init__(
+        self,
+        *,
+        token: int,
+        config: ConfigManager,
+        run_store: ExportRunStore,
+    ) -> None:
+        super().__init__()
+        self._token = token
+        self._config = config
+        self._run_store = run_store
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            entries = self._run_store.list_recent_history(limit=100)
+            jobs = load_export_jobs(self._config) if not entries else []
+        except Exception as exc:  # pragma: no cover - defensive UI path
+            self.error.emit(str(exc))
+            return
+        self.finished.emit(self._token, entries, jobs)
 
 
 class DashboardActivityPanel(QFrame):
@@ -35,6 +63,9 @@ class DashboardActivityPanel(QFrame):
         super().__init__(parent)
         self._config = config
         self._run_store = run_store or ExportRunStore()
+        self._activity_worker: QObject | None = None
+        self._refresh_token = 0
+        self._refresh_queued = False
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(_REFRESH_DEBOUNCE_MS)
@@ -102,31 +133,46 @@ class DashboardActivityPanel(QFrame):
         return self._activity_count.text()
 
     def schedule_refresh(self) -> None:
+        if self._activity_worker is not None:
+            self._refresh_queued = True
+            return
         self._refresh_timer.start()
 
     def stop(self) -> None:
         self._refresh_timer.stop()
+        self._refresh_token += 1
+        self._refresh_queued = False
+        shutdown_worker_threads(self)
 
     def refresh_activity(self) -> None:
         self._refresh_timer.stop()
-        entries = self._run_store.list_recent_history(limit=100)
-        if entries:
-            count = refresh_dashboard_activity_entries(
-                self._activity_layout,
-                self,
-                entries,
-            )
-        else:
-            count = refresh_dashboard_activity(
-                self._activity_layout,
-                self,
-                load_export_jobs(self._config),
-            )
-        self._activity_count.setText(str(count))
+        if self._activity_worker is not None:
+            self._refresh_queued = True
+            return
+        self._refresh_token += 1
+        self._refresh_queued = False
+        token = self._refresh_token
+        worker = _ActivityLoadWorker(
+            token=token,
+            config=self._config,
+            run_store=self._run_store,
+        )
+        run_worker(
+            self,
+            worker,
+            pin_attr="_activity_worker",
+            on_finished=self._apply_loaded_activity,
+            on_error=self._handle_refresh_error,
+            connect_signals=lambda _worker, thread: thread.finished.connect(
+                self._on_refresh_thread_finished
+            ),
+        )
 
     @Slot()
     def clear_all_history(self) -> bool:
         self._refresh_timer.stop()
+        self._refresh_token += 1
+        self._refresh_queued = False
         entries = self._run_store.list_recent_history(limit=10_000)
         if entries:
             total = len(entries)
@@ -151,3 +197,43 @@ class DashboardActivityPanel(QFrame):
             self._config.save(cfg)
         self.refresh_activity()
         return True
+
+    @Slot(int, object, object)
+    def _apply_loaded_activity(
+        self,
+        token: int,
+        entries: object,
+        jobs: object,
+    ) -> None:
+        if token != self._refresh_token:
+            return
+        history_entries = entries if isinstance(entries, list) else []
+        if history_entries:
+            count = refresh_dashboard_activity_entries(
+                self._activity_layout,
+                self,
+                history_entries,
+            )
+        else:
+            jobs_payload = jobs if isinstance(jobs, list) else []
+            count = refresh_dashboard_activity(
+                self._activity_layout,
+                self,
+                jobs_payload,
+            )
+        self._activity_count.setText(str(count))
+
+    @Slot(str)
+    def _handle_refresh_error(self, _message: str) -> None:
+        pass
+
+    @Slot()
+    def _on_refresh_thread_finished(self) -> None:
+        QTimer.singleShot(0, self._drain_queued_refresh)
+
+    @Slot()
+    def _drain_queued_refresh(self) -> None:
+        if self._activity_worker is not None or not self._refresh_queued:
+            return
+        self._refresh_queued = False
+        self.refresh_activity()

@@ -35,6 +35,7 @@ def test_activity_panel_refresh_tracks_aggregated_history_count(qtbot, tmp_confi
 
     panel.refresh_activity()
 
+    qtbot.waitUntil(lambda: panel.activity_count_text() == "3", timeout=2000)
     assert panel.activity_count_text() == "3"
 
 
@@ -62,6 +63,7 @@ def test_activity_panel_refresh_handles_jobs_missing_identity_fields(
 
     panel.refresh_activity()
 
+    qtbot.waitUntil(lambda: panel.activity_count_text() == "1", timeout=2000)
     assert panel.activity_count_text() == "1"
 
 
@@ -113,9 +115,11 @@ def test_activity_panel_clear_all_history_confirm_clears_entries(
     )
 
     panel.refresh_activity()
+    qtbot.waitUntil(lambda: panel.activity_count_text() == "1", timeout=2000)
     assert panel.activity_count_text() == "1"
 
     assert panel.clear_all_history() is True
+    qtbot.waitUntil(lambda: panel.activity_count_text() == "0", timeout=2000)
     assert panel.activity_count_text() == "0"
     assert tmp_config.load()["export_jobs"][0]["history"] == []
 
@@ -131,6 +135,6 @@ def test_activity_panel_schedule_refresh_coalesces_calls(qtbot, tmp_config) -> N
     panel.schedule_refresh()
     panel.schedule_refresh()
 
-    qtbot.wait(180)
+    qtbot.waitUntil(lambda: panel.activity_count_text() == "1", timeout=2000)
 
     assert panel.activity_count_text() == "1"
