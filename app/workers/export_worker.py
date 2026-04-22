@@ -25,7 +25,6 @@ from PySide6.QtCore import QObject, Signal, Slot
 
 from app.config import AppConfig, ExportJob, SyncResult
 from app.core.log_sanitizer import mask_secrets
-from app.core.sql_client import SqlClient  # noqa: F401 - kept for test monkeypatch compat
 from app.export.pipeline import build_pipeline_for_job
 from app.export.sinks.google_apps_script import GoogleAppsScriptDeliveryError
 from app.export.sinks.webhook import build_webhook_payload
@@ -59,14 +58,7 @@ class ExportWorker(QObject):
     @Slot()
     def run(self) -> None:
         """Execute the SQL → webhook pipeline."""
-        # Resolve SqlClient via module attribute so tests that monkeypatch
-        # ``app.workers.export_worker.SqlClient`` still intercept construction.
-        sql_client_cls = globals().get("SqlClient", SqlClient)
-        pipeline = build_pipeline_for_job(
-            self._cfg,
-            self._job,
-            sql_client_cls=sql_client_cls,
-        )
+        pipeline = build_pipeline_for_job(self._cfg, self._job)
         job_name = self._job.get("name", "?")
         started_ns = time.perf_counter_ns()
         try:

@@ -65,7 +65,7 @@ def mock_query_result():
 @pytest.fixture
 def mock_sql_client(monkeypatch, mock_query_result):
     """
-    Replace SqlClient inside app.workers.export_worker with a stub that
+    Replace default DB factory inside app.export.pipeline with a stub that
     returns canned results without touching a real database.
 
     Use this in tests that exercise the export pipeline.
@@ -90,7 +90,10 @@ def mock_sql_client(monkeypatch, mock_query_result):
             return mock_query_result
 
     _MockSqlClient.instances.clear()
-    monkeypatch.setattr("app.workers.export_worker.SqlClient", _MockSqlClient)
+    monkeypatch.setattr(
+        "app.export.pipeline.create_database_client",
+        lambda kind, cfg: _MockSqlClient(cfg),
+    )
     return _MockSqlClient
 
 

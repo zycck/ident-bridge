@@ -179,3 +179,12 @@
 - **N.4 EXE smoke:** SKIP - desktop smoke not rerun
 - **Scope:** route dashboard ping, test-run SQL worker, and settings connection worker through `app.database.create_database_client`; add regressions for ping and settings worker factory paths; sync TESTING baseline
 - **Commit:** current refactor-v3 slice
+
+## Stage 20 - 2026-04-22
+
+- **N.1 pytest:** PASS - 546 passed in 5.69 s
+- **N.2 perf smoke:** PASS - `main-window` `positive_retained_kib=1398.0`
+- **N.3 build:** PASS - `build/dist/iDentSync.exe` rebuilt successfully with PyInstaller 6.19.0
+- **N.4 EXE smoke:** PASS - packaged process stayed alive for 8 s without startup crash
+- **Scope:** remove last direct `app.core.sql_client` runtime import outside database factory (`export_worker` test hook cleanup), keep worker path on pipeline/database factory only, verify packaged build still boots
+- **Commit:** current refactor-v3 slice

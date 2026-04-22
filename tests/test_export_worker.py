@@ -172,7 +172,10 @@ def test_db_connect_failure_emits_error_and_finished_with_failure(
             raise RuntimeError("never reached")
 
     _FailingClient.instances.clear()
-    monkeypatch.setattr("app.workers.export_worker.SqlClient", _FailingClient)
+    monkeypatch.setattr(
+        "app.export.pipeline.create_database_client",
+        lambda kind, cfg: _FailingClient(cfg),
+    )
 
     worker = ExportWorker(base_cfg, simple_job)
     c = _run_worker_sync(worker)
@@ -195,7 +198,10 @@ def test_db_connect_failure_disconnect_still_called(
         def disconnect(self): disconnect_calls.append(True)
         def query(self, sql): pass
 
-    monkeypatch.setattr("app.workers.export_worker.SqlClient", _FailingClient)
+    monkeypatch.setattr(
+        "app.export.pipeline.create_database_client",
+        lambda kind, cfg: _FailingClient(cfg),
+    )
 
     worker = ExportWorker(base_cfg, simple_job)
     _run_worker_sync(worker)
@@ -218,7 +224,10 @@ def test_query_failure_emits_error_and_finished_failure(
         def disconnect(self): pass
         def query(self, sql): raise RuntimeError("syntax error near SELECT")
 
-    monkeypatch.setattr("app.workers.export_worker.SqlClient", _QueryFailClient)
+    monkeypatch.setattr(
+        "app.export.pipeline.create_database_client",
+        lambda kind, cfg: _QueryFailClient(cfg),
+    )
 
     worker = ExportWorker(base_cfg, simple_job)
     c = _run_worker_sync(worker)
