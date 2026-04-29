@@ -37,6 +37,7 @@ WRITE_MODE_ITEMS: tuple[tuple[str, str], ...] = (
     ("Добавлять в конец", GasWriteMode.APPEND.value),
     ("Полностью заменять лист", GasWriteMode.REPLACE_ALL.value),
     ("Обновлять по дате и источнику", GasWriteMode.REPLACE_BY_DATE_SOURCE.value),
+    ("Обновлять по месяцу и источнику", GasWriteMode.REPLACE_BY_MONTH_SOURCE.value),
 )
 
 

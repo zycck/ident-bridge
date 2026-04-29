@@ -101,6 +101,19 @@ def test_sheet_options_worker_logs_fetch_error(caplog) -> None:
     assert "response_preview=<html>not json</html>" in caplog.text
 
 
+def test_write_mode_items_includes_monthly_option_after_daily() -> None:
+    items = panel_module.WRITE_MODE_ITEMS
+
+    values = [value for _label, value in items]
+    assert values == [
+        "append",
+        "replace_all",
+        "replace_by_date_source",
+        "replace_by_month_source",
+    ]
+    assert items[3][0] == "Обновлять по месяцу и источнику"
+
+
 def test_google_sheets_panel_refresh_button_uses_busy_spinner(qtbot) -> None:
     panel = ExportGoogleSheetsPanel()
     qtbot.addWidget(panel)

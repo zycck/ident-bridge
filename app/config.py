@@ -109,6 +109,7 @@ class GasWriteMode(StrEnum):
     APPEND = "append"
     REPLACE_ALL = "replace_all"
     REPLACE_BY_DATE_SOURCE = "replace_by_date_source"
+    REPLACE_BY_MONTH_SOURCE = "replace_by_month_source"
 
 
 def gas_write_mode_from_raw(value: object) -> GasWriteMode:

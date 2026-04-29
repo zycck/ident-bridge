@@ -20,6 +20,7 @@ const BACKEND_V2_CONFIG = Object.freeze({
     append: 'append',
     replaceAll: 'replace_all',
     replaceByDateSource: 'replace_by_date_source',
+    replaceByMonthSource: 'replace_by_month_source',
   }),
 });
 

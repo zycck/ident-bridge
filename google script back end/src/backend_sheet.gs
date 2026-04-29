@@ -613,6 +613,47 @@ function backendReadOwnedRowNumbers_(spreadsheet, mainContext, request) {
   return rowNumbers;
 }
 
+function backendReadOwnedRowNumbersByMonth_(spreadsheet, mainContext, request) {
+  const { dateIndex, sourceIndex } = backendSplitMainHeader_(mainContext.header);
+  if (dateIndex < 0 || sourceIndex < 0) {
+    return [];
+  }
+
+  const lastRow = mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0;
+  if (lastRow < 2) {
+    return [];
+  }
+
+  const monthPrefix = backendTrimString_(request.exportDate).slice(0, 7);
+  if (monthPrefix.length < 7) {
+    return [];
+  }
+
+  const quotedSheetName = backendQuoteSheetNameForA1_(mainContext.sheet.getName());
+  const dateColumn = backendColumnNumberToLetters_(dateIndex + 1);
+  const sourceColumn = backendColumnNumberToLetters_(sourceIndex + 1);
+  const valueRanges = backendBatchGetValues_(spreadsheet.getId(), [
+    `${quotedSheetName}!${dateColumn}2:${dateColumn}${lastRow}`,
+    `${quotedSheetName}!${sourceColumn}2:${sourceColumn}${lastRow}`,
+  ]);
+
+  const dateValues = valueRanges[0]?.values || [];
+  const sourceValues = valueRanges[1]?.values || [];
+  const rowCount = Math.max(dateValues.length, sourceValues.length);
+  const rowNumbers = [];
+
+  for (let index = 0; index < rowCount; index += 1) {
+    const dateValue = backendTrimString_(dateValues[index]?.[0]);
+    const sourceValue = backendTrimString_(sourceValues[index]?.[0]);
+    const sameSource = sourceValue === request.sourceId || backendIsLegacySourceId_(sourceValue);
+    if (dateValue.length >= 7 && dateValue.slice(0, 7) === monthPrefix && sameSource) {
+      rowNumbers.push(index + 2);
+    }
+  }
+
+  return rowNumbers;
+}
+
 function backendApplyAppendMode_(mainContext, projectedRows) {
   if (!projectedRows.length) {
     return;
@@ -662,6 +703,31 @@ function backendApplyReplaceByDateSourceMode_(spreadsheet, mainContext, request,
   backendWriteRowsAt_(mainContext.sheet, insertionRow, projectedRows);
 }
 
+function backendApplyReplaceByMonthSourceMode_(spreadsheet, mainContext, request, projectedRows) {
+  const matchedRowNumbers = backendReadOwnedRowNumbersByMonth_(spreadsheet, mainContext, request);
+  const ranges = backendCompressRowNumbersToRanges_(matchedRowNumbers);
+  const insertionRow = ranges.length
+    ? ranges[0].start
+    : Math.max(mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0, 1) + 1;
+
+  const requests = ranges
+    .slice(0)
+    .reverse()
+    .map((range) => backendBuildDeleteRowsRequest_(mainContext.sheetId, range.start, range.count));
+
+  if (projectedRows.length && ranges.length) {
+    requests.push(backendBuildInsertRowsRequest_(mainContext.sheetId, insertionRow, projectedRows.length));
+  }
+
+  backendRunBatchUpdate_(spreadsheet, requests);
+
+  if (!projectedRows.length) {
+    return;
+  }
+
+  backendWriteRowsAt_(mainContext.sheet, insertionRow, projectedRows);
+}
+
 function backendApplyWriteMode_(spreadsheet, mainContext, request, rows) {
   const projectedRows = backendProjectRowsToHeader_(backendMainHeader_(request.columns), rows, mainContext.header);
   if (request.writeMode === BACKEND_V2_CONFIG.writeModes.append) {
@@ -671,6 +737,11 @@ function backendApplyWriteMode_(spreadsheet, mainContext, request, rows) {
 
   if (request.writeMode === BACKEND_V2_CONFIG.writeModes.replaceAll) {
     backendApplyReplaceAllMode_(spreadsheet, mainContext, projectedRows);
+    return;
+  }
+
+  if (request.writeMode === BACKEND_V2_CONFIG.writeModes.replaceByMonthSource) {
+    backendApplyReplaceByMonthSourceMode_(spreadsheet, mainContext, request, projectedRows);
     return;
   }
 

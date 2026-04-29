@@ -12,7 +12,7 @@ from decimal import Decimal
 
 import pytest
 
-from app.config import QueryResult
+from app.config import GasWriteMode, QueryResult, gas_write_mode_from_raw
 from app.core.constants import EXPORT_SOURCE_ID
 from app.export.protocol import ExportSink
 from app.export.sinks.google_apps_script import (
@@ -169,6 +169,42 @@ def test_plan_gas_chunks_does_not_measure_full_payload_for_every_row(monkeypatch
 
     assert len(chunks) == 1
     assert measure_calls <= 8
+
+
+def test_gas_write_mode_from_raw_accepts_replace_by_month_source():
+    assert gas_write_mode_from_raw("replace_by_month_source") is GasWriteMode.REPLACE_BY_MONTH_SOURCE
+
+
+def test_gas_write_mode_from_raw_falls_back_to_date_source_for_garbage():
+    assert gas_write_mode_from_raw("not-a-mode") is GasWriteMode.REPLACE_BY_DATE_SOURCE
+    assert gas_write_mode_from_raw(None) is GasWriteMode.REPLACE_BY_DATE_SOURCE
+    assert gas_write_mode_from_raw("") is GasWriteMode.REPLACE_BY_DATE_SOURCE
+
+
+def test_plan_gas_chunks_round_trips_replace_by_month_source_payload():
+    chunks = plan_gas_chunks(
+        "Месячная выгрузка",
+        _qr(columns=("id",), rows=((1,),)),
+        gas_options={"sheet_name": "Лист1"},
+        run_id="run-month",
+        source_id=EXPORT_SOURCE_ID,
+        write_mode="replace_by_month_source",
+        export_date=FIXED_EXPORT_DATE,
+    )
+
+    payload = json.loads(
+        build_gas_chunk_payload(
+            "Месячная выгрузка",
+            chunks[0],
+            gas_options={"sheet_name": "Лист1"},
+            source_id=EXPORT_SOURCE_ID,
+            write_mode="replace_by_month_source",
+            export_date=FIXED_EXPORT_DATE,
+        ).decode("utf-8")
+    )
+
+    assert payload["write_mode"] == "replace_by_month_source"
+    assert payload["checksum"] == chunks[0].checksum
 
 
 def test_plan_gas_chunks_uses_backend_checksum_canonical_json():

@@ -568,6 +568,113 @@ def test_do_post_replace_by_date_source_unfreezes_existing_sheet_before_delete_d
     ]
 
 
+def test_do_post_replace_by_month_source_replaces_only_same_month_for_same_source() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [1, 'April 03', '2026-04-03', '__SOURCE_ID__'],
+            [2, 'April 15', '2026-04-15', '__SOURCE_ID__'],
+            [3, 'April manual', '2026-04-15', 'manual'],
+            [4, 'March 30', '2026-03-30', '__SOURCE_ID__'],
+            [5, 'May 01', '2026-05-01', '__SOURCE_ID__']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'monthly_export',
+          run_id: 'run-month-source',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 2,
+          chunk_rows: 2,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_month_source',
+          columns: ['id', 'name'],
+          records: [
+            { id: 10, name: 'New April 18' },
+            { id: 11, name: 'New April 22' }
+          ]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({
+          ack,
+          mainValues: mainSheet.getDataRange().getValues(),
+          calls: __calls__
+        }));
+        """
+    )
+
+    assert result["ack"]["status"] == "accepted"
+    assert result["ack"]["rows_written"] == 2
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [10, "New April 18", "2026-04-20", SOURCE_ID],
+        [11, "New April 22", "2026-04-20", SOURCE_ID],
+        [3, "April manual", "2026-04-15", "manual"],
+        [4, "March 30", "2026-03-30", SOURCE_ID],
+        [5, "May 01", "2026-05-01", SOURCE_ID],
+    ]
+    assert len(result["calls"]["batchGet"]) == 1
+
+
+def test_do_post_replace_by_month_source_appends_when_no_rows_match_month() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [1, 'February row', '2026-02-15', '__SOURCE_ID__']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'monthly_export',
+          run_id: 'run-month-empty',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-04-20',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_month_source',
+          columns: ['id', 'name'],
+          records: [
+            { id: 9, name: 'First April' }
+          ]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({
+          ack,
+          mainValues: mainSheet.getDataRange().getValues()
+        }));
+        """
+    )
+
+    assert result["ack"]["status"] == "accepted"
+    assert result["mainValues"] == [
+        ["id", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "February row", "2026-02-15", SOURCE_ID],
+        [9, "First April", "2026-04-20", SOURCE_ID],
+    ]
+
+
 def test_do_post_replace_by_date_source_skips_batch_get_when_sheet_has_only_header_row() -> None:
     result = _run_backend_probe(
         """
