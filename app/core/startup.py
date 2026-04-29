@@ -20,14 +20,36 @@ def _require_winreg():
         return None
     return winreg
 
+def _windowless_python(executable: str) -> str:
+    """Return ``pythonw.exe`` next to the given Python interpreter, if it exists.
+
+    Windows ``python.exe`` opens a console window when launched without a TTY
+    (which is exactly what happens during Windows autostart). Its console-less
+    twin ``pythonw.exe`` lives in the same directory and is always shipped
+    alongside on standard CPython installs. We swap it in only for autostart
+    entries; manual dev launches continue to use ``python.exe`` so logs keep
+    streaming to the developer's terminal.
+    """
+    candidate = Path(executable)
+    name = candidate.name.lower()
+    if name == "python.exe":
+        windowless = candidate.with_name("pythonw.exe")
+        if windowless.exists():
+            return str(windowless)
+    return executable
+
+
 def get_exe_path(*, hidden: bool = True) -> str:
-    # Dev mode keeps python.exe (not pythonw.exe) so logs remain visible in the
-    # spawning terminal. End users always run the frozen .exe (console=False).
+    # Frozen .exe is built with console=False, so it never spawns a console.
+    # Dev mode falls back to pythonw.exe ONLY for hidden (autostart) launches
+    # to avoid the black cmd window described in the customer's bug report;
+    # manual launches still use python.exe so logs stay visible.
     if getattr(sys, "frozen", False):
         base = f'"{sys.executable}"'
     else:
         main_py = Path(__file__).parent.parent.parent / "main.py"
-        base = f'"{sys.executable}" "{main_py}"'
+        interpreter = _windowless_python(sys.executable) if hidden else sys.executable
+        base = f'"{interpreter}" "{main_py}"'
     return f"{base} {HIDDEN_FLAG}" if hidden else base
 
 
@@ -108,12 +130,28 @@ def register() -> tuple[bool, str]:
         return False, str(exc)
 
 
-def ensure_hidden_flag() -> bool:
-    """Append --hidden to an existing autostart entry that lacks the flag.
+def _has_console_python(value: str) -> bool:
+    """True if the registry command points at console ``python.exe``.
 
-    Returns True only when the registry value was actually rewritten. Used by
-    main.py on every cold start so older installs migrate silently to the new
-    "hidden in tray" autostart behavior.
+    Used to detect older autostart entries that were registered before we
+    started swapping to ``pythonw.exe`` for hidden launches — those entries
+    still pop up a black console window on every Windows sign-in.
+    """
+    lowered = value.lower()
+    return "python.exe" in lowered and "pythonw.exe" not in lowered
+
+
+def ensure_hidden_flag() -> bool:
+    """Migrate stale autostart registry entries to the current hidden format.
+
+    Rewrites the entry when either:
+    - the ``--hidden`` flag is missing, or
+    - the entry still launches console ``python.exe`` (which spawns a black
+      console window on autostart) instead of ``pythonw.exe``.
+
+    Returns True only when the registry value was actually rewritten. Called
+    by main.py on every cold start so users upgrading from earlier versions
+    pick up the fix without re-toggling the autostart setting.
     """
     if winreg is None:
         return False
@@ -124,9 +162,14 @@ def ensure_hidden_flag() -> bool:
     except Exception as exc:
         _log.warning("ensure_hidden_flag: read failed: %s", exc)
         return False
-    if HIDDEN_FLAG in current:
+    needs_flag = HIDDEN_FLAG not in current
+    needs_windowless = _has_console_python(current)
+    if not needs_flag and not needs_windowless:
         return False
-    _log.info("Migrating autostart entry: appending %s", HIDDEN_FLAG)
+    if needs_flag:
+        _log.info("Migrating autostart entry: appending %s", HIDDEN_FLAG)
+    if needs_windowless:
+        _log.info("Migrating autostart entry: switching python.exe -> pythonw.exe")
     ok, err = register()
     if not ok:
         _log.warning("ensure_hidden_flag: register() failed: %s", err)

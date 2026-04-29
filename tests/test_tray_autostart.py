@@ -1,5 +1,6 @@
 """Tests for tray close-to-tray + Windows autostart registry."""
 import sys
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -122,6 +123,77 @@ def test_ensure_hidden_flag_noop_when_winreg_missing(monkeypatch):
     """The migration helper stays import-safe on non-Windows platforms."""
     monkeypatch.setattr(startup, "winreg", None, raising=False)
     assert startup.ensure_hidden_flag() is False
+
+
+def test_get_exe_path_hidden_dev_swaps_python_for_pythonw(tmp_path, monkeypatch):
+    """Hidden autostart entries must launch via pythonw.exe to avoid console window."""
+    fake_python = tmp_path / "python.exe"
+    fake_pythonw = tmp_path / "pythonw.exe"
+    fake_python.write_bytes(b"")
+    fake_pythonw.write_bytes(b"")
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_python))
+
+    hidden_path = startup.get_exe_path(hidden=True)
+    visible_path = startup.get_exe_path(hidden=False)
+
+    assert "pythonw.exe" in hidden_path
+    assert "python.exe" not in hidden_path.replace("pythonw.exe", "")
+    assert "--hidden" in hidden_path
+    # Manual launch must NOT swap — devs still want stdout in their terminal
+    assert "pythonw.exe" not in visible_path
+    assert visible_path.endswith('main.py"')
+
+
+def test_get_exe_path_hidden_dev_keeps_python_when_pythonw_absent(tmp_path, monkeypatch):
+    """If pythonw.exe is missing next to python.exe, fall back to python.exe gracefully."""
+    fake_python = tmp_path / "python.exe"
+    fake_python.write_bytes(b"")
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_python))
+
+    path = startup.get_exe_path(hidden=True)
+
+    assert "pythonw.exe" not in path
+    assert "python.exe" in path
+    assert "--hidden" in path
+
+
+def test_ensure_hidden_flag_rewrites_console_python_entry(mock_winreg, tmp_path, monkeypatch):
+    """Old entries that still launch python.exe (console) must migrate to pythonw.exe."""
+    fake_python = tmp_path / "python.exe"
+    fake_pythonw = tmp_path / "pythonw.exe"
+    fake_python.write_bytes(b"")
+    fake_pythonw.write_bytes(b"")
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_python))
+
+    main_py = Path(__file__).resolve().parents[1] / "main.py"
+    legacy = f'"{fake_python}" "{main_py}" --hidden'
+    mock_winreg["iDentBridge"] = legacy
+
+    rewrote = startup.ensure_hidden_flag()
+
+    assert rewrote is True
+    assert "pythonw.exe" in mock_winreg["iDentBridge"]
+    assert "--hidden" in mock_winreg["iDentBridge"]
+
+
+def test_ensure_hidden_flag_noop_when_already_pythonw(mock_winreg, tmp_path, monkeypatch):
+    """If the entry already uses pythonw.exe with --hidden, leave it alone."""
+    fake_python = tmp_path / "python.exe"
+    fake_pythonw = tmp_path / "pythonw.exe"
+    fake_python.write_bytes(b"")
+    fake_pythonw.write_bytes(b"")
+    monkeypatch.delattr(sys, "frozen", raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_python))
+
+    startup.register()
+    snapshot = mock_winreg["iDentBridge"]
+    assert "pythonw.exe" in snapshot
+
+    assert startup.ensure_hidden_flag() is False
+    assert mock_winreg["iDentBridge"] == snapshot
 
 
 def test_register_returns_tuple(mock_winreg):
