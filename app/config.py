@@ -145,6 +145,7 @@ class AppConfig(TypedDict, total=False):
     run_on_startup:    bool
     export_jobs:       list[ExportJob]
     tray_notice_shown: bool  # shown once when app first minimises to tray
+    tray_autostart_notice_shown: bool  # shown once on first hidden autostart
 
 
 _APP_CONFIG_KEYS = frozenset({
@@ -158,6 +159,7 @@ _APP_CONFIG_KEYS = frozenset({
     "run_on_startup",
     "export_jobs",
     "tray_notice_shown",
+    "tray_autostart_notice_shown",
 })
 
 

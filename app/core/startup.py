@@ -12,6 +12,7 @@ else:  # pragma: no cover - exercised indirectly via import-safe tests
     winreg = None  # type: ignore[assignment]
 
 REG_PATH = r"Software\Microsoft\Windows\CurrentVersion\Run"
+HIDDEN_FLAG = "--hidden"
 
 
 def _require_winreg():
@@ -19,11 +20,15 @@ def _require_winreg():
         return None
     return winreg
 
-def get_exe_path() -> str:
+def get_exe_path(*, hidden: bool = True) -> str:
+    # Dev mode keeps python.exe (not pythonw.exe) so logs remain visible in the
+    # spawning terminal. End users always run the frozen .exe (console=False).
     if getattr(sys, "frozen", False):
-        return f'"{sys.executable}"'
-    main_py = Path(__file__).parent.parent.parent / "main.py"
-    return f'"{sys.executable}" "{main_py}"'
+        base = f'"{sys.executable}"'
+    else:
+        main_py = Path(__file__).parent.parent.parent / "main.py"
+        base = f'"{sys.executable}" "{main_py}"'
+    return f"{base} {HIDDEN_FLAG}" if hidden else base
 
 
 def _read_value() -> str:
@@ -101,6 +106,31 @@ def register() -> tuple[bool, str]:
     except Exception as exc:
         _log.error("Autostart register VERIFY FAILED: %s", exc)
         return False, str(exc)
+
+
+def ensure_hidden_flag() -> bool:
+    """Append --hidden to an existing autostart entry that lacks the flag.
+
+    Returns True only when the registry value was actually rewritten. Used by
+    main.py on every cold start so older installs migrate silently to the new
+    "hidden in tray" autostart behavior.
+    """
+    if winreg is None:
+        return False
+    try:
+        current = _read_value()
+    except FileNotFoundError:
+        return False
+    except Exception as exc:
+        _log.warning("ensure_hidden_flag: read failed: %s", exc)
+        return False
+    if HIDDEN_FLAG in current:
+        return False
+    _log.info("Migrating autostart entry: appending %s", HIDDEN_FLAG)
+    ok, err = register()
+    if not ok:
+        _log.warning("ensure_hidden_flag: register() failed: %s", err)
+    return ok
 
 
 def unregister() -> tuple[bool, str]:

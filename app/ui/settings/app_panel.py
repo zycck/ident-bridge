@@ -25,6 +25,10 @@ class SettingsAppPanel(QWidget):
         box, app_lay = section("Приложение")
 
         self._startup_check = QCheckBox("Запускать с Windows")
+        self._startup_check.setToolTip(
+            "При включении приложение будет запускаться "
+            "с входом в Windows скрыто в системном трее."
+        )
         self._startup_check.toggled.connect(self.startup_toggled)
         app_lay.addWidget(self._startup_check)
 

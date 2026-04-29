@@ -4,15 +4,61 @@ import signal
 import sys
 from pathlib import Path
 from string import Template
-from PySide6.QtWidgets import QApplication
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
 from app.config import ConfigManager
 from app.core import app_logger
+from app.core import startup as autostart
+from app.core.app_logger import get_logger
 from app.core.constants import APP_NAME, APP_VERSION
 from app.ui import icons_rc  # noqa: F401  — registers :/icons/check.svg for QSS
 from app.ui.main_window import MainWindow
 from app.ui.theme import Theme
 from app.core.updater import cleanup_old_exe
+
+_log = get_logger(__name__)
+
+
+def _is_hidden_start() -> bool:
+    """True if launched by Windows autostart (registry value carries --hidden)."""
+    return autostart.HIDDEN_FLAG in sys.argv[1:]
+
+
+def _show_main_window_or_stay_in_tray(
+    app: QApplication,
+    window: MainWindow,
+    config: ConfigManager,
+) -> None:
+    """Skip showing the main window when launched hidden by Windows autostart.
+
+    Falls back to a normal show() if the system tray is unavailable so the
+    user is never left without a way to interact with the app.
+    """
+    del app  # kept for future hooks (focus, geometry, etc.)
+    if not _is_hidden_start() or not QSystemTrayIcon.isSystemTrayAvailable():
+        window.show()
+        return
+
+    _log.info("Hidden autostart: window stays hidden, tray icon only")
+    cfg = config.load()
+    if cfg.get("tray_autostart_notice_shown"):
+        return
+
+    def _notify() -> None:
+        tray = getattr(window, "_tray", None)
+        if tray is None or not tray.isVisible():
+            return
+        tray.showMessage(
+            "iDentBridge запущен в трее",
+            "Приложение работает в фоне. "
+            "Кликните по иконке в трее, чтобы открыть окно.",
+            QSystemTrayIcon.MessageIcon.Information,
+            7000,
+        )
+        config.update(tray_autostart_notice_shown=True)
+
+    QTimer.singleShot(1500, _notify)
 
 
 def _set_windows_app_user_model_id() -> None:
@@ -116,6 +162,14 @@ def main() -> None:
     # Remove leftover .exe from a previous self-update
     cleanup_old_exe()
 
+    # Silently migrate older autostart entries (without --hidden) so that
+    # users upgrading from earlier versions get the new tray-only behavior
+    # without having to toggle the setting off and on again.
+    try:
+        autostart.ensure_hidden_flag()
+    except Exception:  # noqa: BLE001
+        pass
+
     # Tag the process BEFORE the QApplication exists, otherwise the
     # first taskbar icon and window-grouping association is already
     # bound to the generic "python.exe" AUMID.
@@ -145,7 +199,7 @@ def main() -> None:
 
     config = ConfigManager()
     window = MainWindow(config, APP_VERSION)
-    window.show()
+    _show_main_window_or_stay_in_tray(app, window, config)
 
     sys.exit(app.exec())
 
