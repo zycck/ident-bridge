@@ -6,9 +6,20 @@
 */
 
 function doGet(e) {
-  return iDBBackend.handleRequest(e, 'GET');
+  return iDBBackend.handleRequest(e, 'GET', idbBackendContext_());
 }
 
 function doPost(e) {
-  return iDBBackend.handleRequest(e, 'POST');
+  return iDBBackend.handleRequest(e, 'POST', idbBackendContext_());
+}
+
+function idbBackendContext_() {
+  const properties = PropertiesService.getScriptProperties();
+  return {
+    properties: {
+      getProperty: function(key) {
+        return properties.getProperty(key);
+      }
+    }
+  };
 }

@@ -9,6 +9,7 @@ const BACKEND_V2_CONFIG = Object.freeze({
   defaultLockTimeoutMs: 2000,
   maxPayloadBytes: 5 * 1024 * 1024,
   spreadsheetLocale: 'ru_RU',
+  columnMetadataKey: 'idb_column_v2',
   columnFormats: Object.freeze({
     period: 'MM.yyyy',
     date: 'dd.MM.yyyy',
@@ -25,15 +26,14 @@ const BACKEND_V2_CONFIG = Object.freeze({
 });
 
 function backendHandleRequest_(event, method, context) {
-  void context;
   try {
     const normalizedMethod = backendTrimString_(method).toUpperCase();
     if (normalizedMethod === 'GET') {
-      return backendHandleGetRequest_(event);
+      return backendHandleGetRequest_(event, context);
     }
 
     if (normalizedMethod === 'POST') {
-      return backendHandlePostRequest_(event);
+      return backendHandlePostRequest_(event, context);
     }
 
     throw backendCreateError_(
@@ -47,7 +47,7 @@ function backendHandleRequest_(event, method, context) {
   }
 }
 
-function backendHandleGetRequest_(event) {
+function backendHandleGetRequest_(event, context) {
   const action = backendTrimString_(event?.parameter?.action).toLowerCase();
   if (action === 'ping') {
     return backendMakeJsonResponse_(backendBuildAckPayload_({
@@ -59,7 +59,7 @@ function backendHandleGetRequest_(event) {
   }
 
   if (action === 'sheets') {
-    const spreadsheet = backendGetSpreadsheet_(backendGetScriptProperties_());
+    const spreadsheet = backendGetSpreadsheet_(backendGetProperties_(context));
     return backendMakeJsonResponse_(backendBuildAckPayload_({
       ok: true,
       status: 'ready',
@@ -76,10 +76,11 @@ function backendHandleGetRequest_(event) {
   )));
 }
 
-function backendHandlePostRequest_(event) {
+function backendHandlePostRequest_(event, context) {
   return backendWithScriptLock_(() => {
     const request = backendParseV2Request_(event);
-    const spreadsheet = backendGetSpreadsheet_(backendGetScriptProperties_());
+    const properties = backendGetProperties_(context);
+    const spreadsheet = backendGetSpreadsheet_(properties);
     const mainContext = backendEnsureMainSheet_(spreadsheet, request);
     const writeRequest = request.chunkIndex === 1
       ? request
@@ -277,7 +278,21 @@ function backendBuildFailurePayload_(error) {
   });
 }
 
-function backendGetScriptProperties_() {
+function backendGetProperties_(context) {
+  const passedProperties = backendIsPlainObject_(context) ? context.properties : null;
+  if (backendIsReadablePropertiesStore_(passedProperties)) {
+    return passedProperties;
+  }
+  return backendGetOwnProperties_();
+}
+
+function backendIsReadablePropertiesStore_(value) {
+  return value !== null
+    && typeof value === 'object'
+    && typeof value.getProperty === 'function';
+}
+
+function backendGetOwnProperties_() {
   return PropertiesService.getScriptProperties();
 }
 

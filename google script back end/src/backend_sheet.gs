@@ -1,5 +1,5 @@
-function backendGetSpreadsheet_(scriptProperties) {
-  const spreadsheetId = backendTrimString_(scriptProperties.getProperty('SHEET_ID'));
+function backendGetSpreadsheet_(properties) {
+  const spreadsheetId = backendTrimString_(properties.getProperty('SHEET_ID'));
   if (spreadsheetId) {
     return SpreadsheetApp.openById(spreadsheetId);
   }
@@ -38,17 +38,6 @@ function backendListVisibleSheetNames_(spreadsheet) {
   return names;
 }
 
-function backendReadFullSheetValues_(sheet) {
-  const lastRow = sheet.getLastRow ? sheet.getLastRow() : 0;
-  const lastColumn = sheet.getLastColumn ? sheet.getLastColumn() : 0;
-  if (lastRow < 1 || lastColumn < 1) {
-    return [];
-  }
-
-  const values = sheet.getRange(1, 1, lastRow, lastColumn).getValues();
-  return backendTrimTrailingBlankRows_(values.map((row) => backendTrimTrailingBlankCells_(Array.isArray(row) ? row : [])));
-}
-
 function backendReadHeader_(sheet) {
   const lastColumn = sheet.getLastColumn ? sheet.getLastColumn() : 0;
   if (lastColumn < 1) {
@@ -57,17 +46,6 @@ function backendReadHeader_(sheet) {
 
   const values = sheet.getRange(1, 1, 1, lastColumn).getValues();
   return values.length ? backendTrimTrailingBlankCells_(values[0]) : [];
-}
-
-function backendNormalizeTableWidth_(rows) {
-  const width = rows.reduce((maxWidth, row) => Math.max(maxWidth, Array.isArray(row) ? row.length : 0), 0);
-  return rows.map((row) => {
-    const source = Array.isArray(row) ? row.slice(0) : [];
-    while (source.length < width) {
-      source.push('');
-    }
-    return source;
-  });
 }
 
 function backendEnsureSheetCapacity_(sheet, minRows, minColumns) {
@@ -85,37 +63,21 @@ function backendEnsureSheetCapacity_(sheet, minRows, minColumns) {
   }
 }
 
-function backendRewriteWholeSheet_(sheet, rows) {
-  const normalized = backendNormalizeTableWidth_(rows);
-  if (!normalized.length) {
-    if (sheet.clearContents) {
-      sheet.clearContents();
+function backendOwnedHeader_(request) {
+  const columns = [];
+  const seen = new Set();
+  for (const rawColumn of request.columns) {
+    const columnName = backendTrimString_(rawColumn);
+    const key = backendCanonicalColumnName_(columnName);
+    if (!columnName || backendIsTechnicalColumn_(columnName) || seen.has(key)) {
+      continue;
     }
-    return;
+    seen.add(key);
+    columns.push(columnName);
   }
-
-  if (sheet.clearContents) {
-    sheet.clearContents();
-  }
-  backendEnsureSheetCapacity_(sheet, normalized.length, normalized[0].length);
-  sheet.getRange(1, 1, normalized.length, normalized[0].length).setValues(normalized);
-}
-
-function backendWriteRowsAt_(sheet, startRow, rows) {
-  if (!rows.length) {
-    return;
-  }
-
-  const normalized = backendNormalizeTableWidth_(rows);
-  backendEnsureSheetCapacity_(sheet, startRow + normalized.length - 1, normalized[0].length);
-  sheet.getRange(startRow, 1, normalized.length, normalized[0].length).setValues(normalized);
-}
-
-function backendMainHeader_(columns) {
-  return backendCloneArray_(columns).concat([
-    BACKEND_V2_CONFIG.technicalDateColumnName,
-    BACKEND_V2_CONFIG.technicalSourceColumnName,
-  ]);
+  columns.push(BACKEND_V2_CONFIG.technicalDateColumnName);
+  columns.push(BACKEND_V2_CONFIG.technicalSourceColumnName);
+  return columns;
 }
 
 function backendCanonicalColumnName_(value) {
@@ -134,108 +96,176 @@ function backendIsLegacySourceId_(value) {
     : false;
 }
 
-function backendSplitMainHeader_(header) {
-  const userColumns = [];
-  let dateIndex = -1;
-  let sourceIndex = -1;
-
-  header.forEach((rawColumnName, index) => {
-    const columnName = backendTrimString_(rawColumnName);
-    if (!columnName) {
-      return;
-    }
-
-    if (columnName === BACKEND_V2_CONFIG.technicalDateColumnName) {
-      dateIndex = index;
-      return;
-    }
-
-    if (columnName === BACKEND_V2_CONFIG.technicalSourceColumnName) {
-      sourceIndex = index;
-      return;
-    }
-
-    userColumns.push(columnName);
-  });
-
-  return { userColumns, dateIndex, sourceIndex };
-}
-
-function backendMergeMainHeader_(currentHeader, requestColumns) {
-  const { userColumns } = backendSplitMainHeader_(currentHeader);
-  const mergedUserColumns = backendCloneArray_(userColumns);
-  const seen = new Set(mergedUserColumns.map((column) => backendCanonicalColumnName_(column)));
-
-  for (const rawColumn of requestColumns) {
-    const columnName = backendTrimString_(rawColumn);
-    const key = backendCanonicalColumnName_(columnName);
-    if (!columnName || backendIsTechnicalColumn_(columnName) || seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    mergedUserColumns.push(columnName);
-  }
-
-  return backendMainHeader_(mergedUserColumns.length ? mergedUserColumns : backendCloneArray_(requestColumns));
-}
-
-function backendBuildHeaderIndexMap_(header) {
-  return header.reduce((map, rawColumnName, index) => {
-    const key = backendCanonicalColumnName_(rawColumnName);
-    if (key && map[key] === undefined) {
-      map[key] = index;
-    }
-    return map;
-  }, {});
-}
-
-function backendProjectRowToHeader_(sourceHeader, row, targetHeader) {
-  const sourceMap = backendBuildHeaderIndexMap_(sourceHeader);
-  return targetHeader.map((targetColumn) => {
-    const sourceIndex = sourceMap[backendCanonicalColumnName_(targetColumn)];
-    return sourceIndex === undefined ? '' : backendCoerceCellValue_(row[sourceIndex]);
+function backendColumnMarkerPayload_(columnName, sourceId) {
+  return JSON.stringify({
+    sourceId,
+    columnName,
+    canonicalName: backendCanonicalColumnName_(columnName),
   });
 }
 
-function backendProjectRowsToHeader_(sourceHeader, rows, targetHeader) {
-  return rows.map((row) => backendProjectRowToHeader_(sourceHeader, row, targetHeader));
-}
-
-function backendApplyLegacyMarkerMigration_(rows, header, request, currentSplit) {
-  const { dateIndex, sourceIndex } = backendSplitMainHeader_(header);
-  if (dateIndex < 0 || sourceIndex < 0) {
-    return false;
+function backendReadColumnMarker_(sheet, columnNumber) {
+  if (!sheet.getRange) {
+    return null;
   }
 
-  const sourceWasMissing = Boolean(currentSplit) && currentSplit.sourceIndex < 0;
-  let changed = false;
-  for (const row of rows) {
-    const dateValue = backendTrimString_(row[dateIndex]);
-    if (!dateValue) {
-      continue;
+  try {
+    const range = sheet.getRange(1, columnNumber);
+    if (!range.getDeveloperMetadata) {
+      return null;
     }
 
-    const sourceValue = backendTrimString_(row[sourceIndex]);
-    if (sourceWasMissing && !sourceValue) {
-      row[sourceIndex] = request.sourceId;
-      changed = true;
-      continue;
+    for (const metadata of range.getDeveloperMetadata() || []) {
+      if (metadata.getKey?.() !== BACKEND_V2_CONFIG.columnMetadataKey) {
+        continue;
+      }
+      try {
+        const marker = JSON.parse(backendTrimString_(metadata.getValue?.()));
+        if (backendIsPlainObject_(marker)) {
+          return marker;
+        }
+      } catch (_error) {
+        continue;
+      }
     }
-
-    if (backendIsLegacySourceId_(sourceValue)) {
-      row[sourceIndex] = request.sourceId;
-      changed = true;
-    }
+  } catch (_error) {
+    return null;
   }
-  return changed;
+  return null;
 }
 
-function backendHideTechnicalColumns_(sheet, header) {
-  if (!sheet.hideColumns || header.length < 2) {
+function backendWriteColumnMarker_(sheet, columnNumber, columnName, sourceId) {
+  if (!sheet.getRange) {
     return;
   }
 
-  sheet.hideColumns(header.length - 1, 2);
+  try {
+    const range = sheet.getRange(1, columnNumber);
+    if (!range.getDeveloperMetadata || !range.addDeveloperMetadata) {
+      return;
+    }
+
+    for (const metadata of range.getDeveloperMetadata() || []) {
+      if (metadata.getKey?.() === BACKEND_V2_CONFIG.columnMetadataKey && metadata.remove) {
+        metadata.remove();
+      }
+    }
+    range.addDeveloperMetadata(BACKEND_V2_CONFIG.columnMetadataKey, backendColumnMarkerPayload_(columnName, sourceId));
+  } catch (_error) {
+    return;
+  }
+}
+
+function backendFindMarkedColumnNumber_(sheet, header, columnName, request, claimedColumns) {
+  const key = backendCanonicalColumnName_(columnName);
+  for (let index = 0; index < header.length; index += 1) {
+    const columnNumber = index + 1;
+    if (claimedColumns.has(columnNumber) || backendCanonicalColumnName_(header[index]) !== key) {
+      continue;
+    }
+
+    const marker = backendReadColumnMarker_(sheet, columnNumber);
+    if (
+      marker
+      && backendTrimString_(marker.sourceId) === request.sourceId
+      && backendCanonicalColumnName_(marker.columnName) === key
+    ) {
+      return columnNumber;
+    }
+  }
+  return 0;
+}
+
+function backendFindHeaderColumnNumber_(header, columnName, claimedColumns, preferredColumnNumber) {
+  const key = backendCanonicalColumnName_(columnName);
+  let bestColumnNumber = 0;
+  let bestDistance = Number.MAX_SAFE_INTEGER;
+
+  for (let index = 0; index < header.length; index += 1) {
+    const columnNumber = index + 1;
+    if (claimedColumns.has(columnNumber) || backendCanonicalColumnName_(header[index]) !== key) {
+      continue;
+    }
+
+    if (!preferredColumnNumber) {
+      return columnNumber;
+    }
+
+    const distance = Math.abs(columnNumber - preferredColumnNumber);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestColumnNumber = columnNumber;
+    }
+  }
+
+  return bestColumnNumber;
+}
+
+function backendAppendHeaderColumn_(sheet, header, columnName) {
+  const columnNumber = header.length + 1;
+  backendEnsureSheetCapacity_(sheet, 1, columnNumber);
+  sheet.getRange(1, columnNumber).setValues([[columnName]]);
+  header[columnNumber - 1] = columnName;
+  return columnNumber;
+}
+
+function backendResolveOwnedColumnNumber_(sheet, header, columnName, request, claimedColumns) {
+  const markedColumnNumber = backendFindMarkedColumnNumber_(sheet, header, columnName, request, claimedColumns);
+  if (markedColumnNumber) {
+    return markedColumnNumber;
+  }
+
+  const headerColumnNumber = backendFindHeaderColumnNumber_(header, columnName, claimedColumns, 0);
+  return headerColumnNumber || backendAppendHeaderColumn_(sheet, header, columnName);
+}
+
+function backendBuildOwnedLayout_(sheet, currentHeader, request) {
+  const header = backendCloneArray_(currentHeader);
+  const claimedColumns = new Set();
+  const ownedColumns = [];
+
+  for (const columnName of backendOwnedHeader_(request)) {
+    const columnNumber = backendResolveOwnedColumnNumber_(sheet, header, columnName, request, claimedColumns);
+    claimedColumns.add(columnNumber);
+    ownedColumns.push({
+      name: columnName,
+      canonicalName: backendCanonicalColumnName_(columnName),
+      columnNumber,
+      technical: backendIsTechnicalColumn_(columnName),
+    });
+    backendWriteColumnMarker_(sheet, columnNumber, columnName, request.sourceId);
+  }
+
+  const ownedColumnNumbers = new Set(ownedColumns.map((column) => column.columnNumber));
+  let hasExternalColumns = false;
+  for (let index = 0; index < header.length; index += 1) {
+    if (backendTrimString_(header[index]) && !ownedColumnNumbers.has(index + 1)) {
+      hasExternalColumns = true;
+      break;
+    }
+  }
+
+  const dateColumn = ownedColumns.find((column) => column.name === BACKEND_V2_CONFIG.technicalDateColumnName);
+  const sourceColumn = ownedColumns.find((column) => column.name === BACKEND_V2_CONFIG.technicalSourceColumnName);
+  return {
+    header,
+    ownedColumns,
+    hasExternalColumns,
+    dateColumnNumber: dateColumn?.columnNumber || 0,
+    sourceColumnNumber: sourceColumn?.columnNumber || 0,
+  };
+}
+
+function backendHideTechnicalColumns_(sheet, layout) {
+  if (!sheet.hideColumns || !layout) {
+    return;
+  }
+
+  for (const column of layout.ownedColumns) {
+    if (column.technical) {
+      sheet.hideColumns(column.columnNumber, 1);
+    }
+  }
 }
 
 function backendApplySheetLocaleAndFormats_(spreadsheet, mainContext, request) {
@@ -244,19 +274,20 @@ function backendApplySheetLocaleAndFormats_(spreadsheet, mainContext, request) {
   }
 
   backendEnsureSpreadsheetLocale_(spreadsheet);
-  const headerMap = backendBuildHeaderIndexMap_(mainContext.header);
   const maxRows = Math.max(
     (mainContext.sheet.getMaxRows ? Number(mainContext.sheet.getMaxRows()) || 0 : 0) - 1,
     1
   );
 
   for (const columnName of request.columns) {
-    const columnIndex = headerMap[backendCanonicalColumnName_(columnName)];
+    const ownedColumn = mainContext.ownedColumns.find((column) => (
+      backendCanonicalColumnName_(column.name) === backendCanonicalColumnName_(columnName)
+    ));
     const format = backendFormatForColumnKind_(backendInferColumnKind_(columnName, request.records));
-    if (columnIndex === undefined || !format || !mainContext.sheet.getRange) {
+    if (!ownedColumn || !format || !mainContext.sheet.getRange) {
       continue;
     }
-    mainContext.sheet.getRange(2, columnIndex + 1, maxRows, 1).setNumberFormat(format);
+    mainContext.sheet.getRange(2, ownedColumn.columnNumber, maxRows, 1).setNumberFormat(format);
   }
 }
 
@@ -448,40 +479,31 @@ function backendEnsureMainSheet_(spreadsheet, request) {
   }
 
   const currentHeader = backendReadHeader_(sheet);
-  const currentSplit = backendSplitMainHeader_(currentHeader);
-  const mergedHeader = backendMergeMainHeader_(currentHeader, request.columns);
-
-  if (!currentHeader.length) {
-    backendRewriteWholeSheet_(sheet, [mergedHeader]);
-    backendHideTechnicalColumns_(sheet, mergedHeader);
-    return { sheet, sheetId: sheet.getSheetId(), header: mergedHeader };
-  }
-
-  const headerChanged = !backendSequenceEquals_(currentHeader, mergedHeader);
-  const needsMigration = currentSplit.dateIndex >= 0
-    && (currentSplit.sourceIndex < 0 || currentHeader.includes(BACKEND_V2_CONFIG.legacySourceMarker));
-
-  if (headerChanged || needsMigration) {
-    const existingRows = backendReadFullSheetValues_(sheet);
-    const dataRows = existingRows.length > 1 ? existingRows.slice(1) : [];
-    const projectedRows = backendProjectRowsToHeader_(currentHeader, dataRows, mergedHeader);
-    const migrated = backendApplyLegacyMarkerMigration_(projectedRows, mergedHeader, request, currentSplit);
-
-    if (headerChanged || migrated) {
-      backendRewriteWholeSheet_(sheet, [mergedHeader].concat(projectedRows));
-    }
-  }
-
-  backendHideTechnicalColumns_(sheet, mergedHeader);
-  return { sheet, sheetId: sheet.getSheetId(), header: mergedHeader };
+  const layout = backendBuildOwnedLayout_(sheet, currentHeader, request);
+  backendHideTechnicalColumns_(sheet, layout);
+  return {
+    sheet,
+    sheetId: sheet.getSheetId(),
+    header: layout.header,
+    ownedColumns: layout.ownedColumns,
+    hasExternalColumns: layout.hasExternalColumns,
+    dateColumnNumber: layout.dateColumnNumber,
+    sourceColumnNumber: layout.sourceColumnNumber,
+  };
 }
 
 function backendBuildMainRows_(request) {
+  const columns = backendOwnedHeader_(request);
   return request.records.map((record) => {
-    const row = request.columns.map((columnName) => backendCoerceRequestCellValue_(columnName, record[columnName]));
-    row.push(backendCoerceCellValue_(request.exportDate));
-    row.push(backendCoerceCellValue_(request.sourceId));
-    return row;
+    return columns.map((columnName) => {
+      if (columnName === BACKEND_V2_CONFIG.technicalDateColumnName) {
+        return backendCoerceCellValue_(request.exportDate);
+      }
+      if (columnName === BACKEND_V2_CONFIG.technicalSourceColumnName) {
+        return backendCoerceCellValue_(request.sourceId);
+      }
+      return backendCoerceRequestCellValue_(columnName, record[columnName]);
+    });
   });
 }
 
@@ -578,8 +600,7 @@ function backendCompressRowNumbersToRanges_(rowNumbers) {
 }
 
 function backendReadOwnedRowNumbers_(spreadsheet, mainContext, request) {
-  const { dateIndex, sourceIndex } = backendSplitMainHeader_(mainContext.header);
-  if (dateIndex < 0 || sourceIndex < 0) {
+  if (!mainContext.dateColumnNumber || !mainContext.sourceColumnNumber) {
     return [];
   }
 
@@ -589,8 +610,8 @@ function backendReadOwnedRowNumbers_(spreadsheet, mainContext, request) {
   }
 
   const quotedSheetName = backendQuoteSheetNameForA1_(mainContext.sheet.getName());
-  const dateColumn = backendColumnNumberToLetters_(dateIndex + 1);
-  const sourceColumn = backendColumnNumberToLetters_(sourceIndex + 1);
+  const dateColumn = backendColumnNumberToLetters_(mainContext.dateColumnNumber);
+  const sourceColumn = backendColumnNumberToLetters_(mainContext.sourceColumnNumber);
   const valueRanges = backendBatchGetValues_(spreadsheet.getId(), [
     `${quotedSheetName}!${dateColumn}2:${dateColumn}${lastRow}`,
     `${quotedSheetName}!${sourceColumn}2:${sourceColumn}${lastRow}`,
@@ -614,8 +635,7 @@ function backendReadOwnedRowNumbers_(spreadsheet, mainContext, request) {
 }
 
 function backendReadOwnedRowNumbersByMonth_(spreadsheet, mainContext, request) {
-  const { dateIndex, sourceIndex } = backendSplitMainHeader_(mainContext.header);
-  if (dateIndex < 0 || sourceIndex < 0) {
+  if (!mainContext.dateColumnNumber || !mainContext.sourceColumnNumber) {
     return [];
   }
 
@@ -630,8 +650,8 @@ function backendReadOwnedRowNumbersByMonth_(spreadsheet, mainContext, request) {
   }
 
   const quotedSheetName = backendQuoteSheetNameForA1_(mainContext.sheet.getName());
-  const dateColumn = backendColumnNumberToLetters_(dateIndex + 1);
-  const sourceColumn = backendColumnNumberToLetters_(sourceIndex + 1);
+  const dateColumn = backendColumnNumberToLetters_(mainContext.dateColumnNumber);
+  const sourceColumn = backendColumnNumberToLetters_(mainContext.sourceColumnNumber);
   const valueRanges = backendBatchGetValues_(spreadsheet.getId(), [
     `${quotedSheetName}!${dateColumn}2:${dateColumn}${lastRow}`,
     `${quotedSheetName}!${sourceColumn}2:${sourceColumn}${lastRow}`,
@@ -654,17 +674,74 @@ function backendReadOwnedRowNumbersByMonth_(spreadsheet, mainContext, request) {
   return rowNumbers;
 }
 
+function backendWriteOwnedRowsAt_(mainContext, startRow, rows) {
+  if (!rows.length) {
+    return;
+  }
+
+  backendEnsureSheetCapacity_(mainContext.sheet, startRow + rows.length - 1, mainContext.sheet.getMaxColumns?.() || mainContext.header.length);
+  for (let columnOffset = 0; columnOffset < mainContext.ownedColumns.length; columnOffset += 1) {
+    const targetColumn = mainContext.ownedColumns[columnOffset].columnNumber;
+    const values = rows.map((row) => [row[columnOffset] === undefined ? '' : row[columnOffset]]);
+    mainContext.sheet.getRange(startRow, targetColumn, rows.length, 1).setValues(values);
+  }
+}
+
+function backendClearOwnedRows_(mainContext, rowNumbers) {
+  const ranges = backendCompressRowNumbersToRanges_(rowNumbers);
+  for (const range of ranges) {
+    for (const column of mainContext.ownedColumns) {
+      mainContext.sheet.getRange(range.start, column.columnNumber, range.count, 1).clearContent();
+    }
+  }
+}
+
+function backendClearOwnedRowRange_(mainContext, startRow, count) {
+  if (count <= 0) {
+    return;
+  }
+  backendClearOwnedRows_(mainContext, Array.from({ length: count }, (_value, index) => startRow + index));
+}
+
+function backendApplyOwnedOnlyReplace_(mainContext, matchedRowNumbers, projectedRows) {
+  const targetRows = matchedRowNumbers.slice(0).sort((left, right) => left - right);
+  const writeCount = Math.min(targetRows.length, projectedRows.length);
+
+  for (let index = 0; index < writeCount; index += 1) {
+    backendWriteOwnedRowsAt_(mainContext, targetRows[index], [projectedRows[index]]);
+  }
+
+  if (targetRows.length > projectedRows.length) {
+    backendClearOwnedRows_(mainContext, targetRows.slice(projectedRows.length));
+  }
+
+  if (projectedRows.length > targetRows.length) {
+    const startRow = Math.max(mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0, 1) + 1;
+    backendWriteOwnedRowsAt_(mainContext, startRow, projectedRows.slice(targetRows.length));
+  }
+}
+
 function backendApplyAppendMode_(mainContext, projectedRows) {
   if (!projectedRows.length) {
     return;
   }
 
   const startRow = Math.max(mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0, 1) + 1;
-  backendWriteRowsAt_(mainContext.sheet, startRow, projectedRows);
+  backendWriteOwnedRowsAt_(mainContext, startRow, projectedRows);
 }
 
 function backendApplyReplaceAllMode_(spreadsheet, mainContext, projectedRows) {
   const lastRow = mainContext.sheet.getLastRow ? mainContext.sheet.getLastRow() : 0;
+  if (mainContext.hasExternalColumns) {
+    if (lastRow > 1) {
+      backendClearOwnedRowRange_(mainContext, 2, lastRow - 1);
+    }
+    if (projectedRows.length) {
+      backendWriteOwnedRowsAt_(mainContext, 2, projectedRows);
+    }
+    return;
+  }
+
   if (lastRow > 1) {
     backendRunBatchUpdate_(spreadsheet, [
       backendBuildDeleteRowsRequest_(mainContext.sheetId, 2, lastRow - 1),
@@ -675,11 +752,16 @@ function backendApplyReplaceAllMode_(spreadsheet, mainContext, projectedRows) {
     return;
   }
 
-  backendWriteRowsAt_(mainContext.sheet, 2, projectedRows);
+  backendWriteOwnedRowsAt_(mainContext, 2, projectedRows);
 }
 
 function backendApplyReplaceByDateSourceMode_(spreadsheet, mainContext, request, projectedRows) {
   const matchedRowNumbers = backendReadOwnedRowNumbers_(spreadsheet, mainContext, request);
+  if (mainContext.hasExternalColumns) {
+    backendApplyOwnedOnlyReplace_(mainContext, matchedRowNumbers, projectedRows);
+    return;
+  }
+
   const ranges = backendCompressRowNumbersToRanges_(matchedRowNumbers);
   const insertionRow = ranges.length
     ? ranges[0].start
@@ -700,11 +782,16 @@ function backendApplyReplaceByDateSourceMode_(spreadsheet, mainContext, request,
     return;
   }
 
-  backendWriteRowsAt_(mainContext.sheet, insertionRow, projectedRows);
+  backendWriteOwnedRowsAt_(mainContext, insertionRow, projectedRows);
 }
 
 function backendApplyReplaceByMonthSourceMode_(spreadsheet, mainContext, request, projectedRows) {
   const matchedRowNumbers = backendReadOwnedRowNumbersByMonth_(spreadsheet, mainContext, request);
+  if (mainContext.hasExternalColumns) {
+    backendApplyOwnedOnlyReplace_(mainContext, matchedRowNumbers, projectedRows);
+    return;
+  }
+
   const ranges = backendCompressRowNumbersToRanges_(matchedRowNumbers);
   const insertionRow = ranges.length
     ? ranges[0].start
@@ -725,11 +812,11 @@ function backendApplyReplaceByMonthSourceMode_(spreadsheet, mainContext, request
     return;
   }
 
-  backendWriteRowsAt_(mainContext.sheet, insertionRow, projectedRows);
+  backendWriteOwnedRowsAt_(mainContext, insertionRow, projectedRows);
 }
 
 function backendApplyWriteMode_(spreadsheet, mainContext, request, rows) {
-  const projectedRows = backendProjectRowsToHeader_(backendMainHeader_(request.columns), rows, mainContext.header);
+  const projectedRows = rows;
   if (request.writeMode === BACKEND_V2_CONFIG.writeModes.append) {
     backendApplyAppendMode_(mainContext, projectedRows);
     return;

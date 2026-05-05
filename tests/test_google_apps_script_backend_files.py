@@ -98,6 +98,9 @@ def test_library_project_keeps_connection_template_outside_src() -> None:
     shim_text = shim_template.read_text(encoding="utf-8")
     assert "function doGet(e) {" in shim_text
     assert "function doPost(e) {" in shim_text
+    assert "PropertiesService.getScriptProperties()" in shim_text
+    assert "iDBBackend.handleRequest(e, 'GET', " in shim_text
+    assert "iDBBackend.handleRequest(e, 'POST', " in shim_text
     assert LIBRARY_SCRIPT_ID in shim_text
 
 
@@ -135,6 +138,37 @@ def test_do_get_supports_only_ping_and_sheets_without_maintenance_calls() -> Non
     assert result["invalid"]["error_code"] == "INVALID_ACTION"
     assert result["calls"]["batchGet"] == []
     assert result["calls"]["batchUpdate"] == []
+
+
+def test_do_get_uses_passed_client_properties_for_spreadsheet_id() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [['id', 'name']]
+        });
+        __clientPropertyStore.set('SHEET_ID', 'client-spreadsheet-id');
+
+        const sheets = JSON.parse(__callGet(
+          { action: 'sheets' },
+          __clientPropertiesContext()
+        ));
+
+        console.log(JSON.stringify({
+          sheets,
+          calls: __calls__,
+          libraryProperties: __propertyStore.getProperties(),
+          clientProperties: __clientPropertyStore.getProperties()
+        }));
+        """
+    )
+
+    assert result["sheets"]["ok"] is True
+    assert result["sheets"]["sheets"] == ["Reports"]
+    assert result["calls"]["openById"] == ["client-spreadsheet-id"]
+    assert result["calls"]["getActiveSpreadsheet"] == []
+    assert result["libraryProperties"] == {}
+    assert result["clientProperties"]["SHEET_ID"] == "client-spreadsheet-id"
 
 
 def test_do_post_single_chunk_replace_by_date_source_writes_directly_without_staging() -> None:
@@ -675,6 +709,167 @@ def test_do_post_replace_by_month_source_appends_when_no_rows_match_month() -> N
     ]
 
 
+def test_do_post_replace_by_month_source_preserves_external_formula_columns_between_owned_columns() -> None:
+    result = _run_backend_probe(
+        """
+        __registerSheet('Reports', {
+          sheetId: 10,
+          values: [
+            ['id', 'Formula', 'name', '__TECH_COLUMN__', '__SOURCE_COLUMN__'],
+            [1, 'APRIL-FORMULA', 'Old April', '2026-04-30', '__SOURCE_ID__'],
+            [2, 'MAY-FORMULA', 'Old May', '2026-05-01', '__SOURCE_ID__']
+          ]
+        });
+
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'monthly_export',
+          run_id: 'run-month-external-columns',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-05-05',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_month_source',
+          columns: ['id', 'name'],
+          records: [
+            { id: 20, name: 'New May' }
+          ]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload));
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+
+        console.log(JSON.stringify({
+          ack,
+          mainValues: mainSheet.getDataRange().getValues(),
+          calls: __calls__
+        }));
+        """
+    )
+
+    assert result["ack"]["status"] == "accepted"
+    assert result["mainValues"] == [
+        ["id", "Formula", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [1, "APRIL-FORMULA", "Old April", "2026-04-30", SOURCE_ID],
+        [20, "MAY-FORMULA", "New May", "2026-05-05", SOURCE_ID],
+    ]
+    assert all(
+        "deleteDimension" not in request
+        for call in result["calls"]["batchUpdate"]
+        for request in call["payload"]["requests"]
+    )
+
+
+def test_do_post_uses_owned_column_marker_when_user_inserts_duplicate_header() -> None:
+    result = _run_backend_probe(
+        """
+        const firstPayload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'monthly_export',
+          run_id: 'run-month-duplicate-first',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-05-01',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_month_source',
+          columns: ['id', 'name'],
+          records: [
+            { id: 1, name: 'Original app name' }
+          ]
+        };
+        firstPayload.checksum = __checksum__(firstPayload);
+        const first = JSON.parse(__callPost(firstPayload));
+
+        const mainSheet = __spreadsheet.getSheetByName('Reports');
+        mainSheet.insertColumnsBefore(2, 1);
+        mainSheet.getRange(1, 2).setValues([['name']]);
+        mainSheet.getRange(2, 2).setValues([['USER DUPLICATE NAME']]);
+
+        const secondPayload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'monthly_export',
+          run_id: 'run-month-duplicate-second',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-05-05',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_month_source',
+          columns: ['id', 'name'],
+          records: [
+            { id: 2, name: 'Updated app name' }
+          ]
+        };
+        secondPayload.checksum = __checksum__(secondPayload);
+        const second = JSON.parse(__callPost(secondPayload));
+
+        console.log(JSON.stringify({
+          first,
+          second,
+          mainValues: mainSheet.getDataRange().getValues(),
+          properties: __propertyStore.getProperties()
+        }));
+        """
+    )
+
+    assert result["first"]["status"] == "accepted"
+    assert result["second"]["status"] == "accepted"
+    assert result["mainValues"] == [
+        ["id", "name", "name", TECH_COLUMN, SOURCE_COLUMN],
+        [2, "USER DUPLICATE NAME", "Updated app name", "2026-05-05", SOURCE_ID],
+    ]
+    assert result["properties"] == {}
+
+
+def test_do_post_uses_client_properties_for_spreadsheet_id_without_writing_column_schema() -> None:
+    result = _run_backend_probe(
+        """
+        __clientPropertyStore.set('SHEET_ID', 'client-spreadsheet-id');
+        const payload = {
+          protocol_version: 'gas-sheet.v2',
+          job_name: 'monthly_export',
+          run_id: 'run-client-properties',
+          chunk_index: 1,
+          total_chunks: 1,
+          total_rows: 1,
+          chunk_rows: 1,
+          sheet_name: 'Reports',
+          export_date: '2026-05-05',
+          source_id: '__SOURCE_ID__',
+          write_mode: 'replace_by_month_source',
+          columns: ['id', 'name'],
+          records: [
+            { id: 1, name: 'Ana' }
+          ]
+        };
+        payload.checksum = __checksum__(payload);
+
+        const ack = JSON.parse(__callPost(payload, __clientPropertiesContext()));
+
+        console.log(JSON.stringify({
+          ack,
+          calls: __calls__,
+          libraryProperties: __propertyStore.getProperties(),
+          clientProperties: __clientPropertyStore.getProperties()
+        }));
+        """
+    )
+
+    assert result["ack"]["status"] == "accepted"
+    assert result["calls"]["openById"] == ["client-spreadsheet-id"]
+    assert result["libraryProperties"] == {}
+    assert result["clientProperties"] == {"SHEET_ID": "client-spreadsheet-id"}
+
+
 def test_do_post_replace_by_date_source_skips_batch_get_when_sheet_has_only_header_row() -> None:
     result = _run_backend_probe(
         """
@@ -1105,6 +1300,37 @@ function __makeRange__(sheet, startRow, startColumn, numRows, numColumns) {{
         sheet.__columnFormats[startColumn + columnOffset] = numberFormat;
       }}
       return this;
+    }},
+    addDeveloperMetadata: (key, value) => {{
+      for (let rowOffset = 0; rowOffset < numRows; rowOffset += 1) {{
+        for (let columnOffset = 0; columnOffset < numColumns; columnOffset += 1) {{
+          const cellKey = `${{startRow + rowOffset}}:${{startColumn + columnOffset}}`;
+          const existing = sheet.__developerMetadata[cellKey] || [];
+          existing.push({{ key: String(key), value: String(value) }});
+          sheet.__developerMetadata[cellKey] = existing;
+        }}
+      }}
+      return this;
+    }},
+    getDeveloperMetadata: () => {{
+      const metadata = [];
+      for (let rowOffset = 0; rowOffset < numRows; rowOffset += 1) {{
+        for (let columnOffset = 0; columnOffset < numColumns; columnOffset += 1) {{
+          const cellKey = `${{startRow + rowOffset}}:${{startColumn + columnOffset}}`;
+          const entries = sheet.__developerMetadata[cellKey] || [];
+          for (const entry of entries) {{
+            metadata.push({{
+              getKey: () => entry.key,
+              getValue: () => entry.value,
+              remove: () => {{
+                sheet.__developerMetadata[cellKey] = (sheet.__developerMetadata[cellKey] || [])
+                  .filter((item) => item !== entry);
+              }}
+            }});
+          }}
+        }}
+      }}
+      return metadata;
     }}
   }};
 }}
@@ -1114,6 +1340,7 @@ function __makeSheet__(name, options = {{}}) {{
   const sheet = {{
     __values: initialValues,
     __columnFormats: {{ ...(options.columnFormats || {{}}) }},
+    __developerMetadata: {{ ...(options.developerMetadata || {{}}) }},
     __hiddenColumns: new Set(options.hiddenColumns || []),
     __hidden: Boolean(options.hidden),
     __frozenRows: options.frozenRows !== undefined ? options.frozenRows : 0,
@@ -1188,12 +1415,40 @@ function __makeSheet__(name, options = {{}}) {{
       sheet.__maxRows += howMany;
       return sheet;
     }},
+    insertColumnsBefore: (beforeColumn, howMany) => {{
+      if (howMany <= 0) {{
+        return sheet;
+      }}
+      const insertAt = Math.max(beforeColumn - 1, 0);
+      for (const row of sheet.__values) {{
+        row.splice(insertAt, 0, ...Array.from({{ length: howMany }}, () => ''));
+      }}
+      const shiftedMetadata = {{}};
+      for (const [cellKey, entries] of Object.entries(sheet.__developerMetadata)) {{
+        const [rowText, columnText] = cellKey.split(':');
+        const row = Number(rowText);
+        const column = Number(columnText);
+        const shiftedColumn = column >= beforeColumn ? column + howMany : column;
+        shiftedMetadata[`${{row}}:${{shiftedColumn}}`] = entries;
+      }}
+      sheet.__developerMetadata = shiftedMetadata;
+      const shiftedFormats = {{}};
+      for (const [columnText, format] of Object.entries(sheet.__columnFormats)) {{
+        const column = Number(columnText);
+        shiftedFormats[column >= beforeColumn ? column + howMany : column] = format;
+      }}
+      sheet.__columnFormats = shiftedFormats;
+      sheet.__hiddenColumns = new Set(
+        Array.from(sheet.__hiddenColumns, (column) => column >= beforeColumn ? column + howMany : column)
+      );
+      sheet.__maxColumns += howMany;
+      return sheet;
+    }},
     insertColumnsAfter: (afterColumn, howMany) => {{
       if (howMany <= 0) {{
         return sheet;
       }}
-      sheet.__maxColumns += howMany;
-      return sheet;
+      return sheet.insertColumnsBefore(afterColumn + 1, howMany);
     }},
     hideColumns: (column, count) => {{
       for (let index = 0; index < count; index += 1) {{
@@ -1268,8 +1523,8 @@ global.SpreadsheetApp = {{
     __calls__.getActiveSpreadsheet.push(true);
     return __spreadsheet;
   }},
-  openById: () => {{
-    __calls__.openById.push(true);
+  openById: (spreadsheetId) => {{
+    __calls__.openById.push(spreadsheetId);
     return __spreadsheet;
   }}
 }};
@@ -1295,29 +1550,43 @@ global.Sheets = {{
 }};
 global.__calls__ = __calls__;
 
-const __propertyStore = new Map();
-__propertyStore.getProperties = () => Object.fromEntries(__propertyStore.entries());
-global.__propertyStore = {{
-  get: (key) => __propertyStore.get(key),
-  getProperties: () => Object.fromEntries(__propertyStore.entries()),
-  set: (key, value) => {{
-    __propertyStore.set(key, value);
-  }},
-  delete: (key) => {{
-    __propertyStore.delete(key);
-  }}
-}};
-global.PropertiesService = {{
-  getScriptProperties: () => ({{
-    getProperty: (key) => __propertyStore.has(key) ? __propertyStore.get(key) : null,
+function __makePropertiesStore__() {{
+  const store = new Map();
+  const properties = {{
+    getProperty: (key) => store.has(key) ? store.get(key) : null,
     setProperty: (key, value) => {{
-      __propertyStore.set(key, value);
+      store.set(key, value);
     }},
     deleteProperty: (key) => {{
-      __propertyStore.delete(key);
+      store.delete(key);
     }},
-    getProperties: () => Object.fromEntries(__propertyStore.entries())
-  }})
+    getProperties: () => Object.fromEntries(store.entries())
+  }};
+  const facade = {{
+    get: (key) => store.get(key),
+    getProperties: () => Object.fromEntries(store.entries()),
+    set: (key, value) => {{
+      store.set(key, value);
+    }},
+    delete: (key) => {{
+      store.delete(key);
+    }},
+    properties: () => properties
+  }};
+  return {{ facade, properties }};
+}}
+
+const __libraryPropertiesStore = __makePropertiesStore__();
+const __clientPropertiesStore = __makePropertiesStore__();
+global.__propertyStore = __libraryPropertiesStore.facade;
+global.__clientPropertyStore = __clientPropertiesStore.facade;
+global.__clientPropertiesContext = () => ({{
+  properties: {{
+    getProperty: (key) => __clientPropertiesStore.properties.getProperty(key)
+  }}
+}});
+global.PropertiesService = {{
+  getScriptProperties: () => __libraryPropertiesStore.properties
 }};
 global.LockService = {{
   getScriptLock: () => ({{
